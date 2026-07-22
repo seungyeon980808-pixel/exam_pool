@@ -1,0 +1,13 @@
+{
+  "version": "1.0.0",
+  "status": "complete",
+  "provider": "mock-image",
+  "generatedAt": "2026-07-22T11:57:16.226Z",
+  "runner": null,
+  "assets": [],
+  "pending": [],
+  "filters": {
+    "ocr": [],
+    "composition": []
+  }
+}

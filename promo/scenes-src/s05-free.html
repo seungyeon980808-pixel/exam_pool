@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=1920, height=1080" /><title>ExamPool s05</title></head>
+<body>
+<template>
+  <style>
+    .ep5 { position:absolute; inset:0; overflow:hidden; background:var(--rf-bg,#010102);
+      color:#fff; font-family:"Pretendard", system-ui, sans-serif; }
+    .ep5 .stage { position:absolute; inset:0; will-change:transform; }
+    .ep5 .halo { position:absolute; left:16%; top:44%; width:1050px; height:1050px;
+      transform:translate(-50%,-50%);
+      background:radial-gradient(closest-side, color-mix(in srgb, var(--rf-accent,#828fff) 34%, transparent), transparent 70%);
+      filter:blur(44px); opacity:0; }
+    .ep5 .flash { position:absolute; inset:0; background:var(--rf-accent,#828fff); opacity:0; }
+    .ep5 .kick { position:absolute; top:6%; left:4%; font-family:ui-monospace,Menlo,monospace;
+      font-size:22px; font-weight:700; letter-spacing:.22em; color:rgba(255,255,255,.34); }
+    .ep5 .stack { position:absolute; left:4%; top:44%; transform:translateY(-50%);
+      display:flex; align-items:flex-end; gap:12px; }
+    .ep5 .dm { font-size:528px; line-height:.9; }
+    .ep5 .dm b { display:block; font-size:1em; font-weight:800; letter-spacing:-.085em;
+      line-height:.9; color:var(--rf-accent,#828fff); opacity:0; will-change:transform, opacity; }
+    .ep5 .unit { font-size:150px; font-weight:700; letter-spacing:-.04em; padding-bottom:.12em; }
+    .ep5 .cap { position:absolute; left:4%; top:74%; font-size:78px; font-weight:800; letter-spacing:-.045em; }
+    .ep5 .sub { position:absolute; left:4%; top:85%; font-size:36px; font-weight:500; color:rgba(255,255,255,.5); }
+    .ep5 .side { position:absolute; right:4%; top:50%; transform:translateY(-50%);
+      width:1px; height:60%; background:linear-gradient(180deg, transparent, rgba(255,255,255,.3), transparent); }
+  </style>
+  <div class="ep5" data-rf-fragment-version="1.0" data-composition-id="free-s05">
+    <div class="stage">
+      <div class="halo" aria-hidden="true"></div>
+      <div class="kick">EXAMPOOL / 05</div>
+      <div class="stack" aria-label="87개">
+        <div class="dm"><b>8</b></div><div class="dm"><b>7</b></div>
+        <div class="unit">개</div>
+      </div>
+      <div class="cap">성취기준, 통째로 내장</div>
+      <div class="sub">2022 개정 중학교 과학 · 23개 단원 전체</div>
+      <div class="side" aria-hidden="true"></div>
+    </div>
+    <div class="flash" aria-hidden="true"></div>
+  </div>
+  <script>
+    (() => {
+      const r = document.querySelector('[data-composition-id="free-s05"]');
+      if (!r) return;
+      const stage=r.querySelector(".stage"), halo=r.querySelector(".halo"), flash=r.querySelector(".flash"),
+            kick=r.querySelector(".kick"), unit=r.querySelector(".unit"),
+            cap=r.querySelector(".cap"), sub=r.querySelector(".sub"), side=r.querySelector(".side");
+      const digits=Array.from(r.querySelectorAll(".dm b"));
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      tl.fromTo(stage,{scale:1.0},{scale:1.05,duration:2.2,ease:"none"},0)
+        .fromTo(kick,{opacity:0,x:-20},{opacity:1,x:0,duration:.26,ease:"power3.out"},0)
+        .fromTo(halo,{opacity:0,scale:.7},{opacity:1,scale:1,duration:.8,ease:"power2.out"},0)
+        .fromTo(side,{opacity:0,scaleY:0},{opacity:1,scaleY:1,duration:.6,ease:"expo.out"},0)
+        .fromTo(digits[0],{opacity:0,y:-190,rotate:-22,scale:.6,transformOrigin:"50% 50%"},
+                          {opacity:1,y:0,rotate:0,scale:1,duration:.7,ease:"back.out(2.5)"},0.2727)
+        .fromTo(digits[1],{opacity:0,y:190,rotate:22,scale:.6,transformOrigin:"50% 50%"},
+                          {opacity:1,y:0,rotate:0,scale:1,duration:.7,ease:"back.out(2.5)"},0.5455)
+        .fromTo(flash,{opacity:0},{opacity:.19,duration:.05,ease:"none"},0.5455)
+        .to(flash,{opacity:0,duration:.24,ease:"power2.out"},0.5955)
+        .fromTo(unit,{opacity:0,x:-30,rotate:10},{opacity:1,x:0,rotate:0,duration:.42,ease:"back.out(2.4)"},0.8182)
+        .fromTo(cap,{opacity:0,y:34},{opacity:1,y:0,duration:.34,ease:"expo.out"},1.0909)
+        .fromTo(sub,{opacity:0,y:22},{opacity:1,y:0,duration:.3,ease:"power3.out"},1.3636);
+      window.__timelines["free-s05"]=tl; tl.seek(0);
+    })();
+  </script>
+</template>
+</body>
+</html>

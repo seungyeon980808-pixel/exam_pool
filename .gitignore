@@ -22,9 +22,18 @@ venv/
 node_modules/
 package-lock.json
 
-# ===== 데모·홍보 영상 자산 (별도 관리) =====
+# ===== 데모 영상(구버전, 폐기) =====
 demo/
-promo/
+
+# ===== 제3자 음원 (Pixabay) — 재배포 금지, 저장소에 넣지 않는다 =====
+*.mp3
+!promo/assets/audio/*.mp3
+
+# ===== 홍보 영상 소스는 추적하되 대용량 중간산물은 제외 =====
+promo/build/
+promo/out/work-*/
+promo/sfx/
+promo/assets/audio/
 
 # ===== OS·에디터 =====
 Thumbs.db

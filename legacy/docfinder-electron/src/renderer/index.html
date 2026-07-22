@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DocFinder — 규정 빠른검색기</title>
+  <link rel="stylesheet" href="styles.css" />
+  <!-- pdf.js (미리보기 렌더용, 로컬 번들) -->
+  <script src="../../node_modules/pdfjs-dist/build/pdf.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">📄 DocFinder</div>
+    <div class="folder-box">
+      <span id="folderPath" class="folder-path">폴더가 지정되지 않았습니다</span>
+      <button id="pickBtn" class="btn">폴더 선택</button>
+      <button id="reindexBtn" class="btn btn-ghost" title="폴더 내용이 바뀌었을 때 다시 색인">재색인</button>
+    </div>
+  </header>
+
+  <div class="searchbar">
+    <input id="searchInput" type="text" placeholder="키워드를 띄어쓰기로 여러 개 입력 (모두 포함하는 문서를 찾습니다) — 예: 수행평가 부정행위"
+      autocomplete="off" spellcheck="false" disabled />
+    <span id="searchStat" class="search-stat"></span>
+  </div>
+  <div id="legend" class="legend" style="display:none"></div>
+
+  <main class="content">
+    <section id="resultsPane" class="results-pane">
+      <div id="resultsList" class="results-list"></div>
+      <div id="emptyState" class="empty-state">
+        <p>폴더를 선택하면 그 안의 PDF를 색인합니다.</p>
+        <p class="hint">색인 후 위 검색창에 키워드를 입력하세요.</p>
+      </div>
+    </section>
+
+    <section class="preview-pane">
+      <div class="preview-head">
+        <span id="previewTitle" class="preview-title">미리보기</span>
+        <button id="openBtn" class="btn btn-ghost" disabled>원본 열기</button>
+      </div>
+      <div id="previewScroll" class="preview-scroll">
+        <div id="previewPlaceholder" class="preview-placeholder">검색 결과를 클릭하면 해당 페이지가 여기에 표시됩니다.</div>
+        <div id="pageWrap" class="page-wrap" style="display:none">
+          <canvas id="pdfCanvas"></canvas>
+          <div id="textLayer" class="textLayer"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 색인 진행 오버레이 -->
+  <div id="overlay" class="overlay" style="display:none">
+    <div class="overlay-card">
+      <div class="spinner"></div>
+      <div id="overlayText" class="overlay-text">색인 중…</div>
+      <div class="progress"><div id="progressBar" class="progress-bar"></div></div>
+      <div id="overlayFile" class="overlay-file"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

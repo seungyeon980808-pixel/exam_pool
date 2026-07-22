@@ -1,0 +1,76 @@
+{
+  "scenes": [
+    {
+      "sceneId": "s01",
+      "audioPath": "./assets/audio/s01.silent.mp3",
+      "audioDurationSec": 4.364,
+      "words": [],
+      "sourceHash": "36a9e7f1c95b82ffb99743e0c5c4ce95d83c9a430aac59f84ef3cbfab6145068",
+      "provider": "beat-locked",
+      "voice": "none"
+    },
+    {
+      "sceneId": "s02",
+      "audioPath": "./assets/audio/s02.silent.mp3",
+      "audioDurationSec": 4.364,
+      "words": [],
+      "sourceHash": "36a9e7f1c95b82ffb99743e0c5c4ce95d83c9a430aac59f84ef3cbfab6145068",
+      "provider": "beat-locked",
+      "voice": "none"
+    },
+    {
+      "sceneId": "s03",
+      "audioPath": "./assets/audio/s03.silent.mp3",
+      "audioDurationSec": 2.182,
+      "words": [],
+      "sourceHash": "36a9e7f1c95b82ffb99743e0c5c4ce95d83c9a430aac59f84ef3cbfab6145068",
+      "provider": "beat-locked",
+      "voice": "none"
+    },
+    {
+      "sceneId": "s04",
+      "audioPath": "./assets/audio/s04.silent.mp3",
+      "audioDurationSec": 4.364,
+      "words": [],
+      "sourceHash": "36a9e7f1c95b82ffb99743e0c5c4ce95d83c9a430aac59f84ef3cbfab6145068",
+      "provider": "beat-locked",
+      "voice": "none"
+    },
+    {
+      "sceneId": "s05",
+      "audioPath": "./assets/audio/s05.silent.mp3",
+      "audioDurationSec": 2.182,
+      "words": [],
+      "sourceHash": "36a9e7f1c95b82ffb99743e0c5c4ce95d83c9a430aac59f84ef3cbfab6145068",
+      "provider": "beat-locked",
+      "voice": "none"
+    },
+    {
+      "sceneId": "s06",
+      "audioPath": "./assets/audio/s06.silent.mp3",
+      "audioDurationSec": 4.364,
+      "words": [],
+      "sourceHash": "36a9e7f1c95b82ffb99743e0c5c4ce95d83c9a430aac59f84ef3cbfab6145068",
+      "provider": "beat-locked",
+      "voice": "none"
+    },
+    {
+      "sceneId": "s07",
+      "audioPath": "./assets/audio/s07.silent.mp3",
+      "audioDurationSec": 2.182,
+      "words": [],
+      "sourceHash": "36a9e7f1c95b82ffb99743e0c5c4ce95d83c9a430aac59f84ef3cbfab6145068",
+      "provider": "beat-locked",
+      "voice": "none"
+    },
+    {
+      "sceneId": "s08",
+      "audioPath": "./assets/audio/s08.silent.mp3",
+      "audioDurationSec": 4.364,
+      "words": [],
+      "sourceHash": "36a9e7f1c95b82ffb99743e0c5c4ce95d83c9a430aac59f84ef3cbfab6145068",
+      "provider": "beat-locked",
+      "voice": "none"
+    }
+  ]
+}

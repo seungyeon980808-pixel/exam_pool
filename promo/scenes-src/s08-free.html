@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=1920, height=1080" /><title>ExamPool s08</title></head>
+<body>
+<template>
+  <style>
+    .ep8 { position:absolute; inset:0; overflow:hidden; background:var(--rf-bg,#010102);
+      color:#fff; font-family:"Pretendard", system-ui, sans-serif; }
+    .ep8 .halo { position:absolute; left:20%; top:48%; width:1300px; height:1300px;
+      transform:translate(-50%,-50%);
+      background:radial-gradient(closest-side, color-mix(in srgb, var(--rf-accent,#828fff) 24%, transparent), transparent 70%);
+      filter:blur(50px); opacity:0; }
+    /* assets/icon.svg 원본을 그대로 사용 */
+    .ep8 .icon { position:absolute; left:4%; top:46%; transform:translateY(-50%);
+      width:300px; height:300px; border-radius:68px; overflow:hidden;
+      box-shadow:0 44px 110px rgba(0,0,0,.9), 0 0 0 1px rgba(255,255,255,.12); }
+    .ep8 .icon svg { display:block; width:100%; height:100%; }
+    .ep8 .txt { position:absolute; left:25%; right:4%; top:46%; transform:translateY(-50%); }
+    .ep8 .name { font-size:134px; font-weight:800; letter-spacing:-.055em; line-height:1; }
+    .ep8 .mask { overflow:hidden; margin-top:26px; }
+    .ep8 .slogan { display:block; font-size:76px; font-weight:700; letter-spacing:-.045em;
+      line-height:1.2; color:var(--rf-accent,#828fff); word-break:keep-all; will-change:transform; }
+    .ep8 .foot { position:absolute; left:4%; right:4%; bottom:6.5%; display:flex; align-items:center;
+      padding-top:22px; border-top:1px solid rgba(255,255,255,.14);
+      font-size:28px; font-weight:600; color:rgba(255,255,255,.5); }
+    .ep8 .foot .r { margin-left:auto; }
+  </style>
+  <div class="ep8" data-rf-fragment-version="1.0" data-composition-id="free-s08">
+    <div class="halo" aria-hidden="true"></div>
+    <div class="icon" aria-label="ExamPool 아이콘">
+      <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+        <rect width="120" height="120" fill="#d8ecfd"/>
+        <g class="ic-a" transform="rotate(-11 38 72)">
+          <rect x="25" y="57" width="27" height="31" rx="2.5" fill="#f6f1e3" stroke="#ddd3ba" stroke-width="1.3"/>
+          <path d="M45 57 L52 64 L45 64 Z" fill="#e6dcc4"/>
+          <line x1="29" y1="63" x2="48" y2="63" stroke="#57544d" stroke-width="1.6"/>
+          <rect x="29" y="68" width="19" height="11" rx="1.5" fill="#fffdf7" stroke="#a79f8c" stroke-width="1.2"/>
+        </g>
+        <g class="ic-b" transform="rotate(12 79 74)">
+          <rect x="66" y="60" width="25" height="29" rx="2.5" fill="#f6f1e3" stroke="#ddd3ba" stroke-width="1.3"/>
+          <path d="M84 60 L91 67 L84 67 Z" fill="#e6dcc4"/>
+          <line x1="70" y1="66" x2="87" y2="66" stroke="#57544d" stroke-width="1.6"/>
+          <rect x="70" y="71" width="17" height="10" rx="1.5" fill="#fffdf7" stroke="#a79f8c" stroke-width="1.2"/>
+        </g>
+        <path class="ic-w" d="M0 80 q15 -7 30 0 t30 0 t30 0 t30 0 v40 h-120 Z" fill="#2f7fce" fill-opacity="0.86"/>
+        <path class="ic-w" d="M0 80 q15 -7 30 0 t30 0 t30 0 t30 0" fill="none" stroke="#7fb8ec" stroke-width="2.5" stroke-linecap="round"/>
+        <g class="ic-c" transform="rotate(34 73 36)">
+          <rect x="58" y="14" width="30" height="39" rx="3" fill="#f6f1e3" stroke="#ddd3ba" stroke-width="1.4"/>
+          <path d="M81 14 L88 21 L81 21 Z" fill="#e6dcc4"/>
+          <line x1="62" y1="21" x2="84" y2="21" stroke="#57544d" stroke-width="1.9"/>
+          <rect x="62" y="26" width="22" height="13" rx="2" fill="#fffdf7" stroke="#a79f8c" stroke-width="1.3"/>
+          <line x1="62" y1="45" x2="80" y2="45" stroke="#8a867c" stroke-width="1.6"/>
+        </g>
+        <g class="ic-d">
+          <circle cx="82" cy="76" r="4" fill="#bfe0fb"/>
+          <circle cx="90" cy="70" r="2.8" fill="#bfe0fb"/>
+          <circle cx="86" cy="66" r="2" fill="#eaf6ff"/>
+        </g>
+      </svg>
+    </div>
+    <div class="txt">
+      <div class="name">ExamPool</div>
+      <div class="mask"><span class="slogan">시간날 때 던져놓은 문제들을<br />필요할 때 건져내서 사용하세요.</span></div>
+    </div>
+    <div class="foot">
+      <div>Licensed under AGPL-3.0</div>
+      <div class="r">developed by 박승연 · SOME</div>
+    </div>
+  </div>
+  <script>
+    (() => {
+      const r = document.querySelector('[data-composition-id="free-s08"]');
+      if (!r) return;
+      const halo=r.querySelector(".halo"), icon=r.querySelector(".icon"),
+            name=r.querySelector(".name"), slogan=r.querySelector(".slogan"), foot=r.querySelector(".foot");
+      const diver=r.querySelector(".ic-c"); const drops=r.querySelector(".ic-d");
+      const floats=Array.from(r.querySelectorAll(".ic-a, .ic-b"));
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      tl.set(floats,{opacity:0}).set(diver,{opacity:0,y:-70})
+        .set(drops,{opacity:0,scale:0,transformOrigin:"center"}).set(slogan,{yPercent:112})
+        .fromTo(halo,{opacity:0},{opacity:1,duration:.85,ease:"power2.out"},0)
+        .fromTo(icon,{opacity:0,scale:.66},{opacity:1,scale:1,duration:.46,ease:"back.out(1.8)"},0)
+        .to(floats,{opacity:1,duration:.26,ease:"power2.out"},0.5455)
+        .fromTo(name,{opacity:0,x:44},{opacity:1,x:0,duration:.38,ease:"expo.out"},0.5455)
+        .to(diver,{opacity:1,y:0,duration:.3,ease:"power3.in"},0.8182)
+        .to(drops,{opacity:1,scale:1,duration:.28,ease:"back.out(3)"},1.0909)
+        .to(slogan,{yPercent:0,duration:.5,ease:"expo.out"},1.0909)
+        .fromTo(foot,{opacity:0,y:14},{opacity:1,y:0,duration:.36,ease:"power2.out"},1.6364);
+      window.__timelines["free-s08"]=tl; tl.seek(0);
+    })();
+  </script>
+</template>
+</body>
+</html>

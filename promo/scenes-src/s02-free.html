@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=1920, height=1080" /><title>ExamPool s02</title></head>
+<body>
+<template>
+  <style>
+    .ep2 { position:absolute; inset:0; overflow:hidden; background:var(--rf-bg,#010102);
+      color:#fff; font-family:"Pretendard", system-ui, sans-serif; }
+    .ep2 .stage { position:absolute; inset:0; will-change:transform; }
+    .ep2 .grid { position:absolute; inset:0; opacity:.16;
+      background-image:linear-gradient(rgba(255,255,255,.10) 1px, transparent 1px),
+                       linear-gradient(90deg, rgba(255,255,255,.10) 1px, transparent 1px);
+      background-size:120px 120px; }
+    .ep2 .flash { position:absolute; inset:0; background:var(--rf-accent,#17E1D0); opacity:0; }
+    .ep2 .kick { position:absolute; top:6%; left:4%; font-family:ui-monospace,Menlo,monospace;
+      font-size:22px; font-weight:700; letter-spacing:.22em; color:rgba(255,255,255,.34); }
+    .ep2 .mid { position:absolute; left:4%; width:46%; top:50%; transform:translateY(-50%); }
+    .ep2 .small { font-size:50px; font-weight:600; color:rgba(255,255,255,.52);
+      letter-spacing:-.02em; margin-bottom:14px; }
+    .ep2 .q i { display:inline-block; font-style:normal; font-size:236px; font-weight:800;
+      letter-spacing:-.07em; line-height:1.06; opacity:0; will-change:transform, opacity, filter; }
+    .ep2 .hot { color:var(--rf-accent,#17E1D0); }
+    /* --- 문항 카드 --- */
+    .ep2 .card { position:absolute; right:4%; top:50%; transform:translateY(-50%);
+      width:44%; background:#0d0e12; border:1px solid rgba(255,255,255,.12); border-radius:14px;
+      padding:34px 38px; box-sizing:border-box; box-shadow:0 44px 100px rgba(0,0,0,.8);
+      will-change:transform, opacity; }
+    .ep2 .card .qh { font-size:34px; font-weight:700; margin-bottom:26px; color:rgba(255,255,255,.92); }
+    .ep2 .ch { display:flex; align-items:center; gap:18px; padding:15px 16px;
+      border-radius:8px; font-size:31px; color:rgba(255,255,255,.72); }
+    .ep2 .ch b { color:var(--rf-accent,#17E1D0); font-weight:700; }
+    .ep2 .ch.pick { position:relative; }
+    .ep2 .ring { position:absolute; inset:0; border:3px solid var(--rf-accent,#17E1D0);
+      border-radius:8px; opacity:0; }
+    .ep2 .badge { position:absolute; right:-26px; top:-30px; width:88px; height:88px; border-radius:50%;
+      background:var(--rf-accent,#17E1D0); color:#04201d; font-size:56px; font-weight:800;
+      display:flex; align-items:center; justify-content:center; opacity:0;
+      box-shadow:0 12px 40px rgba(23,225,208,.45); }
+  </style>
+  <div class="ep2" data-rf-fragment-version="1.0" data-composition-id="free-s02">
+    <div class="stage">
+      <div class="grid" aria-hidden="true"></div>
+      <div class="kick">EXAMPOOL / 02</div>
+      <div class="card" aria-label="선지 하나에 근거가 있는지 묻는 문항">
+        <div class="qh">17. 옳지 않은 것은?</div>
+        <div class="ch"><b>①</b><span>전류는 전압에 비례한다</span></div>
+        <div class="ch"><b>②</b><span>저항이 크면 전류가 준다</span></div>
+        <div class="ch pick"><b>③</b><span>기체 압력은 부피에 비례</span><span class="ring"></span><span class="badge">?</span></div>
+        <div class="ch"><b>④</b><span>열은 고온에서 저온으로</span></div>
+        <div class="ch"><b>⑤</b><span>일은 힘과 거리의 곱이다</span></div>
+      </div>
+      <div class="mid">
+        <div class="small">그 선지,</div>
+        <div class="q" aria-label="근거 있나요?"><span class="g1"><i class="hot">근</i><i class="hot">거</i></span><br /><span class="g2"><i>있</i><i>나</i><i>요</i></span><i class="mark hot">?</i></div>
+      </div>
+    </div>
+    <div class="flash" aria-hidden="true"></div>
+  </div>
+  <script>
+    (() => {
+      const r = document.querySelector('[data-composition-id="free-s02"]');
+      if (!r) return;
+      const stage=r.querySelector(".stage"), kick=r.querySelector(".kick"),
+            small=r.querySelector(".small"), grid=r.querySelector(".grid"), flash=r.querySelector(".flash"),
+            card=r.querySelector(".card"), ring=r.querySelector(".ring"), badge=r.querySelector(".badge");
+      const g1=Array.from(r.querySelectorAll(".g1 i"));
+      const g2=Array.from(r.querySelectorAll(".g2 i"));
+      const mark=r.querySelector(".mark");
+      const chs=Array.from(r.querySelectorAll(".ch"));
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      tl.set(chs,{opacity:0,x:26})
+        .fromTo(stage,{scale:1.0},{scale:1.04,duration:4.4,ease:"none"},0)
+        .fromTo(grid,{opacity:0},{opacity:.16,duration:.8,ease:"power2.out"},0)
+        .fromTo(kick,{opacity:0,x:-20},{opacity:1,x:0,duration:.26,ease:"power3.out"},0)
+        .fromTo(card,{opacity:0,x:110,rotate:2},{opacity:1,x:0,rotate:0,duration:.52,ease:"expo.out"},0.2727)
+        .fromTo(small,{opacity:0,y:20},{opacity:1,y:0,duration:.3,ease:"power3.out"},0.2727)
+        .to(chs,{opacity:1,x:0,duration:.3,ease:"expo.out",stagger:.09},0.5455)
+        .fromTo(g1,{opacity:0,scale:1.9,rotate:(i)=>i%2?9:-9,filter:"blur(26px)"},
+                   {opacity:1,scale:1,rotate:0,filter:"blur(0px)",duration:.56,ease:"back.out(2.4)",stagger:.06},0.5455)
+        .fromTo(g2,{opacity:0,scale:.5,rotate:(i)=>i%2?-11:11,y:70},
+                   {opacity:1,scale:1,rotate:0,y:0,duration:.56,ease:"back.out(2.6)",stagger:.05},1.0909)
+        .fromTo(mark,{opacity:0,scale:2.4,rotate:-55},
+                     {opacity:1,scale:1,rotate:0,duration:.62,ease:"back.out(3.2)"},1.6364)
+        .fromTo(flash,{opacity:0},{opacity:.17,duration:.05,ease:"none"},1.6364)
+        .to(flash,{opacity:0,duration:.22,ease:"power2.out"},1.6864)
+        /* 빈 비트 채우기: 선지 지목 -> 물음표 -> 흔들림 */
+        .fromTo(ring,{opacity:0,scale:1.14},{opacity:1,scale:1,duration:.36,ease:"back.out(2.6)"},2.1818)
+        .fromTo(badge,{opacity:0,scale:.3,rotate:-40},{opacity:1,scale:1,rotate:0,duration:.5,ease:"back.out(3)"},2.7273)
+        .to(badge,{rotate:12,duration:.16,ease:"power2.inOut"},3.2727)
+        .to(badge,{rotate:-9,duration:.16,ease:"power2.inOut"},3.4364)
+        .to(badge,{rotate:0,duration:.2,ease:"power2.out"},3.6000);
+      window.__timelines["free-s02"]=tl; tl.seek(0);
+    })();
+  </script>
+</template>
+</body>
+</html>

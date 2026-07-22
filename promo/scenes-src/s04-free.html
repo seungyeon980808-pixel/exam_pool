@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=1920, height=1080" /><title>ExamPool s04</title></head>
+<body>
+<template>
+  <style>
+    .ep4 { position:absolute; inset:0; overflow:hidden; background:var(--rf-bg,#010102);
+      color:#fff; font-family:"Pretendard", system-ui, sans-serif; }
+    .ep4 .kick { position:absolute; top:6%; left:4%; font-family:ui-monospace,Menlo,monospace;
+      font-size:21px; font-weight:700; letter-spacing:.2em; color:rgba(255,255,255,.34); }
+    .ep4 .h { position:absolute; top:11.5%; left:4%; font-size:110px; font-weight:800; letter-spacing:-.05em; }
+    .ep4 .panel { position:absolute; left:4%; right:4%; top:34%;
+      background:#0c0d11; border:1px solid rgba(255,255,255,.10); border-radius:14px;
+      overflow:hidden; box-shadow:0 50px 120px rgba(0,0,0,.8); will-change:transform,opacity; }
+    .ep4 .bar { display:flex; align-items:center; padding:24px 32px; font-size:34px; font-weight:700;
+      letter-spacing:-.02em; border-bottom:1px solid rgba(255,255,255,.10);
+      background:linear-gradient(90deg, color-mix(in srgb, var(--rf-accent,#5e6ad2) 26%, transparent), transparent); }
+    .ep4 .bar .t { margin-left:auto; font-family:ui-monospace,Menlo,monospace; font-size:23px;
+      font-weight:600; color:rgba(255,255,255,.46); }
+    .ep4 .row { display:grid; grid-template-columns:280px 1fr 250px; align-items:center;
+      border-bottom:1px solid rgba(255,255,255,.06); will-change:transform,opacity; }
+    .ep4 .row > div { padding:30px 32px; }
+    .ep4 .std { font-family:ui-monospace,Menlo,monospace; font-size:27px; font-weight:700;
+      color:var(--rf-accent,#5e6ad2); }
+    .ep4 .p { font-size:38px; font-weight:600; letter-spacing:-.03em; }
+    .ep4 .ev { display:inline-flex; align-items:center; font-size:25px; font-weight:700;
+      color:#3fb950; background:rgba(63,185,80,.12); border:1px solid rgba(63,185,80,.36);
+      border-radius:999px; padding:9px 22px; }
+  </style>
+  <div class="ep4" data-rf-fragment-version="1.0" data-composition-id="free-s04">
+    <div class="kick">EXAMPOOL / 04</div>
+    <div class="h">근거와 함께 쌓는다</div>
+    <div class="panel">
+      <div class="bar">명제 은행<span class="t">SCIENCE / 3학년</span></div>
+      <div class="row"><div class="std">9과07-02</div><div class="p">전류의 세기는 전압에 비례한다</div><div><span class="ev">교과서 p.142</span></div></div>
+      <div class="row"><div class="std">9과07-03</div><div class="p">저항이 커지면 전류는 작아진다</div><div><span class="ev">교과서 p.145</span></div></div>
+      <div class="row"><div class="std">9과06-01</div><div class="p">기체의 압력은 온도에 비례한다</div><div><span class="ev">수업 기록</span></div></div>
+    </div>
+  </div>
+  <script>
+    (() => {
+      const r = document.querySelector('[data-composition-id="free-s04"]');
+      if (!r) return;
+      const kick=r.querySelector(".kick"), h=r.querySelector(".h"), panel=r.querySelector(".panel");
+      const rows=Array.from(r.querySelectorAll(".row"));
+      const evs=Array.from(r.querySelectorAll(".ev"));
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      tl.set(rows,{opacity:0,x:-46}).set(evs,{opacity:0,scale:.6,transformOrigin:"left center"})
+        .fromTo(kick,{opacity:0,x:-18},{opacity:1,x:0,duration:.26,ease:"power3.out"},0)
+        .fromTo(h,{opacity:0,y:28},{opacity:1,y:0,duration:.34,ease:"expo.out"},0)
+        .fromTo(panel,{opacity:0,y:70,scale:.97},{opacity:1,y:0,scale:1,duration:.44,ease:"expo.out"},0.2727)
+        .to(rows[0],{opacity:1,x:0,duration:.26,ease:"expo.out"},0.5455)
+        .to(rows[1],{opacity:1,x:0,duration:.26,ease:"expo.out"},0.8182)
+        .to(rows[2],{opacity:1,x:0,duration:.26,ease:"expo.out"},1.0909)
+        .to(evs[0],{opacity:1,scale:1,duration:.24,ease:"back.out(3)"},1.3636)
+        .to(evs[1],{opacity:1,scale:1,duration:.24,ease:"back.out(3)"},1.6364)
+        .to(evs[2],{opacity:1,scale:1,duration:.24,ease:"back.out(3)"},1.9091);
+      window.__timelines["free-s04"]=tl; tl.seek(0);
+    })();
+  </script>
+</template>
+</body>
+</html>

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=1920, height=1080" /><title>ExamPool s03</title></head>
+<body>
+<template>
+  <style>
+    .ep3 { position:absolute; inset:0; overflow:hidden; background:var(--rf-bg,#010102);
+      color:#fff; font-family:"Pretendard", system-ui, sans-serif; }
+    .ep3 .stage { position:absolute; inset:0; will-change:transform; }
+    .ep3 .beam { position:absolute; left:50%; top:50%; width:160%; height:560px;
+      transform:translate(-50%,-50%) rotate(-14deg); transform-origin:center;
+      background:linear-gradient(90deg, transparent, color-mix(in srgb, var(--rf-accent,#828fff) 46%, transparent), transparent);
+      filter:blur(60px); opacity:0; }
+    .ep3 .flash { position:absolute; inset:0; background:var(--rf-accent,#828fff); opacity:0; }
+    .ep3 .wrap { position:absolute; left:4%; right:4%; top:50%; transform:translateY(-50%); }
+    .ep3 .ico { position:absolute; right:6%; top:50%; transform:translateY(-50%);
+      width:300px; height:300px; border-radius:68px; overflow:hidden; opacity:0;
+      box-shadow:0 40px 100px rgba(0,0,0,.9), 0 0 0 1px rgba(255,255,255,.12); }
+    .ep3 .ico svg { display:block; width:100%; height:100%; }
+    .ep3 .rule { width:0; height:17px; background:var(--rf-accent,#828fff); margin-bottom:34px; }
+    .ep3 .name { font-size:300px; line-height:1.06; }
+    .ep3 .name i { display:inline-block; font-style:normal; font-size:1em; font-weight:800;
+      letter-spacing:-.062em; line-height:1.06; opacity:0; will-change:transform, opacity; }
+    .ep3 .sub { margin-top:22px; font-size:74px; font-weight:600; letter-spacing:-.03em;
+      color:var(--rf-accent,#828fff); }
+  </style>
+  <div class="ep3" data-rf-fragment-version="1.0" data-composition-id="free-s03">
+    <div class="stage">
+      <div class="beam" aria-hidden="true"></div>
+      <div class="ico" aria-label="ExamPool 아이콘"><svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg"><rect width="120" height="120" fill="#d8ecfd"/><g transform="rotate(-11 38 72)"><rect x="25" y="57" width="27" height="31" rx="2.5" fill="#f6f1e3" stroke="#ddd3ba" stroke-width="1.3"/><path d="M45 57 L52 64 L45 64 Z" fill="#e6dcc4"/><line x1="29" y1="63" x2="48" y2="63" stroke="#57544d" stroke-width="1.6"/><rect x="29" y="68" width="19" height="11" rx="1.5" fill="#fffdf7" stroke="#a79f8c" stroke-width="1.2"/></g><g transform="rotate(12 79 74)"><rect x="66" y="60" width="25" height="29" rx="2.5" fill="#f6f1e3" stroke="#ddd3ba" stroke-width="1.3"/><path d="M84 60 L91 67 L84 67 Z" fill="#e6dcc4"/><line x1="70" y1="66" x2="87" y2="66" stroke="#57544d" stroke-width="1.6"/><rect x="70" y="71" width="17" height="10" rx="1.5" fill="#fffdf7" stroke="#a79f8c" stroke-width="1.2"/></g><path d="M0 80 q15 -7 30 0 t30 0 t30 0 t30 0 v40 h-120 Z" fill="#2f7fce" fill-opacity="0.86"/><path d="M0 80 q15 -7 30 0 t30 0 t30 0 t30 0" fill="none" stroke="#7fb8ec" stroke-width="2.5" stroke-linecap="round"/><g transform="rotate(34 73 36)"><rect x="58" y="14" width="30" height="39" rx="3" fill="#f6f1e3" stroke="#ddd3ba" stroke-width="1.4"/><path d="M81 14 L88 21 L81 21 Z" fill="#e6dcc4"/><line x1="62" y1="21" x2="84" y2="21" stroke="#57544d" stroke-width="1.9"/><rect x="62" y="26" width="22" height="13" rx="2" fill="#fffdf7" stroke="#a79f8c" stroke-width="1.3"/><line x1="62" y1="45" x2="80" y2="45" stroke="#8a867c" stroke-width="1.6"/></g><circle cx="82" cy="76" r="4" fill="#bfe0fb"/><circle cx="90" cy="70" r="2.8" fill="#bfe0fb"/><circle cx="86" cy="66" r="2" fill="#eaf6ff"/></svg></div>
+      <div class="wrap">
+        <div class="rule" aria-hidden="true"></div>
+        <div class="name" aria-label="ExamPool"><i>E</i><i>x</i><i>a</i><i>m</i><i>P</i><i>o</i><i>o</i><i>l</i></div>
+        <div class="sub">근거 있는 출제</div>
+      </div>
+    </div>
+    <div class="flash" aria-hidden="true"></div>
+  </div>
+  <script>
+    (() => {
+      const r = document.querySelector('[data-composition-id="free-s03"]');
+      if (!r) return;
+      const stage=r.querySelector(".stage"), beam=r.querySelector(".beam"), flash=r.querySelector(".flash"),
+            rule=r.querySelector(".rule"), sub=r.querySelector(".sub"), ico=r.querySelector(".ico");
+      const chars=Array.from(r.querySelectorAll(".name i"));
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      tl.fromTo(stage,{scale:1.0},{scale:1.05,duration:2.2,ease:"none"},0)
+        .fromTo(beam,{opacity:0,xPercent:-30},{opacity:1,xPercent:0,duration:1.0,ease:"power2.out"},0)
+        .to(rule,{width:250,duration:.34,ease:"expo.out"},0)
+        .fromTo(chars,{opacity:0,y:190,rotate:(i)=>i%2?12:-12,scale:.7,transformOrigin:"50% 100%"},
+                      {opacity:1,y:0,rotate:0,scale:1,duration:.72,ease:"back.out(2.1)",stagger:.045},0.5455)
+        .fromTo(flash,{opacity:0},{opacity:.19,duration:.05,ease:"none"},0.5455)
+        .to(flash,{opacity:0,duration:.24,ease:"power2.out"},0.5955)
+        .fromTo(sub,{opacity:0,y:30},{opacity:1,y:0,duration:.36,ease:"power3.out"},1.0909)
+        .fromTo(ico,{opacity:0,scale:.55,rotate:-18},{opacity:1,scale:1,rotate:0,duration:.6,ease:"back.out(2.4)"},1.0909);
+      window.__timelines["free-s03"]=tl; tl.seek(0);
+    })();
+  </script>
+</template>
+</body>
+</html>

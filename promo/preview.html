@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>ExamPool 데모 영상 미리보기</title>
+<style>
+  body{margin:0;background:#0d1117;color:#e6edf3;font-family:system-ui,"Malgun Gothic",sans-serif}
+  .wrap{max-width:1100px;margin:0 auto;padding:24px}
+  h1{font-size:18px;font-weight:600;margin:0 0 6px}
+  .meta{color:#8b949e;font-size:13px;margin:0 0 14px}
+  .warn{background:#2b2113;border:1px solid #6b4b16;color:#e3b341;
+        border-radius:6px;padding:10px 14px;font-size:13.5px;margin:0 0 14px}
+  video{width:100%;border-radius:8px;border:1px solid #30363d;background:#000;display:block}
+  .row{margin-top:14px;font-size:13px;color:#8b949e}
+  a{color:#79b8ff}
+  code{background:#161b22;border:1px solid #21262d;border-radius:4px;padding:2px 6px;font-size:12px}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>ExamPool 데모 영상</h1>
+    <p class="meta">1920×1080 · 30fps · 28.4초 · 110BPM 비트 동기 · 배경음악 + 효과음 포함</p>
+
+    <div class="warn">
+      🔊 <b>재생 버튼을 직접 눌러주세요.</b> 크롬은 소리가 있는 영상의 자동재생을 막습니다.
+      소리가 안 들리면 영상 위 스피커 아이콘이 음소거(🔇)인지 확인하세요.
+    </div>
+
+    <!-- autoplay 제거: 사용자가 직접 재생해야 소리가 나옵니다 -->
+    <video src="out/exampool-promo.mp4" controls preload="auto" playsinline></video>
+
+    <div class="row">
+      재생이 안 되면 <a href="out/exampool-promo.mp4" download>영상 파일 직접 내려받기</a> ·
+      파일 위치: <code>32_exam_pool\promo\out\exampool-promo.mp4</code>
+    </div>
+  </div>
+</body>
+</html>

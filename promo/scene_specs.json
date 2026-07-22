@@ -1,0 +1,242 @@
+{
+  "version": "1.0.0",
+  "projectId": "exampool-promo",
+  "scenes": [
+    {
+      "sceneId": "s01",
+      "sceneNumber": 1,
+      "narration": " ",
+      "narration_tts": " ",
+      "altText": "출제 과정에서 교과서 근거를 매번 다시 찾아야 하는 고통을 드러내는 오프닝.",
+      "layout": "free",
+      "mood": "urgent",
+      "reveal": "dramatic_pause",
+      "emphasis": "quote",
+      "headline": "출제의 현실",
+      "items": [],
+      "source": "ExamPool",
+      "visual_kind": "none",
+      "kenBurns": {
+        "enabled": false,
+        "zoomFactor": 1,
+        "zoomDirection": "in",
+        "panDirection": "none"
+      },
+      "subtitleMode": "keyword",
+      "ost": 0,
+      "sourceHtml": "scenes-src/s01-free.html"
+    },
+    {
+      "sceneId": "s02",
+      "sceneNumber": 2,
+      "narration": " ",
+      "narration_tts": " ",
+      "altText": "출제자가 반복해서 겪는 세 가지 고통을 번호 목록으로 제시하는 장면.",
+      "layout": "free",
+      "mood": "suspense",
+      "reveal": "stagger",
+      "emphasis": "sequence",
+      "headline": "매번 반복되는 세 가지",
+      "items": [],
+      "source": "출제 과정 분석",
+      "visual_kind": "none",
+      "kenBurns": {
+        "enabled": false,
+        "zoomFactor": 1,
+        "zoomDirection": "in",
+        "panDirection": "none"
+      },
+      "subtitleMode": "keyword",
+      "ost": 1,
+      "sourceHtml": "scenes-src/s02-free.html"
+    },
+    {
+      "sceneId": "s03",
+      "sceneNumber": 3,
+      "narration": " ",
+      "narration_tts": " ",
+      "altText": "제품 이름을 전면에 드러내며 핵심 가치인 근거 있는 출제를 선언하는 전환 장면.",
+      "layout": "free",
+      "mood": "dramatic",
+      "reveal": "zoom_in",
+      "emphasis": "keyword",
+      "headline": "ExamPool",
+      "items": [],
+      "source": "명제 은행 기반 출제 도구",
+      "visual_kind": "none",
+      "kenBurns": {
+        "enabled": false,
+        "zoomFactor": 1,
+        "zoomDirection": "in",
+        "panDirection": "none"
+      },
+      "subtitleMode": "keyword",
+      "ost": 2,
+      "sourceHtml": "scenes-src/s03-free.html"
+    },
+    {
+      "sceneId": "s04",
+      "sceneNumber": 4,
+      "narration": " ",
+      "narration_tts": " ",
+      "altText": "명제 은행에 참 명제와 근거와 오답 변형을 함께 쌓는 구조를 설명하는 장면.",
+      "layout": "free",
+      "mood": "informative",
+      "reveal": "cascade",
+      "emphasis": "sequence",
+      "headline": "명제를 근거와 함께 쌓는다",
+      "items": [],
+      "source": "명제 은행",
+      "visual_kind": "none",
+      "kenBurns": {
+        "enabled": false,
+        "zoomFactor": 1,
+        "zoomDirection": "in",
+        "panDirection": "none"
+      },
+      "subtitleMode": "keyword",
+      "ost": 1,
+      "sourceHtml": "scenes-src/s04-free.html"
+    },
+    {
+      "sceneId": "s05",
+      "sceneNumber": 5,
+      "narration": " ",
+      "narration_tts": " ",
+      "altText": "내장된 성취기준 개수를 큰 숫자로 강조하는 통계 장면.",
+      "layout": "free",
+      "mood": "dramatic",
+      "reveal": "count_up",
+      "emphasis": "number",
+      "headline": "성취기준을 내장했다",
+      "items": [],
+      "source": "2022 개정 중학교 과학",
+      "visual_kind": "none",
+      "kenBurns": {
+        "enabled": false,
+        "zoomFactor": 1,
+        "zoomDirection": "in",
+        "panDirection": "none"
+      },
+      "subtitleMode": "keyword",
+      "ost": 1,
+      "sourceHtml": "scenes-src/s05-free.html"
+    },
+    {
+      "sceneId": "s06",
+      "sceneNumber": 6,
+      "narration": " ",
+      "narration_tts": " ",
+      "altText": "자동 검토 체크리스트가 잡아내는 오류 항목들을 나열하는 장면.",
+      "layout": "free",
+      "mood": "informative",
+      "reveal": "stagger",
+      "emphasis": "keyword",
+      "headline": "출제 오류를 자동으로 잡는다",
+      "items": [],
+      "source": "자동 검토 체크리스트",
+      "visual_kind": "none",
+      "kenBurns": {
+        "enabled": false,
+        "zoomFactor": 1,
+        "zoomDirection": "in",
+        "panDirection": "none"
+      },
+      "subtitleMode": "keyword",
+      "ost": 1,
+      "sourceHtml": "scenes-src/s06-free.html"
+    },
+    {
+      "sceneId": "s07",
+      "sceneNumber": 7,
+      "narration": " ",
+      "narration_tts": " ",
+      "altText": "ExamPool 출력물을 한글에 붙여 넣어 조판이 완료되는 흐름을 대비해 보여 주는 장면.",
+      "layout": "free",
+      "mood": "contemplative",
+      "reveal": "split_reveal",
+      "emphasis": "contrast",
+      "headline": "붙여넣으면 조판 끝",
+      "items": [],
+      "source": "hwppalette 연동",
+      "visual_kind": "none",
+      "kenBurns": {
+        "enabled": false,
+        "zoomFactor": 1,
+        "zoomDirection": "in",
+        "panDirection": "none"
+      },
+      "subtitleMode": "keyword",
+      "ost": 1,
+      "sourceHtml": "scenes-src/s07-free.html"
+    },
+    {
+      "sceneId": "s08",
+      "sceneNumber": 8,
+      "narration": " ",
+      "narration_tts": " ",
+      "altText": "제품 이름과 슬로건으로 마무리하는 엔딩 장면.",
+      "layout": "free",
+      "mood": "dramatic",
+      "reveal": "spotlight",
+      "emphasis": "quote",
+      "headline": "ExamPool",
+      "items": [],
+      "source": "AGPL-3.0 · developed by 박승연",
+      "visual_kind": "none",
+      "kenBurns": {
+        "enabled": false,
+        "zoomFactor": 1,
+        "zoomDirection": "in",
+        "panDirection": "none"
+      },
+      "subtitleMode": "keyword",
+      "ost": 2,
+      "sourceHtml": "scenes-src/s08-free.html"
+    }
+  ],
+  "transitions": [
+    {
+      "from": "s01",
+      "to": "s02",
+      "type": "push-wipe-left",
+      "duration": 0.24
+    },
+    {
+      "from": "s02",
+      "to": "s03",
+      "type": "zoom-punch",
+      "duration": 0.26
+    },
+    {
+      "from": "s03",
+      "to": "s04",
+      "type": "crossfade",
+      "duration": 0.22
+    },
+    {
+      "from": "s04",
+      "to": "s05",
+      "type": "slide_left",
+      "duration": 0.24
+    },
+    {
+      "from": "s05",
+      "to": "s06",
+      "type": "wipe_right",
+      "duration": 0.24
+    },
+    {
+      "from": "s06",
+      "to": "s07",
+      "type": "crossfade",
+      "duration": 0.22
+    },
+    {
+      "from": "s07",
+      "to": "s08",
+      "type": "fade",
+      "duration": 0.3
+    }
+  ]
+}

@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=1920, height=1080" /><title>ExamPool s07</title></head>
+<body>
+<template>
+  <style>
+    .ep7 { position:absolute; inset:0; overflow:hidden; background:var(--rf-bg,#010102);
+      color:#fff; font-family:"Pretendard", system-ui, sans-serif; }
+    .ep7 .kick { position:absolute; top:6%; left:4%; font-family:ui-monospace,Menlo,monospace;
+      font-size:21px; font-weight:700; letter-spacing:.2em; color:rgba(255,255,255,.34); }
+    .ep7 .h { position:absolute; top:11.5%; left:4%; font-size:110px; font-weight:800; letter-spacing:-.05em; }
+    .ep7 .cols { position:absolute; left:4%; right:4%; top:36%; bottom:13%;
+      display:grid; grid-template-columns:1fr 190px 1fr; }
+    .ep7 .card { border-radius:14px; overflow:hidden; border:1px solid rgba(255,255,255,.10);
+      box-shadow:0 44px 100px rgba(0,0,0,.8); will-change:transform,opacity; }
+    .ep7 .a { background:#0c0d11; }
+    .ep7 .b { background:#f7f5ef; color:#16161a; }
+    .ep7 .cap { padding:16px 26px; font-family:ui-monospace,Menlo,monospace; font-size:23px;
+      font-weight:700; letter-spacing:.12em; border-bottom:1px solid rgba(255,255,255,.10); color:rgba(255,255,255,.5); }
+    .ep7 .b .cap { border-bottom:1px solid rgba(0,0,0,.12); color:rgba(0,0,0,.45); }
+    .ep7 .code { padding:26px; font-family:ui-monospace,Menlo,monospace; font-size:32px;
+      line-height:1.66; white-space:pre-wrap; color:#c9d1e4; }
+    .ep7 .code b { color:var(--rf-accent,#5e6ad2); }
+    .ep7 .doc { padding:28px 32px; font-size:32px; line-height:1.68; }
+    .ep7 .doc .q { font-weight:700; margin-bottom:14px; }
+    .ep7 .doc .bg { border:2px solid #a9a396; border-radius:4px; padding:14px 18px; margin:12px 0; font-size:29px; }
+    .ep7 .mid { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; }
+    .ep7 .arrow { font-size:44px; font-weight:800; color:var(--rf-accent,#5e6ad2); }
+    .ep7 .key { font-family:ui-monospace,Menlo,monospace; font-size:25px; font-weight:700;
+      background:var(--rf-accent,#5e6ad2); color:#fff; border-radius:8px; padding:11px 18px; }
+  </style>
+  <div class="ep7" data-rf-fragment-version="1.0" data-composition-id="free-s07">
+    <div class="kick">EXAMPOOL / 07</div>
+    <div class="h">붙여넣으면 끝</div>
+    <div class="cols">
+      <div class="card a">
+        <div class="cap">EXAMPOOL 출력</div>
+        <div class="code"><b>질문:</b> 옳지 않은 것은?
+<b>보기:</b> ㄱ. 전류는 전압에 비례
+ㄴ. 저항이 크면 전류 증가
+<b>선지:</b> ① ㄱ ② ㄴ ③ ㄱ,ㄴ</div>
+      </div>
+      <div class="mid"><div class="arrow">→</div><div class="key">Ctrl+T</div></div>
+      <div class="card b">
+        <div class="cap">한글 조판 결과</div>
+        <div class="doc">
+          <div class="q">17. 옳지 <u>않은</u> 것은? [3점]</div>
+          <div class="bg">ㄱ. 전류는 전압에 비례<br />ㄴ. 저항이 크면 전류 증가</div>
+          <div>① ㄱ &nbsp; ② ㄴ &nbsp; ③ ㄱ, ㄴ</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    (() => {
+      const r = document.querySelector('[data-composition-id="free-s07"]');
+      if (!r) return;
+      const kick=r.querySelector(".kick"), h=r.querySelector(".h"),
+            a=r.querySelector(".a"), bb=r.querySelector(".b"),
+            arrow=r.querySelector(".arrow"), key=r.querySelector(".key");
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      tl.fromTo(kick,{opacity:0,x:-18},{opacity:1,x:0,duration:.26,ease:"power3.out"},0)
+        .fromTo(h,{opacity:0,y:28},{opacity:1,y:0,duration:.34,ease:"expo.out"},0)
+        .fromTo(a,{opacity:0,x:-80,rotate:-1.5},{opacity:1,x:0,rotate:0,duration:.4,ease:"expo.out"},0.2727)
+        .fromTo(arrow,{opacity:0,scale:.4},{opacity:1,scale:1,duration:.26,ease:"back.out(3)"},0.5455)
+        .fromTo(key,{opacity:0,y:16},{opacity:1,y:0,duration:.26,ease:"back.out(2)"},0.8182)
+        .fromTo(bb,{opacity:0,x:80,rotate:1.5},{opacity:1,x:0,rotate:0,duration:.4,ease:"expo.out"},1.0909);
+      window.__timelines["free-s07"]=tl; tl.seek(0);
+    })();
+  </script>
+</template>
+</body>
+</html>

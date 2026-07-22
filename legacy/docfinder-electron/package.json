@@ -1,0 +1,32 @@
+{
+  "name": "docfinder",
+  "version": "1.0.0",
+  "description": "로컬 전용 PDF 규정 빠른검색기 (DocFinder)",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test:index": "node test/run-index.js",
+    "build": "electron-builder --win"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "pdfjs-dist": "3.11.174"
+  },
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "kr.local.docfinder",
+    "productName": "DocFinder",
+    "files": [
+      "src/**/*",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    }
+  }
+}

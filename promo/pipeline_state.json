@@ -1,0 +1,13 @@
+{
+  "completedSteps": [
+    "tts",
+    "images"
+  ],
+  "failedSteps": {},
+  "stepHashes": {
+    "tts": "94ea07b29f1c2625e04ab8224ee2e4009c93fc4bf5628300638c56565eb29f96",
+    "images": "bfbe89943786ae73e0ea191509e873b964dad1dd1c415ef9a94e3cbe5ec9caa8"
+  },
+  "startedAt": "2026-07-22T11:57:13.166Z",
+  "finishedAt": "2026-07-22T11:57:16.733Z"
+}

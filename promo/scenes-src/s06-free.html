@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=1920, height=1080" /><title>ExamPool s06</title></head>
+<body>
+<template>
+  <style>
+    .ep6 { position:absolute; inset:0; overflow:hidden; background:var(--rf-bg,#010102);
+      color:#fff; font-family:"Pretendard", system-ui, sans-serif; }
+    .ep6 .kick { position:absolute; top:6%; left:4%; font-family:ui-monospace,Menlo,monospace;
+      font-size:21px; font-weight:700; letter-spacing:.2em; color:rgba(255,255,255,.34); }
+    .ep6 .h { position:absolute; top:11.5%; left:4%; font-size:110px; font-weight:800; letter-spacing:-.05em; }
+    .ep6 .panel { position:absolute; left:4%; right:4%; top:36%;
+      background:#0c0d11; border:1px solid rgba(255,255,255,.10); border-radius:14px;
+      overflow:hidden; box-shadow:0 50px 120px rgba(0,0,0,.8); }
+    .ep6 .bar { display:flex; align-items:center; padding:24px 32px; font-size:34px; font-weight:700;
+      border-bottom:1px solid rgba(255,255,255,.10);
+      background:linear-gradient(90deg, color-mix(in srgb, var(--rf-accent,#5e6ad2) 26%, transparent), transparent); }
+    .ep6 .bar .t { margin-left:auto; font-family:ui-monospace,Menlo,monospace; font-size:23px; color:rgba(255,255,255,.46); }
+    .ep6 .it { display:flex; align-items:center; gap:30px; padding:32px; font-size:48px; font-weight:600;
+      letter-spacing:-.035em; border-bottom:1px solid rgba(255,255,255,.06); will-change:transform,opacity; }
+    .ep6 .bx { width:58px; height:58px; border-radius:10px; flex:none; display:flex;
+      align-items:center; justify-content:center; }
+    .ep6 .ok .bx { background:#1f7a3f; }
+    .ep6 .tick { width:28px; height:15px; border-left:6px solid #fff; border-bottom:6px solid #fff;
+      transform:rotate(-45deg) translate(2px,-4px); }
+    .ep6 .bad .bx { background:#e5484d; font-size:34px; font-weight:800; }
+    .ep6 .bad { color:#ff7b80; }
+    .ep6 .fix { margin-left:auto; font-size:30px; font-weight:700; color:#ff7b80;
+      background:rgba(229,72,77,.14); border:1px solid rgba(229,72,77,.44); border-radius:999px; padding:9px 24px; }
+  </style>
+  <div class="ep6" data-rf-fragment-version="1.0" data-composition-id="free-s06">
+    <div class="kick">EXAMPOOL / 06</div>
+    <div class="h">오류는 기계가 잡는다</div>
+    <div class="panel">
+      <div class="bar">검토 체크리스트<span class="t">SET / 1학기 중간</span></div>
+      <div class="it ok"><div class="bx"><div class="tick"></div></div><div>모든 선지에 근거 연결</div></div>
+      <div class="it ok"><div class="bx"><div class="tick"></div></div><div>정답 지정 완료</div></div>
+      <div class="it bad"><div class="bx">!</div><div>배점 합 불일치</div><div class="fix">98점 / 100점</div></div>
+    </div>
+  </div>
+  <script>
+    (() => {
+      const r = document.querySelector('[data-composition-id="free-s06"]');
+      if (!r) return;
+      const kick=r.querySelector(".kick"), h=r.querySelector(".h"), panel=r.querySelector(".panel");
+      const its=Array.from(r.querySelectorAll(".it"));
+      const fix=r.querySelector(".fix");
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      tl.set(its,{opacity:0,x:-46}).set(fix,{opacity:0,scale:.6,transformOrigin:"right center"})
+        .fromTo(kick,{opacity:0,x:-18},{opacity:1,x:0,duration:.26,ease:"power3.out"},0)
+        .fromTo(h,{opacity:0,y:28},{opacity:1,y:0,duration:.34,ease:"expo.out"},0)
+        .fromTo(panel,{opacity:0,y:70,scale:.97},{opacity:1,y:0,scale:1,duration:.44,ease:"expo.out"},0.2727)
+        .to(its[0],{opacity:1,x:0,duration:.26,ease:"expo.out"},0.5455)
+        .to(its[1],{opacity:1,x:0,duration:.26,ease:"expo.out"},0.8182)
+        .to(its[2],{opacity:1,x:0,duration:.26,ease:"expo.out"},1.0909)
+        .to(fix,{opacity:1,scale:1,duration:.3,ease:"back.out(3)"},1.6364);
+      window.__timelines["free-s06"]=tl; tl.seek(0);
+    })();
+  </script>
+</template>
+</body>
+</html>
