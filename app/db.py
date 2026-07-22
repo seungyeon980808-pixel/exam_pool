@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS evidence (
 
 CREATE TABLE IF NOT EXISTS question (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    title          TEXT NOT NULL DEFAULT '',
     qtype          TEXT NOT NULL,
     is_negative    INTEGER NOT NULL DEFAULT 0,
     passage        TEXT NOT NULL DEFAULT '',
@@ -152,10 +153,18 @@ def init_db() -> None:
     conn = connect()
     try:
         conn.executescript(SCHEMA)
+        _migrate(conn)
         conn.commit()
         _seed_standards(conn)
     finally:
         conn.close()
+
+
+# ===== 기존 DB 보정 (컬럼 추가) =====
+def _migrate(conn: sqlite3.Connection) -> None:
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(question)")}
+    if "title" not in cols:
+        conn.execute("ALTER TABLE question ADD COLUMN title TEXT NOT NULL DEFAULT ''")
 
 
 # ===== 성취기준 seed 적재 (첫 실행 시 1회) =====

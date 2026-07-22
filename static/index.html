@@ -31,7 +31,9 @@
     </div>
 
     <div class="nz-menu">
-      <div class="nz-mh">성취기준
+      <div class="nz-mh">
+        <button class="foldbtn" onclick="EP.foldMenu()" title="접기/펴기">◧</button>
+        <span>성취기준</span>
         <button class="nz-tb mini" style="margin-left:auto" onclick="EP.openStdTable()">전체보기</button>
       </div>
       <input class="nz-treefilter" id="treeFilter" placeholder="단원·성취기준 검색" oninput="EP.filterTree()" />
@@ -59,6 +61,7 @@
 
       <!-- ============ 명제 은행 ============ -->
       <section id="tab-bank">
+        <div class="nz-scopebar"></div>
         <div class="nz-h"><b>명제 은행 조회</b></div>
         <div id="stdBanner" class="nz-banner hidden"></div>
 
@@ -102,71 +105,108 @@
 
       <!-- ============ 문항 설계 ============ -->
       <section id="tab-question" hidden>
-        <div class="nz-h"><b>문항 설계</b></div>
 
-        <div class="nz-flt">
-          <span class="nz-lb">유형</span>
-          <select class="nz-sel" id="qtype" style="min-width:110px" onchange="EP.onTypeChange()">
-            <option>정답형</option><option>합답형</option>
-          </select>
-          <label class="nz-lb"><input type="checkbox" id="isNeg" /> 부정 발문(옳지 <b>않은</b>)</label>
-          <span class="nz-lb">성취기준</span>
-          <select class="nz-sel" id="q-std2"></select>
-          <span class="nz-lb">난이도</span>
-          <select class="nz-sel" id="qdiff" style="min-width:70px"><option>상</option><option selected>중</option><option>하</option></select>
-          <span class="nz-lb">배점</span>
-          <input class="nz-inp" id="qpoints" value="3" style="min-width:52px" />
+        <div class="nz-scopebar"></div>
+        <!-- ▣ 근거 검색 — 화면 위쪽 1/3 을 차지한다 (출제의 근거가 먼저다) -->
+        <div class="nz-h"><b>근거 검색</b>
+          <span class="nz-sub" style="margin:0 0 0 8px">교과서·교육과정 · 기출</span>
+          <span style="margin-left:auto;display:flex;gap:5px;align-items:center">
+            <input class="nz-inp" id="evSearch" style="min-width:260px"
+                   placeholder="키워드 (여러 개는 공백으로) 예: 빛 굴절" onkeydown="if(event.key==='Enter')EP.searchEvidence()" />
+            <button class="nz-go" onclick="EP.searchEvidence()">검색</button>
+          </span>
         </div>
+        <div class="nz-evzone">
+          <div class="nz-evlist" id="evList">
+            <p class="nz-sub" style="padding:12px">키워드를 넣으면 교과서·교육과정에서 근거를 찾습니다.</p>
+          </div>
+          <div class="nz-evview">
+            <div class="nz-viewer-head"><span id="evViewTitle">원문 미리보기</span>
+              <span style="margin-left:auto;display:flex;gap:4px">
+                <button class="nz-tb mini" onclick="EP.evViewPage(-1)">◀</button>
+                <button class="nz-tb mini" onclick="EP.evViewPage(1)">▶</button>
+              </span>
+            </div>
+            <div class="nz-viewer-body" id="evViewBody">
+              <p class="nz-sub" style="padding:16px;text-align:center">검색 결과를 클릭하면 교과서 원문이 여기 뜹니다.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ▣ 문항 설계 -->
+        <div class="nz-h" style="margin-top:14px"><b>문항 설계</b>
+          <input class="nz-inp" id="qtitle" style="min-width:280px;margin-left:10px"
+                 placeholder="문제 이름 (예: 빛의 굴절 — 오개념 판별)  ※ 시험지에 인쇄되지 않음" />
+          <span style="margin-left:auto;display:flex;gap:5px">
+            <button class="nz-tb" onclick="EP.resetQuestionForm()">새 문항</button>
+            <button class="nz-tb" onclick="EP.checkQuestionDraft()">검토</button>
+            <button class="nz-tb blu" onclick="EP.saveQuestion()">문항 저장</button>
+          </span>
+        </div>
+        <div id="qCheckResult"></div>
 
         <div class="nz-cols">
           <div class="nz-col-main">
-            <div class="nz-fr"><label>지문</label><textarea id="qpassage" placeholder="다음은 ~에 대한 설명이다. (없으면 비움)"></textarea></div>
-            <div class="nz-fr"><label>자료</label><input id="qmaterial" placeholder="그림 파일명(5E 산출물) 또는 표·설명 텍스트" /></div>
-            <div class="nz-fr"><label><span class="req">*</span>발문</label><textarea id="qask" placeholder="옳은 것만을 〈보기〉에서 있는 대로 고른 것은?"></textarea></div>
 
-            <div id="bogiBox" class="hidden">
-              <p class="nz-sub">보기 (합답형) — 명제/변형에서 가져오면 근거가 함께 붙습니다</p>
-              <div id="bogiRows"></div>
-              <button class="nz-tb" onclick="EP.addBogi()">＋ 보기 추가</button>
+            <!-- 실제 시험지에 인쇄되는 부분 -->
+            <div class="nz-print">
+              <div class="nz-secbar print">시험지에 인쇄되는 내용</div>
+              <div class="nz-secbody">
+                <div class="nz-fr"><label>지문</label><textarea id="qpassage" placeholder="다음은 ~에 대한 설명이다. (없으면 비움)"></textarea></div>
+                <div class="nz-fr"><label>자료</label><input id="qmaterial" placeholder="그림 파일명(5E 산출물) 또는 표·설명 텍스트" /></div>
+                <div class="nz-fr"><label><span class="req">*</span>발문</label><textarea id="qask" placeholder="옳은 것만을 〈보기〉에서 있는 대로 고른 것은?"></textarea></div>
+
+                <div id="bogiBox" class="hidden">
+                  <p class="nz-sub">보기 — 명제/변형에서 가져오면 근거가 함께 붙습니다</p>
+                  <div id="bogiRows"></div>
+                  <button class="nz-tb" onclick="EP.addBogi()">＋ 보기 추가</button>
+                </div>
+
+                <p class="nz-sub">선지</p>
+                <div id="choiceRows"></div>
+                <div style="display:flex;gap:5px;margin-top:5px;flex-wrap:wrap;align-items:center">
+                  <button class="nz-tb" onclick="EP.addChoice()">＋ 선지 추가</button>
+                  <span id="presetBox" class="hidden" style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
+                    <span class="nz-lb" style="margin-left:6px">합답형 프리셋</span>
+                    <span id="presetBtns"></span>
+                  </span>
+                </div>
+              </div>
             </div>
 
-            <p class="nz-sub">선지</p>
-            <div id="choiceRows"></div>
-            <div style="display:flex;gap:5px;margin-top:5px">
-              <button class="nz-tb" onclick="EP.addChoice()">＋ 선지 추가</button>
-              <span id="presetBox" class="hidden" style="display:flex;gap:5px;align-items:center">
-                <span class="nz-lb" style="margin-left:8px">프리셋</span>
-                <button class="nz-tb" onclick="EP.applyPreset('A')">A</button>
-                <button class="nz-tb" onclick="EP.applyPreset('B')">B</button>
-                <button class="nz-tb" onclick="EP.applyPreset('C')">C</button>
-              </span>
+            <!-- 인쇄되지 않는 관리 정보 -->
+            <div class="nz-meta">
+              <div class="nz-secbar meta">인쇄되지 않는 관리 정보</div>
+              <div class="nz-secbody">
+                <div class="nz-fr">
+                  <label>유형</label>
+                  <select id="qtype" style="max-width:110px" onchange="EP.onTypeChange()"><option>정답형</option><option>합답형</option></select>
+                  <label style="width:auto;margin-left:6px"><input type="checkbox" id="isNeg" /> 부정 발문(옳지 <b>않은</b>)</label>
+                </div>
+                <div class="nz-fr"><label>성취기준</label><select id="q-std2"></select></div>
+                <div class="nz-fr">
+                  <label>난이도</label>
+                  <select id="qdiff" style="max-width:80px"><option>상</option><option selected>중</option><option>하</option></select>
+                  <label style="width:auto;margin-left:6px">배점</label>
+                  <input id="qpoints" value="3" style="max-width:70px" />
+                </div>
+                <div class="nz-fr"><label>출제 의도</label><input id="qintent" placeholder="예: 오개념(속력 불변) 판별" /></div>
+              </div>
             </div>
-
-            <div class="nz-fr" style="margin-top:10px"><label>출제 의도</label><input id="qintent" placeholder="예: 오개념(속력 불변) 판별" /></div>
-
-            <div class="nz-fbtn" style="margin-top:10px">
-              <button class="nz-tb" onclick="EP.checkQuestionDraft()">검토</button>
-              <button class="nz-tb blu" onclick="EP.saveQuestion()">문항 저장</button>
-            </div>
-            <div id="qCheckResult"></div>
           </div>
 
           <div class="nz-col-side">
             <p class="nz-sub">명제 은행에서 가져오기</p>
             <input class="nz-inp" id="pickSearch" placeholder="명제 검색" style="width:100%" onkeydown="if(event.key==='Enter')EP.loadPicker()" />
             <div id="pickerList" class="nz-picker"></div>
-
-            <p class="nz-sub" style="margin-top:12px">근거 검색 (교과서·교육과정)</p>
-            <input class="nz-inp" id="evSearch" placeholder="예: 빛 굴절" style="width:100%" onkeydown="if(event.key==='Enter')EP.searchEvidence()" />
-            <div id="evList" class="nz-picker"></div>
           </div>
         </div>
 
-        <div class="nz-h" style="margin-top:18px"><b>문항 은행</b></div>
+        <div class="nz-h" style="margin-top:16px"><b>문항 은행</b></div>
         <p class="nz-cnt">문항 목록 &nbsp;Total <b id="qcnt">0</b></p>
         <table class="nz-t">
           <thead><tr>
-            <th style="width:34px">순번</th><th style="width:60px">유형</th><th>발문</th>
+            <th style="width:34px">순번</th><th style="width:170px">문제 이름</th><th style="width:56px">유형</th><th>발문</th>
             <th style="width:80px">성취기준</th><th style="width:44px">난이도</th><th style="width:44px">배점</th>
             <th style="width:130px">관리</th>
           </tr></thead>

@@ -8,17 +8,39 @@ from . import checklist, db, export_palette
 
 router = APIRouter(prefix="/api")
 
-# 합답형 선지 프리셋 (5개년 수능 물리학Ⅰ 74블록 실측 — 2개가 90%)
+# 합답형 선지 프리셋 (2022~2026 수능 물리학Ⅰ 74블록 실측 — 상위 2개가 90%)
+#
+# 세 프리셋 모두 ㄱ·ㄴ·ㄷ 이 각각 3번씩 나와 노출은 균등하다.
+# 차이는 **어느 보기가 '단독 선지'로 나오는가** 뿐이라 이름을 거기서 딴다.
 COMBO_PRESETS = {
-    "A": [["ㄱ"], ["ㄴ"], ["ㄱ", "ㄷ"], ["ㄴ", "ㄷ"], ["ㄱ", "ㄴ", "ㄷ"]],
-    "B": [["ㄱ"], ["ㄷ"], ["ㄱ", "ㄴ"], ["ㄴ", "ㄷ"], ["ㄱ", "ㄴ", "ㄷ"]],
-    "C": [["ㄴ"], ["ㄷ"], ["ㄱ", "ㄴ"], ["ㄱ", "ㄷ"], ["ㄱ", "ㄴ", "ㄷ"]],
+    "A": {
+        "name": "ㄱ·ㄴ 단독형",
+        "desc": "수능 최빈 (34/74)",
+        "combos": [["ㄱ"], ["ㄴ"], ["ㄱ", "ㄷ"], ["ㄴ", "ㄷ"], ["ㄱ", "ㄴ", "ㄷ"]],
+    },
+    "B": {
+        "name": "ㄱ·ㄷ 단독형",
+        "desc": "수능 빈출 (33/74)",
+        "combos": [["ㄱ"], ["ㄷ"], ["ㄱ", "ㄴ"], ["ㄴ", "ㄷ"], ["ㄱ", "ㄴ", "ㄷ"]],
+    },
+    "C": {
+        "name": "ㄴ·ㄷ 단독형",
+        "desc": "변형 (드묾)",
+        "combos": [["ㄴ"], ["ㄷ"], ["ㄱ", "ㄴ"], ["ㄱ", "ㄷ"], ["ㄱ", "ㄴ", "ㄷ"]],
+    },
 }
 
 
 @router.get("/combo-presets")
 def get_combo_presets():
-    return COMBO_PRESETS
+    """각 프리셋의 이름·설명·선지 조합. 화면에서 무엇이 들어가는지 보이도록 미리보기 문자열도 준다."""
+    out = {}
+    for k, v in COMBO_PRESETS.items():
+        out[k] = {
+            **v,
+            "preview": " / ".join("".join(c) for c in v["combos"]),
+        }
+    return out
 
 
 # ===== 문항 =====
@@ -33,6 +55,7 @@ class ChoiceIn(BaseModel):
 
 
 class QuestionIn(BaseModel):
+    title: str = ""
     qtype: str = "정답형"
     is_negative: bool = False
     passage: str = ""
@@ -94,10 +117,10 @@ def create_question(qin: QuestionIn):
     conn = db.connect()
     try:
         cur = conn.execute(
-            "INSERT INTO question (qtype, is_negative, passage, material, ask, bogi_items, "
+            "INSERT INTO question (title, qtype, is_negative, passage, material, ask, bogi_items, "
             " answer, default_points, difficulty, standard_code, intent) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (qin.qtype, int(qin.is_negative), qin.passage.strip(), qin.material.strip(),
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (qin.title.strip(), qin.qtype, int(qin.is_negative), qin.passage.strip(), qin.material.strip(),
              qin.ask.strip(), json.dumps(qin.bogi_items, ensure_ascii=False), qin.answer,
              qin.default_points, qin.difficulty, qin.standard_code, qin.intent.strip()))
         qid = cur.lastrowid
@@ -113,10 +136,10 @@ def update_question(qid: int, qin: QuestionIn):
     conn = db.connect()
     try:
         conn.execute(
-            "UPDATE question SET qtype=?, is_negative=?, passage=?, material=?, ask=?, "
+            "UPDATE question SET title=?, qtype=?, is_negative=?, passage=?, material=?, ask=?, "
             " bogi_items=?, answer=?, default_points=?, difficulty=?, standard_code=?, intent=? "
             "WHERE id=?",
-            (qin.qtype, int(qin.is_negative), qin.passage.strip(), qin.material.strip(),
+            (qin.title.strip(), qin.qtype, int(qin.is_negative), qin.passage.strip(), qin.material.strip(),
              qin.ask.strip(), json.dumps(qin.bogi_items, ensure_ascii=False), qin.answer,
              qin.default_points, qin.difficulty, qin.standard_code, qin.intent.strip(), qid))
         conn.execute("DELETE FROM choice WHERE question_id = ?", (qid,))

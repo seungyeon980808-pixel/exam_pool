@@ -196,15 +196,60 @@ table.nz-t { width: 100%; border-collapse: collapse; font-size: 11.8px; }
   font-size: 12px; border: 1px solid var(--nz-line); border-radius: 3px; padding: 9px; }
 .hidden { display: none; }
 
-/* ===== 성취기준 트리 (내용까지 보이게) ===== */
-.nz-menu { width: 232px; }
+/* ===== 성취기준 트리 (내용 전체가 보이게, 잘리지 않음) ===== */
+.nz-menu { width: 250px; transition: width .15s; }
+.nz-menu.folded { width: 34px; overflow: hidden; }
+.nz-menu.folded .nz-treefilter,
+.nz-menu.folded #tree,
+.nz-menu.folded .nz-mh > *:not(.foldbtn) { display: none; }
+.nz-mh .foldbtn { border: none; background: none; cursor: pointer; color: #4a6ea8;
+  font-size: 13px; padding: 0 3px; }
 .nz-treefilter { width: calc(100% - 16px); margin: 7px 8px; padding: 5px 8px; font-size: 11.5px;
   border: 1px solid #c4cedd; border-radius: 3px; }
-.nz-mi.sub { padding: 5px 10px 5px 20px; line-height: 1.4; }
+.nz-mi { display: flex; align-items: center; gap: 5px; }
+.nz-mi .caret { color: #9aa7ba; font-size: 9px; width: 9px; flex-shrink: 0; }
+.nz-mi .uname { flex: 1; }
+.nz-mi.sub { display: block; padding: 5px 10px 6px 22px; line-height: 1.45; }
 .nz-mi.sub .code { color: var(--nz-code); font-weight: 600; font-size: 11px; display: block; }
 .nz-mi.sub .txt { color: #6b7789; font-size: 11px; display: block; margin-top: 1px;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  white-space: normal; word-break: keep-all; }   /* 잘리지 않고 전부 보인다 */
 .nz-mi.sub.on .txt { color: #33518a; }
+
+/* 출제 범위(단원 선택) */
+.nz-scope { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+.nz-scope label { display: flex; align-items: center; gap: 5px; border: 1px solid var(--nz-line);
+  border-radius: 3px; padding: 5px 9px; font-size: 12px; cursor: pointer; background: #fff; }
+.nz-scope label.on { background: #e3ecf8; border-color: var(--nz-blue); color: var(--nz-navy); font-weight: 500; }
+.nz-scopebar { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #46536b;
+  background: #f7f9fc; border: 1px solid #dbe3ee; border-radius: 3px; padding: 6px 10px; margin-bottom: 9px; }
+.nz-scopebar b { color: var(--nz-navy); }
+
+/* ===== 문항 설계: 근거 검색 존 (화면 위 1/3) ===== */
+.nz-evzone { display: flex; gap: 10px; height: 34vh; min-height: 260px; margin-bottom: 4px; }
+.nz-evlist { width: 46%; min-width: 280px; border: 1px solid var(--nz-line); border-radius: 3px;
+  overflow-y: auto; background: #fff; }
+.nz-evview { flex: 1; border: 1px solid var(--nz-line); border-radius: 3px; display: flex;
+  flex-direction: column; background: #fff; min-width: 0; }
+
+/* 출력/비출력 섹션 구분 */
+.nz-print, .nz-meta { border-radius: 4px; margin-bottom: 12px; overflow: hidden; }
+.nz-print { border: 2px solid #2f6ac0; }
+.nz-meta { border: 1px dashed #b8c2d2; }
+.nz-secbar { font-size: 11.5px; font-weight: 600; padding: 6px 11px; display: flex; align-items: center; gap: 6px; }
+.nz-secbar.print { background: #e3ecf8; color: #1f4e96; }
+.nz-secbar.print::before { content: "인쇄"; background: #2f6ac0; color: #fff; border-radius: 2px;
+  padding: 1px 6px; font-size: 10px; }
+.nz-secbar.meta { background: #f4f6f9; color: #5f6b80; }
+.nz-secbar.meta::before { content: "관리"; background: #8a94a6; color: #fff; border-radius: 2px;
+  padding: 1px 6px; font-size: 10px; }
+.nz-secbody { padding: 11px 12px; background: #fff; }
+
+/* 프리셋 버튼 */
+.nz-preset { border: 1px solid #c4cedd; background: #fff; border-radius: 3px; padding: 5px 10px;
+  font-size: 11.5px; cursor: pointer; text-align: left; line-height: 1.35; }
+.nz-preset:hover { background: #f4f7fb; }
+.nz-preset b { display: block; color: #33518a; }
+.nz-preset span { color: #8a94a6; font-size: 10.5px; }
 
 /* 선택된 성취기준 전문 배너 */
 .nz-banner { background: #eef4fb; border: 1px solid #cfe0f5; border-left: 3px solid var(--nz-blue);
