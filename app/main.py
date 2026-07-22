@@ -9,7 +9,8 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import db, routes_bank, routes_doc, routes_question
+from . import (backup, db, routes_bank, routes_config, routes_doc, routes_lesson,
+               routes_question)
 from .paths import BASE_DIR, STATIC_DIR
 
 
@@ -22,6 +23,8 @@ async def lifespan(app: FastAPI):
         pdf_indexer.ensure_fts(conn)
     finally:
         conn.close()
+    # 스키마가 준비된 뒤에 백업한다. 하루 1회만 뜨므로 켤 때마다 느려지지 않는다.
+    backup.auto_backup_if_due()
     yield
 
 
@@ -30,6 +33,8 @@ app = FastAPI(title="ExamPool", lifespan=lifespan)
 app.include_router(routes_bank.router)
 app.include_router(routes_question.router)
 app.include_router(routes_doc.router)
+app.include_router(routes_lesson.router)
+app.include_router(routes_config.router)
 
 
 # ===== 성취기준 트리 =====

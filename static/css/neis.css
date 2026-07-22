@@ -487,3 +487,45 @@ table.nz-t { width: 100%; border-collapse: collapse; font-size: 11.8px; }
 .nz-refview { padding: 8px; }
 .nz-refview img { width: 100%; height: auto; background: #fff; border: 1px solid var(--nz-line); }
 .nz-refnote { border-top: 1px solid var(--nz-line); padding: 7px 9px; background: #f7f9fc; }
+
+
+/* ===== 세트: 문항별 배점 입력 · 대시보드 보조 ===== */
+.nz-pt { width: 52px; text-align: center; border: 1px solid var(--nz-line); border-radius: 2px;
+  padding: 2px 4px; font-size: 12px; font-family: inherit; }
+.nz-pt:focus { outline: none; border-color: var(--nz-go); }
+.nz-mval .unit { font-size: 12px; color: #8a94a6; font-weight: 400; }
+.nz-msub { margin: 2px 0 0; font-size: 11px; }
+.nz-msub .g { color: var(--nz-green); }
+.nz-msub .r { color: var(--nz-req); }
+
+/* ===== 선지 길이 경고 (문항 설계) ===== */
+.nz-lenhint { min-height: 0; }
+.nz-lenhint .warn { display: inline-block; margin-top: 5px; padding: 4px 8px; border-radius: 2px;
+  background: #fdf3e3; border: 1px solid #eccb92; color: #8a5c11; font-size: 11.5px; }
+
+/* ===== 제출 서류 (정답표 · 이원목적분류표) ===== */
+.nz-repttab { display: flex; gap: 4px; margin-left: 12px; }
+.nz-reph { font-size: 14px; margin: 0 0 8px; color: var(--nz-navy); }
+.nz-rept { font-size: 11.5px; }
+.nz-rept td { vertical-align: top; line-height: 1.45; }
+.nz-repsum { margin-top: 8px; padding: 6px 9px; background: #f4f7fb; border: 1px solid var(--nz-line2);
+  border-radius: 2px; font-size: 11.5px; color: #46536b; }
+.nz-exp { width: 100%; font-family: "IBM Plex Mono", Consolas, monospace; font-size: 11px;
+  border: 1px solid var(--nz-line); border-radius: 2px; padding: 6px; margin-bottom: 8px; }
+
+/* ===== 백업 · 복구 (환경설정) ===== */
+.nz-bklist { border: 1px solid var(--nz-line); border-radius: 3px; background: #fff; }
+.nz-bkrow { display: flex; align-items: center; gap: 10px; padding: 7px 10px;
+  border-bottom: 1px solid #eef1f5; font-size: 11.5px; }
+.nz-bkrow:last-child { border-bottom: none; }
+.nz-bkrow .slot { font-weight: 600; color: var(--nz-navy); min-width: 38px; }
+.nz-bkrow .at { min-width: 130px; color: #46536b; }
+.nz-bkrow .cnt { flex: 1; color: #6b7789; }
+.nz-bkrow .size { color: #8a94a6; min-width: 60px; text-align: right; }
+
+/* ===== 수업 기록 ===== */
+.nz-lessonview { padding: 12px 14px; font-size: 12.5px; line-height: 1.75; color: #2f3a4a;
+  background: #fff; white-space: normal; word-break: break-word; }
+.nz-lessonview mark { padding: 0 1px; border-radius: 2px; }
+.nz-kind { display: inline-block; margin-right: 5px; padding: 0 5px; border-radius: 2px;
+  background: #e8f1e9; color: #2f7a46; font-size: 10.5px; }

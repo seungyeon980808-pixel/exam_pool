@@ -7,6 +7,15 @@
 VALID_QTYPES = ("정답형", "합답형")
 VALID_DIFF = ("상", "중", "하")
 
+# 발문이 부정형임을 알리는 말. '옳지 않은 것은?' 처럼 쓰인다.
+NEGATIVE_WORDS = ("않은", "아닌", "틀린", "옳지 않", "적절하지 않")
+
+# 정답 선지만 유독 길면 내용을 몰라도 답이 보인다. 평균 대비 이 배율을 넘으면 알린다.
+LONG_ANSWER_RATIO = 1.4
+
+# 한 번호에 정답이 이만큼 넘게 몰리면 알린다 (5문항 이상일 때만 본다).
+ANSWER_BIAS_RATIO = 0.4
+
 
 def check_question(q: dict, choices: list[dict]) -> list[dict]:
     """문항 1개 검사. choices 는 이 문항의 선지 목록."""
@@ -58,14 +67,132 @@ def check_question(q: dict, choices: list[dict]) -> list[dict]:
     if not (q.get("standard_code") or "").strip():
         warn("no_standard", "성취기준이 연결되지 않았습니다.")
 
+    issues += _check_negative_mark(q)
+    issues += _check_answer_length(q, choices)
     return issues
 
 
-def check_set(set_row: dict, items: list[dict], target_total=100.0) -> list[dict]:
+# ===== 형식 너머의 검사 — 실제로 사고가 나는 지점 =====
+def _check_negative_mark(q: dict) -> list[dict]:
+    """부정 발문 표시와 실제 발문이 어긋나는지.
+
+    '옳지 않은 것은?'인데 부정 표시가 없으면 출력물에서 강조(밑줄)가 빠지고,
+    반대로 표시만 켜져 있고 발문이 긍정이면 학생이 헷갈린다.
+    """
+    ask = (q.get("ask") or "")
+    looks_negative = any(w in ask for w in NEGATIVE_WORDS)
+    marked = bool(q.get("is_negative"))
+    if looks_negative and not marked:
+        return [{"level": "warn", "code": "negative_unmarked",
+                 "message": "발문이 부정형('옳지 않은' 등)인데 부정 문항 표시가 꺼져 있습니다."}]
+    if marked and not looks_negative:
+        return [{"level": "warn", "code": "negative_mismatch",
+                 "message": "부정 문항으로 표시했는데 발문에 부정어가 보이지 않습니다."}]
+    return []
+
+
+def _check_answer_length(q: dict, choices: list[dict]) -> list[dict]:
+    """정답 선지만 유독 긴 문항.
+
+    합답형(ㄱㄴㄷ 조합)과 그림 선지는 길이가 의미 없으므로 건너뛴다.
+    """
+    if q.get("qtype") == "합답형" or q.get("image_choices"):
+        return []
+    texts = [(c, len((c.get("text") or "").strip())) for c in choices]
+    texts = [(c, n) for c, n in texts if n]
+    if len(texts) < 3:
+        return []
+    answers = [(c, n) for c, n in texts if c.get("is_answer")]
+    if len(answers) != 1:
+        return []
+    ans_len = answers[0][1]
+    others = [n for c, n in texts if not c.get("is_answer")]
+    avg = sum(others) / len(others)
+    if ans_len == max(n for _, n in texts) and avg and ans_len >= avg * LONG_ANSWER_RATIO:
+        return [{"level": "warn", "code": "answer_longest",
+                 "message": f"정답 선지가 가장 깁니다 ({ans_len}자 / 나머지 평균 {round(avg)}자). "
+                            "길이만 보고 답을 고를 수 있습니다."}]
+    return []
+
+
+def _check_answer_spread(items: list[dict]) -> list[dict]:
+    """세트 전체의 정답 번호 분포. 한 번호 쏠림·아예 안 쓰인 번호를 알린다."""
+    if len(items) < 5:
+        return []
+    counts = {}
+    total = 0
+    max_ord = 0
+    for it in items:
+        chs = it["choices"]
+        max_ord = max(max_ord, len(chs))
+        ans = [c for c in chs if c.get("is_answer")]
+        if len(ans) != 1:
+            continue
+        o = ans[0].get("ord")
+        counts[o] = counts.get(o, 0) + 1
+        total += 1
+    if not total or max_ord < 2:
+        return []
+
+    out = []
+    label = "①②③④⑤"
+    top_ord, top_n = max(counts.items(), key=lambda kv: kv[1])
+    if top_n / total > ANSWER_BIAS_RATIO:
+        mark = label[top_ord - 1] if 1 <= top_ord <= 5 else str(top_ord)
+        out.append({"level": "warn", "code": "answer_bias",
+                    "message": f"정답이 {mark}번에 {top_n}/{total}문항 몰려 있습니다."})
+    missing = [label[i - 1] if i <= 5 else str(i)
+               for i in range(1, max_ord + 1) if not counts.get(i)]
+    if missing:
+        out.append({"level": "warn", "code": "answer_unused",
+                    "message": f"정답으로 한 번도 쓰이지 않은 번호가 있습니다: {' '.join(missing)}"})
+    return out
+
+
+def _check_duplicate_props(items: list[dict]) -> list[dict]:
+    """같은 명제가 여러 문항에 겹쳐 쓰였는지 — 한 내용을 두 번 묻게 된다."""
+    where = {}
+    for idx, it in enumerate(items, start=1):
+        seen = set()
+        for c in it["choices"]:
+            pid = c.get("proposition_id")
+            if pid and pid not in seen:
+                seen.add(pid)
+                where.setdefault(pid, []).append(idx)
+        for b in _bogi_of(it["question"]):
+            pid = b.get("proposition_id")
+            if pid and pid not in seen:
+                seen.add(pid)
+                where.setdefault(pid, []).append(idx)
+    dups = {pid: nums for pid, nums in where.items() if len(nums) > 1}
+    if not dups:
+        return []
+    detail = ", ".join(f"{'·'.join(map(str, nums))}번 문항"
+                       for nums in list(dups.values())[:4])
+    return [{"level": "warn", "code": "duplicate_proposition",
+             "message": f"같은 명제를 여러 문항에서 씁니다 ({detail}). 내용이 겹치지 않는지 확인하세요."}]
+
+
+def _bogi_of(q: dict) -> list[dict]:
+    """question.bogi_items 는 JSON 문자열일 수도, 이미 파싱된 목록일 수도 있다."""
+    raw = q.get("bogi_items") or []
+    if isinstance(raw, str):
+        import json
+        try:
+            raw = json.loads(raw or "[]")
+        except ValueError:
+            return []
+    return [b for b in raw if isinstance(b, dict)]
+
+
+def check_set(set_row: dict, items: list[dict], target_total=None) -> list[dict]:
     """세트 전체 검사.
 
     items: [{question, choices, points}] — 세트 구성 + 각 문항 데이터.
+    target_total 을 주지 않으면 세트에 저장된 만점(exam_set.total_points)을 쓴다.
     """
+    if target_total is None:
+        target_total = set_row.get("total_points") or 100.0
     issues = []
 
     def err(code, msg):
@@ -95,6 +222,9 @@ def check_set(set_row: dict, items: list[dict], target_total=100.0) -> list[dict
     if len(covered) < len(items) / 2:
         warn("low_coverage", f"성취기준 {len(covered)}종만 다룹니다. 편중되지 않았는지 확인하세요.")
 
+    # 세트로 묶여야만 보이는 것들 — 정답 번호 쏠림, 내용 중복
+    issues += _check_answer_spread(items)
+    issues += _check_duplicate_props(items)
     return issues
 
 

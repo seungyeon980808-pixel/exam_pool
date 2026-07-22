@@ -157,11 +157,16 @@ def search(q: str, limit: int = 60, doc_id: int | None = None) -> dict:
         for r in rows:
             snip = " ".join((r["snippet"] or "").split())
             pct = round((r["score"] / best) * 100) if best else 100
+            # document_id 가 음수면 수업 기록이다 (lessons.py 참고).
+            # PDF 페이지가 아니므로 이미지 렌더링 대신 본문을 보여줘야 한다.
+            lesson = r["document_id"] < 0
             items.append({
                 "doc_title": r["doc_title"],
                 "page_no": r["page_no"],
                 "document_id": r["document_id"],
-                "source_label": f"{r['doc_title']} p.{r['page_no']}",
+                "kind": "수업" if lesson else "문서",
+                "source_label": (f"{r['doc_title']} #{r['page_no']}" if lesson
+                                 else f"{r['doc_title']} p.{r['page_no']}"),
                 "snippet": snip,
                 "match_pct": max(1, min(100, pct)),
             })

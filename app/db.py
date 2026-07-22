@@ -108,10 +108,12 @@ CREATE TABLE IF NOT EXISTS choice (
 );
 
 CREATE TABLE IF NOT EXISTS exam_set (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    name       TEXT NOT NULL,
-    status     TEXT NOT NULL DEFAULT '설계중',
-    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    name         TEXT NOT NULL,
+    status       TEXT NOT NULL DEFAULT '설계중',
+    -- 지필 만점. 100 이 아닌 시험(예: 지필 70 + 수행 30)이 흔해 세트마다 따로 갖는다.
+    total_points REAL NOT NULL DEFAULT 100.0,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
 CREATE TABLE IF NOT EXISTS set_item (
@@ -142,7 +144,8 @@ CREATE TABLE IF NOT EXISTS lesson (
     date       TEXT NOT NULL,
     class_name TEXT NOT NULL DEFAULT '',
     transcript TEXT NOT NULL DEFAULT '',
-    summary    TEXT NOT NULL DEFAULT ''
+    summary    TEXT NOT NULL DEFAULT '',
+    indexed_at TEXT NOT NULL DEFAULT ''
 );
 
 -- 참고한 기출 문항 스크랩 (문항 단위 북마크 + 메모)
@@ -176,12 +179,19 @@ def init_db() -> None:
 
 
 # ===== 기존 DB 보정 (컬럼 추가) =====
+def _add_column(conn: sqlite3.Connection, table: str, col: str, decl: str) -> None:
+    cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+    if col not in cols:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+
+
 def _migrate(conn: sqlite3.Connection) -> None:
-    cols = {r["name"] for r in conn.execute("PRAGMA table_info(question)")}
-    if "title" not in cols:
-        conn.execute("ALTER TABLE question ADD COLUMN title TEXT NOT NULL DEFAULT ''")
-    if "image_choices" not in cols:
-        conn.execute("ALTER TABLE question ADD COLUMN image_choices INTEGER NOT NULL DEFAULT 0")
+    _add_column(conn, "question", "title", "TEXT NOT NULL DEFAULT ''")
+    _add_column(conn, "question", "image_choices", "INTEGER NOT NULL DEFAULT 0")
+    # 이원목적분류표의 행동영역 (2022 개정: 지식·이해 / 과정·기능 / 가치·태도)
+    _add_column(conn, "question", "behavior", "TEXT NOT NULL DEFAULT ''")
+    _add_column(conn, "exam_set", "total_points", "REAL NOT NULL DEFAULT 100.0")
+    _add_column(conn, "lesson", "indexed_at", "TEXT NOT NULL DEFAULT ''")
 
 
 # ===== 성취기준 seed 적재 (첫 실행 시 1회) =====

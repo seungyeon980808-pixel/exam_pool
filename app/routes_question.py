@@ -4,7 +4,7 @@ import json
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from . import checklist, db, export_palette
+from . import checklist, db, export_palette, reports
 
 router = APIRouter(prefix="/api")
 
@@ -70,6 +70,7 @@ class QuestionIn(BaseModel):
     difficulty: str = "중"
     standard_code: str | None = None
     intent: str = ""
+    behavior: str = ""          # 이원목적분류표의 행동영역
     choices: list[ChoiceIn] = []
 
 
@@ -124,11 +125,13 @@ def create_question(qin: QuestionIn):
     try:
         cur = conn.execute(
             "INSERT INTO question (title, qtype, image_choices, status, review_note, is_negative, "
-            " passage, material, ask, bogi_items, answer, default_points, difficulty, standard_code, intent) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " passage, material, ask, bogi_items, answer, default_points, difficulty, standard_code, "
+            " intent, behavior) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (qin.title.strip(), qin.qtype, int(qin.image_choices), qin.status, qin.review_note, int(qin.is_negative), qin.passage.strip(), qin.material.strip(),
              qin.ask.strip(), json.dumps(qin.bogi_items, ensure_ascii=False), qin.answer,
-             qin.default_points, qin.difficulty, qin.standard_code, qin.intent.strip()))
+             qin.default_points, qin.difficulty, qin.standard_code, qin.intent.strip(),
+             qin.behavior.strip()))
         qid = cur.lastrowid
         _save_choices(conn, qid, qin.choices)
         conn.commit()
@@ -144,10 +147,11 @@ def update_question(qid: int, qin: QuestionIn):
         conn.execute(
             "UPDATE question SET title=?, qtype=?, image_choices=?, status=?, review_note=?, is_negative=?, "
             " passage=?, material=?, ask=?, bogi_items=?, answer=?, default_points=?, difficulty=?, "
-            " standard_code=?, intent=? WHERE id=?",
+            " standard_code=?, intent=?, behavior=? WHERE id=?",
             (qin.title.strip(), qin.qtype, int(qin.image_choices), qin.status, qin.review_note, int(qin.is_negative), qin.passage.strip(), qin.material.strip(),
              qin.ask.strip(), json.dumps(qin.bogi_items, ensure_ascii=False), qin.answer,
-             qin.default_points, qin.difficulty, qin.standard_code, qin.intent.strip(), qid))
+             qin.default_points, qin.difficulty, qin.standard_code, qin.intent.strip(),
+             qin.behavior.strip(), qid))
         conn.execute("DELETE FROM choice WHERE question_id = ?", (qid,))
         _save_choices(conn, qid, qin.choices)
         conn.commit()
@@ -192,10 +196,21 @@ def check_question_api(qid: int):
 # ===== 세트 =====
 class SetIn(BaseModel):
     name: str
+    total_points: float = 100.0
+
+
+class SetPatch(BaseModel):
+    name: str | None = None
+    total_points: float | None = None
+    status: str | None = None
 
 
 class SetItemIn(BaseModel):
     question_id: int
+    points: float | None = None
+
+
+class ItemPointsIn(BaseModel):
     points: float | None = None
 
 
@@ -219,9 +234,27 @@ def list_sets():
 def create_set(s: SetIn):
     conn = db.connect()
     try:
-        cur = conn.execute("INSERT INTO exam_set (name) VALUES (?)", (s.name.strip(),))
+        cur = conn.execute("INSERT INTO exam_set (name, total_points) VALUES (?,?)",
+                           (s.name.strip(), s.total_points))
         conn.commit()
         return {"id": cur.lastrowid}
+    finally:
+        conn.close()
+
+
+@router.patch("/sets/{sid}")
+def update_set(sid: int, p: SetPatch):
+    """세트 이름·만점·상태 수정. 만점은 지필 70점처럼 100이 아닌 시험 때문에 필요하다."""
+    conn = db.connect()
+    try:
+        if p.name is not None:
+            conn.execute("UPDATE exam_set SET name=? WHERE id=?", (p.name.strip(), sid))
+        if p.total_points is not None:
+            conn.execute("UPDATE exam_set SET total_points=? WHERE id=?", (p.total_points, sid))
+        if p.status is not None:
+            conn.execute("UPDATE exam_set SET status=? WHERE id=?", (p.status.strip(), sid))
+        conn.commit()
+        return {"ok": True}
     finally:
         conn.close()
 
@@ -270,9 +303,12 @@ def get_set(sid: int):
                 it["question"].get("difficulty", "중"), 0) + 1
         covered = sorted({it["question"]["standard_code"] for it in items
                           if it["question"]["standard_code"]})
+        target = dict(s).get("total_points") or 100.0
         return {"set": dict(s), "items": items,
                 "dashboard": {"total_points": round(total, 1), "difficulty": diff,
-                              "standards": covered, "count": len(items)}}
+                              "standards": covered, "count": len(items),
+                              "target_points": round(target, 1),
+                              "gap": round(total - target, 1)}}
     finally:
         conn.close()
 
@@ -302,6 +338,22 @@ def remove_set_item(sid: int, item_id: int):
         conn.close()
 
 
+@router.patch("/sets/{sid}/items/{item_id}")
+def set_item_points(sid: int, item_id: int, body: ItemPointsIn):
+    """세트 안에서만 배점을 바꾼다(문항 자체의 기본 배점은 그대로).
+
+    같은 문항이 중간고사에선 3점, 기말에선 4점일 수 있다.
+    """
+    conn = db.connect()
+    try:
+        conn.execute("UPDATE set_item SET points=? WHERE id=? AND set_id=?",
+                     (body.points, item_id, sid))
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
 @router.put("/sets/{sid}/order")
 def reorder_set(sid: int, body: ReorderIn):
     """드래그 배열 결과 저장 — question_ids 순서대로 ord 재부여."""
@@ -317,7 +369,8 @@ def reorder_set(sid: int, body: ReorderIn):
 
 
 @router.get("/sets/{sid}/check")
-def check_set_api(sid: int, target: float = 100.0):
+def check_set_api(sid: int, target: float | None = None):
+    """세트 검토. target 을 주지 않으면 세트에 저장된 만점을 쓴다."""
     conn = db.connect()
     try:
         s = conn.execute("SELECT * FROM exam_set WHERE id = ?", (sid,)).fetchone()
@@ -325,6 +378,34 @@ def check_set_api(sid: int, target: float = 100.0):
             raise HTTPException(404, "세트를 찾을 수 없습니다.")
         items = _set_items(conn, sid)
         return checklist.summarize(checklist.check_set(dict(s), items, target_total=target))
+    finally:
+        conn.close()
+
+
+# ===== 제출 서류 =====
+@router.get("/sets/{sid}/reports")
+def set_reports(sid: int):
+    """정답표 + 이원목적분류표. 화면 표시용 행 목록과 붙여넣기용 TSV 를 함께 낸다."""
+    conn = db.connect()
+    try:
+        s = conn.execute("SELECT * FROM exam_set WHERE id = ?", (sid,)).fetchone()
+        if not s:
+            raise HTTPException(404, "세트를 찾을 수 없습니다.")
+        items = _set_items(conn, sid)
+        rows = conn.execute(
+            "SELECT s.code, s.text, u.name AS unit_name FROM standard s "
+            "LEFT JOIN unit u ON u.unit_no = s.unit_no").fetchall()
+        unit_of_code = {r["code"]: (r["unit_name"] or "") for r in rows}
+        std_text = {r["code"]: r["text"] for r in rows}
+
+        key = reports.answer_key(items)
+        bp = reports.blueprint(items, unit_of_code=unit_of_code, standard_texts=std_text)
+        return {
+            "set": dict(s),
+            "answer_key": {**key, "tsv": reports.to_tsv(key)},
+            "blueprint": {**bp, "tsv": reports.to_tsv(bp)},
+            "behaviors": reports.BEHAVIORS,
+        }
     finally:
         conn.close()
 

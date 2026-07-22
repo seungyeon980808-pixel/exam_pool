@@ -21,6 +21,7 @@
     <button class="nz-navi" data-tab="qbank">문항 은행</button>
     <button class="nz-navi" data-tab="set">세트 관리</button>
     <button class="nz-navi" data-tab="doc">근거·기출</button>
+    <button class="nz-navi" data-tab="lesson">수업 기록</button>
     <button class="nz-navi" data-tab="config">환경설정</button>
   </div>
 
@@ -140,6 +141,12 @@
                   <select id="qdiff" style="max-width:64px"><option>상</option><option selected>중</option><option>하</option></select>
                   <label class="inline">배점</label>
                   <input id="qpoints" value="3" style="max-width:56px" />
+                  <!-- 이원목적분류표에 그대로 들어간다 (2022 개정 세 범주) -->
+                  <label class="inline">행동영역</label>
+                  <select id="qbehavior" style="max-width:104px">
+                    <option value="">미지정</option>
+                    <option>지식·이해</option><option>과정·기능</option><option>가치·태도</option>
+                  </select>
                 </div>
                 <div class="nz-fr" style="align-items:flex-start">
                   <label style="padding-top:5px">성취기준</label>
@@ -182,6 +189,7 @@
 
                 <p class="nz-sub">선지</p>
                 <div id="choiceRows"></div>
+                <div id="lenHint" class="nz-lenhint"></div>
                 <div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap;align-items:center">
                   <button class="nz-tb mini" onclick="EP.addChoice()">＋ 선지</button>
                   <span id="presetBox" class="hidden" style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
@@ -209,6 +217,7 @@
                 <button class="nz-srcbtn" data-src="교과서" onclick="EP.setSrc('교과서')">교과서</button>
                 <button class="nz-srcbtn" data-src="교육과정" onclick="EP.setSrc('교육과정')">교육과정</button>
                 <button class="nz-srcbtn" data-src="기출" onclick="EP.setSrc('기출')">기출</button>
+                <button class="nz-srcbtn" data-src="수업" onclick="EP.setSrc('수업')">수업</button>
               </span>
               <input class="nz-inp sidefull" id="evSearch" style="flex:1;min-width:0;margin-left:6px"
                      placeholder="띄어쓰기로 여러 단어 (예: 빛 굴절)" oninput="EP.onEvInput()" />
@@ -256,7 +265,8 @@
           <thead><tr>
             <th style="width:28px">#</th><th style="width:64px">완성도</th><th style="width:160px">문제 이름</th>
             <th style="width:54px">유형</th><th>발문</th>
-            <th style="width:78px">성취기준</th><th style="width:36px">난도</th><th style="width:34px">점</th>
+            <th style="width:78px">성취기준</th><th style="width:70px">행동영역</th>
+            <th style="width:36px">난도</th><th style="width:34px">점</th>
             <th style="width:112px">관리</th>
           </tr></thead>
           <tbody id="qRows"></tbody>
@@ -274,6 +284,63 @@
         </div>
         <p class="nz-sub">이번에 다룰 <b>단원과 성취기준</b>만 고르세요. 고른 것만 명제·문항·세트 화면에 나타납니다.</p>
         <div id="cfgTree" class="nz-cfgtree"></div>
+
+        <!-- ===== 백업 · 복구 ===== -->
+        <div class="nz-h" style="margin-top:20px"><b>백업 · 복구</b>
+          <span style="margin-left:auto;display:flex;gap:5px">
+            <button class="nz-tb" onclick="EP.openBackupFolder()">백업 폴더 열기</button>
+            <button class="nz-tb blu" onclick="EP.makeBackup()">지금 백업</button>
+          </span>
+        </div>
+        <p class="nz-sub">
+          한 학기 출제 데이터가 파일 하나에 모여 있습니다. 서버를 켤 때 <b>하루 한 번</b> 자동으로 백업되고,
+          최근 <b>3개</b> 시점이 보관됩니다. 학기 말에는 백업 폴더를 외장 디스크에도 복사해 두세요.
+        </p>
+        <p class="nz-sub" id="bkLast" style="margin-top:6px"></p>
+        <div class="nz-bklist" id="bkList"></div>
+        <p class="nz-sub nz-path" style="margin-top:6px">저장 위치: <span id="bkDir"></span></p>
+      </section>
+
+      <!-- ============ 수업 기록 ============ -->
+      <section id="tab-lesson" hidden>
+        <div class="nz-h"><b>수업 기록</b>
+          <span class="nz-sub" style="margin:0 0 0 10px">등록하면 근거 검색에서 교과서와 함께 찾힙니다</span>
+          <span style="margin-left:auto;display:flex;gap:5px">
+            <input class="nz-inp" id="lsSearch" placeholder="내용·반 검색" oninput="EP.onLessonSearch()" />
+            <button class="nz-tb" onclick="EP.reindexLessons()">전체 재색인</button>
+            <button class="nz-tb blu" onclick="EP.newLesson()">＋ 새 기록</button>
+          </span>
+        </div>
+
+        <p class="nz-cnt">수업 기록 &nbsp;Total <b id="lsCnt">0</b></p>
+        <table class="nz-t">
+          <thead><tr>
+            <th style="width:34px">순번</th><th style="width:96px">날짜</th><th style="width:70px">반</th>
+            <th>요약</th><th style="width:70px">분량</th><th style="width:64px">색인</th><th style="width:96px">관리</th>
+          </tr></thead>
+          <tbody id="lsRows"></tbody>
+        </table>
+
+        <div class="nz-form" style="margin-top:14px">
+          <div class="nz-secbar meta" id="lsFormTitle">새 수업 기록</div>
+          <div class="nz-secbody tight">
+            <div class="nz-fr">
+              <label><span class="req">*</span>날짜</label>
+              <input id="lsDate" type="date" style="max-width:150px" />
+              <label class="inline">반</label>
+              <input id="lsClass" placeholder="예: 3-2" style="max-width:110px" />
+            </div>
+            <div class="nz-fr"><label>요약</label><input id="lsSummary" placeholder="예: 빛의 굴절 실험 · 오개념 정정" /></div>
+            <div class="nz-fr" style="align-items:flex-start">
+              <label style="padding-top:5px"><span class="req">*</span>기록</label>
+              <textarea id="lsText" rows="12" placeholder="클로바노트 등에서 받은 수업 텍스트를 그대로 붙여넣으세요."></textarea>
+            </div>
+            <div class="nz-fbtn">
+              <span class="nz-sub" style="margin:0">외부로 전송되지 않고 이 PC 에만 저장됩니다.</span>
+              <button class="nz-tb blu" id="lsSaveBtn" onclick="EP.saveLesson()">저장하고 색인</button>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- ============ 세트 관리 ============ -->
@@ -283,8 +350,18 @@
           <span class="nz-lb">세트</span>
           <select class="nz-sel" id="setSel" onchange="EP.loadSet()"></select>
           <input class="nz-inp" id="newSetName" placeholder="새 세트 이름 (예: 2026-2학기 중간)" />
+          <span class="nz-lb">만점</span>
+          <input class="nz-inp" id="newSetTotal" value="100" style="max-width:60px" />
           <button class="nz-tb blu" onclick="EP.createSet()">＋ 세트 생성</button>
           <button class="nz-go" onclick="EP.loadSet()">조회</button>
+        </div>
+
+        <!-- 지필 만점은 시험마다 다르다 (지필 70 + 수행 30 등). 검토의 배점 기준이 이 값이다. -->
+        <div class="nz-flt">
+          <span class="nz-lb">이 세트 만점</span>
+          <input class="nz-inp" id="setTotal" type="number" step="0.5" min="1" value="100" style="max-width:80px" />
+          <button class="nz-tb" onclick="EP.saveSetTotal()">만점 저장</button>
+          <span class="nz-sub" style="margin:0">배점 합이 이 값과 맞는지 검토에서 확인합니다.</span>
         </div>
 
         <div class="nz-metrics" id="setDash"></div>
@@ -292,6 +369,8 @@
         <div class="nz-tools">
           <button class="nz-tb" onclick="EP.checkSet()">세트 검토</button>
           <button class="nz-tb grn" onclick="EP.exportSet()">hwppalette 문법 복사</button>
+          <button class="nz-tb blu" onclick="EP.openReports('answer')">정답표</button>
+          <button class="nz-tb blu" onclick="EP.openReports('blueprint')">이원목적분류표</button>
         </div>
         <div id="setCheckResult"></div>
 
@@ -372,6 +451,14 @@
     </div>
   </div>
 
-  <script src="/static/js/app.js"></script>
+  <!-- 화면 코드는 탭 단위로 나뉜다. core.js 가 공용 뼈대이므로 항상 먼저 온다. -->
+  <script src="/static/js/core.js"></script>
+  <script src="/static/js/bank.js"></script>
+  <script src="/static/js/question.js"></script>
+  <script src="/static/js/qbank.js"></script>
+  <script src="/static/js/set.js"></script>
+  <script src="/static/js/doc.js"></script>
+  <script src="/static/js/lesson.js"></script>
+  <script src="/static/js/config.js"></script>
 </body>
 </html>
