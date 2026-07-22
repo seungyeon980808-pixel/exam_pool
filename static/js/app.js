@@ -575,6 +575,15 @@ const EP = (() => {
     evViewer.docId = docId; evViewer.page = pageNo;
     const meta = await api(`/api/documents/${docId}/page/${pageNo}`);
     evViewer.lastPage = meta.last_page;
+    evViewer.terms = splitTerms(evViewer.q || "");
+
+    // 기출은 페이지 전체가 아니라 문항 하나씩 보여준다
+    const types = await ensureDocTypes();
+    if (types[docId] === "기출") {
+      try {
+        if (await showExamItems(docId, pageNo, meta.title)) return;
+      } catch (e) { /* 문항 인식 실패 → 아래 페이지 전체로 */ }
+    }
     $("evViewTitle").textContent = `${meta.title} — ${pageNo} / ${meta.last_page}p`;
     $("evViewBody").innerHTML =
       `<div class="nz-pagewrap" id="evWrap"><img id="evImg" src="/api/documents/${docId}/page/${pageNo}/image" /></div>`;
@@ -868,6 +877,7 @@ const EP = (() => {
       $("docHits").textContent = "";
       alert(`문서 ${r.documents}권 · ${r.pages}페이지를 색인했습니다.` +
         (r.skipped.length ? `\n건너뜀 ${r.skipped.length}건(텍스트 없음/열기 실패)` : ""));
+      docTypes = {};
       loadDocs(); runSearch();
     } catch (e) { $("docHits").textContent = ""; alert("인덱싱 실패: " + e.message); }
   }
@@ -1012,6 +1022,53 @@ const EP = (() => {
 
 
 
+
+
+  /* ---------- 기출: 문항 하나씩 보기 ---------- */
+  let docTypes = {};        // {문서id: 종류}
+
+  async function ensureDocTypes() {
+    if (Object.keys(docTypes).length) return docTypes;
+    const docs = await api("/api/documents");
+    docs.forEach((d) => { docTypes[d.id] = d.doc_type; });
+    return docTypes;
+  }
+
+  /** 기출 페이지 → 검색어가 들어있는 문항만 하나씩 크게 */
+  async function showExamItems(docId, pageNo, title) {
+    const q = evViewer.q || "";
+    const r = await api(`/api/documents/${docId}/page/${pageNo}/items?q=` + encodeURIComponent(q));
+    const hits = r.items.filter((x) => x.has_hit);
+    const list = hits.length ? hits : r.items;      // 적중 없으면 그 페이지 문항 전부
+    if (!list.length) return false;                 // 문항을 못 찾으면 페이지 전체로
+
+    $("evViewTitle").textContent =
+      `${title} — ${pageNo}p · ${hits.length ? "검색어 포함 " + hits.length + "문항" : r.items.length + "문항"}`;
+    $("evViewBody").innerHTML = list.map((x) => {
+      const badge = Object.entries(x.hits).map(([t, n], i) =>
+        `<span class="nz-termchip"><span class="sw" style="background:${
+          HL_COLORS[(evViewer.terms || []).indexOf(t) % HL_COLORS.length]}"></span>${esc(t)} ${n}</span>`).join("");
+      return `<div class="nz-examitem">
+        <div class="nz-examhead"><b>${x.num}번</b>${badge}
+          <button class="nz-tb mini" style="margin-left:auto"
+            onclick="EP.useExam(${docId}, ${pageNo}, ${x.num}, '${esc(title)}')">참고로 기록</button>
+        </div>
+        <img src="/api/documents/${docId}/page/${pageNo}/item/${x.num}/image?dpi=120"
+             alt="${esc(title)} ${x.num}번" loading="lazy" />
+      </div>`;
+    }).join("");
+    return true;
+  }
+
+  /** 참고한 기출을 자료 칸에 출처로 남긴다 */
+  function useExam(docId, pageNo, num, title) {
+    const ref = `${title} ${num}번`;
+    const el = $("qintent");
+    if (el) {
+      el.value = (el.value ? el.value.replace(/\s*$/, "\n") : "") + `참고 기출: ${ref}`;
+    }
+    alert(`출제 의도에 “참고 기출: ${ref}” 를 기록했습니다.`);
+  }
 
   /* ---------- 실시간 검색 (입력하면서 바로) ---------- */
   function debounce(fn, ms) {
@@ -1286,7 +1343,7 @@ const EP = (() => {
     setCheck, setCheckNote, renderChecklist, pickFor, applyPick,
     loadConfig, cfgToggleUnit, cfgAll, cfgSave, renderChoices, setSrc,
     toggleStdList, pickStd, toggleRoutines, applyRoutine,
-    onEvInput, onDocInput, runSearchFromInput,
+    onEvInput, onDocInput, runSearchFromInput, useExam,
     onTypeChange, addBogi, setBogi, delBogi, addChoice, setChoice, setCombo, setAnswer, delChoice,
     applyPreset, loadPicker, useProp, searchEvidence, saveQuestion, checkQuestionDraft,
     loadQuestions, editQuestion, checkQuestion, delQuestion,

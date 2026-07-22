@@ -370,3 +370,76 @@ def list_documents() -> list[dict]:
         return [dict(r) for r in rows]
     finally:
         conn.close()
+
+
+# ===== 기출: 문항 단위로 잘라 보기 =====
+def page_items(doc_id: int, page_no: int, terms: list[str] | None = None,
+               dpi: int = 110) -> dict:
+    """페이지의 문항 목록. 검색어가 있으면 어느 문항에 들어있는지도 표시한다.
+
+    반환: {"items":[{num, x,y,w,h, hits:{단어:개수}, has_hit}], "page_w","page_h"}
+    문항을 못 찾으면 items 가 빈 목록 → 호출 쪽이 페이지 전체를 쓰면 된다.
+    """
+    from . import exam_items
+
+    path = _doc_path(doc_id)
+    zoom = dpi / 72.0
+    terms = terms or []
+    with _doc_lock:
+        doc = _get_doc(path)
+        if page_no < 1 or page_no > doc.page_count:
+            raise FileNotFoundError("페이지 범위를 벗어났습니다.")
+        page = doc[page_no - 1]
+        found = exam_items.detect_items(page)
+        hit_map, _ = highlight_rects(page, terms) if terms else ({}, [])
+        pw, ph = page.rect.width * zoom, page.rect.height * zoom
+
+    out = []
+    for it in found:
+        hits = {}
+        for t, rects in hit_map.items():
+            n = sum(1 for r in rects
+                    if it["x0"] <= r.x0 <= it["x1"] and it["y0"] <= r.y0 <= it["y1"])
+            if n:
+                hits[t] = n
+        out.append({
+            "num": it["num"],
+            "x": round(it["x0"] * zoom, 1), "y": round(it["y0"] * zoom, 1),
+            "w": round((it["x1"] - it["x0"]) * zoom, 1),
+            "h": round((it["y1"] - it["y0"]) * zoom, 1),
+            "hits": hits, "has_hit": bool(hits),
+        })
+    return {"items": out, "page_w": round(pw), "page_h": round(ph)}
+
+
+def render_item_png(doc_id: int, page_no: int, num: int, dpi: int = 120) -> bytes:
+    """문항 하나만 잘라 PNG 로. (문제 하나가 화면에 딱 들어가게)"""
+    import fitz
+
+    from . import exam_items
+
+    key = (doc_id, page_no, "item", num, dpi)
+    with _png_lock:
+        c = _png_cache.get(key)
+        if c is not None:
+            _png_cache.move_to_end(key)
+            return c
+
+    path = _doc_path(doc_id)
+    with _doc_lock:
+        doc = _get_doc(path)
+        if page_no < 1 or page_no > doc.page_count:
+            raise FileNotFoundError("페이지 범위를 벗어났습니다.")
+        page = doc[page_no - 1]
+        found = [it for it in exam_items.detect_items(page) if it["num"] == num]
+        if not found:
+            raise FileNotFoundError("문항을 찾을 수 없습니다.")
+        it = found[0]
+        clip = fitz.Rect(it["x0"], it["y0"], it["x1"], it["y1"])
+        png = page.get_pixmap(clip=clip, dpi=dpi).tobytes("png")
+
+    with _png_lock:
+        _png_cache[key] = png
+        while len(_png_cache) > _PNG_CACHE_MAX:
+            _png_cache.popitem(last=False)
+    return png

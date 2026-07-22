@@ -130,3 +130,27 @@ def open_original(doc_id: int, page_no: int = 1):
         return {"ok": True}
     except Exception as e:
         raise HTTPException(500, f"원본을 열 수 없습니다: {e}")
+
+
+@router.get("/documents/{doc_id}/page/{page_no}/items")
+def page_items(doc_id: int, page_no: int, q: str = "", dpi: int = 110):
+    """기출 페이지의 문항 목록 (+ 검색어가 어느 문항에 있는지)."""
+    try:
+        return pdf_indexer.page_items(doc_id, page_no, pdf_indexer.terms_of(q), dpi=dpi)
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"문항을 찾을 수 없습니다: {e}")
+
+
+@router.get("/documents/{doc_id}/page/{page_no}/item/{num}/image")
+def item_image(doc_id: int, page_no: int, num: int, dpi: int = 120):
+    """문항 하나만 잘라낸 PNG — 문제 하나가 화면에 딱 들어간다."""
+    try:
+        png = pdf_indexer.render_item_png(doc_id, page_no, num, dpi=dpi)
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"문항을 그릴 수 없습니다: {e}")
+    return Response(content=png, media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=3600"})
