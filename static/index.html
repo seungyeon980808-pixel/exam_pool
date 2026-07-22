@@ -141,9 +141,15 @@
                   <label class="inline">배점</label>
                   <input id="qpoints" value="3" style="max-width:56px" />
                 </div>
-                <div class="nz-fr">
-                  <label>성취기준</label>
-                  <select id="q-std2" onchange="EP.showStdFull()"></select>
+                <div class="nz-fr" style="align-items:flex-start">
+                  <label style="padding-top:5px">성취기준</label>
+                  <div class="nz-stdwrap">
+                    <div class="nz-stdpick" id="stdPick" onclick="EP.toggleStdList()">
+                      <span id="stdPickText" class="ph">성취기준을 고르세요</span>
+                      <span class="caret">▾</span>
+                    </div>
+                    <div class="nz-stdlist hidden" id="stdList"></div>
+                  </div>
                 </div>
                 <div class="nz-fr"><label>출제 의도</label><textarea id="qintent" rows="2" placeholder="예: 오개념(속력 불변) 판별 · 엔터로 줄 추가"></textarea></div>
               </div>
@@ -155,7 +161,14 @@
               <div class="nz-secbody tight">
                 <div class="nz-fr"><label>지문</label><textarea id="qpassage" rows="2" placeholder="다음은 ~에 대한 설명이다. (없으면 비움)"></textarea></div>
                 <div class="nz-fr"><label>자료</label><input id="qmaterial" placeholder="그림 파일명 (2개는 쉼표로)" /></div>
-                <div class="nz-fr"><label><span class="req">*</span>발문</label><textarea id="qask" rows="2" placeholder="옳은 것만을 〈보기〉에서 있는 대로 고른 것은?"></textarea></div>
+                <div class="nz-fr" style="align-items:flex-start">
+                  <label style="padding-top:5px"><span class="req">*</span>발문</label>
+                  <textarea id="qask" rows="2" placeholder="옳은 것만을 〈보기〉에서 있는 대로 고른 것은?"></textarea>
+                  <div class="nz-routinewrap">
+                    <button class="nz-tb mini" onclick="EP.toggleRoutines()">루틴</button>
+                    <div class="nz-routinelist hidden" id="routineList"></div>
+                  </div>
+                </div>
 
                 <div id="bogiBox" class="hidden">
                   <p class="nz-sub">보기</p>
@@ -216,14 +229,6 @@
                 </div>
               </div>
             </div>
-
-            <div class="nz-sidehead sidefull" style="border-top:1px solid var(--nz-line)">
-              <b>명제 은행</b>
-              <input class="nz-inp" id="pickSearch" style="flex:1;min-width:0;margin-left:6px"
-                     placeholder="명제 검색" onkeydown="if(event.key==='Enter')EP.loadPicker()" />
-              <button class="nz-tb mini" onclick="EP.togglePicker()">▾</button>
-            </div>
-            <div id="pickerList" class="nz-picker sidefull"></div>
 
             <div class="nz-sidefolded">근거 검색</div>
           </aside>

@@ -171,7 +171,7 @@ const EP = (() => {
       ({ v: s.code, t: `${s.code} ${s.text}` })));   // 자르지 않고 전문
     fillSelect($("q-std"), opts, "전체");
     fillSelect($("f-std"), opts);
-    fillSelect($("q-std2"), opts);
+    if ($("stdList") && !$("stdList").classList.contains("hidden")) renderStdList();
     refillUnitSelect();
     refillBankFilters();
   }
@@ -619,7 +619,7 @@ const EP = (() => {
       answer: (() => { const i = choices.findIndex((c) => c.is_answer); return i >= 0 ? "①②③④⑤"[i] : ""; })(),
       default_points: parseFloat($("qpoints").value) || 3,
       difficulty: $("qdiff").value,
-      standard_code: $("q-std2").value || null,
+      standard_code: stdValue() || null,
       intent: $("qintent").value,
       image_choices: $("imgChoices") ? $("imgChoices").checked : false,
       status: $("qstatus") ? $("qstatus").value : "초안",
@@ -647,6 +647,7 @@ const EP = (() => {
   function resetQuestionForm() {
     editingQid = null; bogi = []; choices = []; checkState = {}; renderChecklist();
     ["qtitle", "qpassage", "qmaterial", "qask", "qintent"].forEach((id) => $(id).value = "");
+    setStdValue("");
     $("isNeg").checked = false; $("qpoints").value = "3";
     renderBogi(); renderChoices(); $("qCheckResult").innerHTML = "";
   }
@@ -717,7 +718,7 @@ const EP = (() => {
     $("qpassage").value = q.passage; $("qmaterial").value = q.material;
     $("qask").value = q.ask; $("qintent").value = q.intent;
     $("qpoints").value = q.default_points; $("qdiff").value = q.difficulty;
-    $("q-std2").value = q.standard_code || ""; showStdFull();
+    setStdValue(q.standard_code || "");
     bogi = q.bogi_items || [];
     if ($("qstatus")) $("qstatus").value = q.status || "초안";
     if ($("imgChoices")) $("imgChoices").checked = !!q.image_choices;
@@ -1000,6 +1001,80 @@ const EP = (() => {
   }
 
 
+
+  /* ---------- 성취기준 선택 (줄바꿈 허용 커스텀 UI) ---------- */
+  let curStdCode = "";
+
+  function stdValue() { return curStdCode; }
+
+  function toggleStdList() {
+    const box = $("stdList");
+    if (!box) return;
+    if (box.classList.contains("hidden")) renderStdList();
+    box.classList.toggle("hidden");
+  }
+
+  function renderStdList() {
+    const box = $("stdList");
+    box.innerHTML = scopedStandards().map((u) =>
+      '<div class="nz-stdgrp">' + u.unit_no + '. ' + esc(u.name) + '</div>' +
+      u.standards.map((st) =>
+        '<div class="nz-stdopt' + (st.code === curStdCode ? " on" : "") + '"' +
+        ' onclick="EP.pickStd(\'' + st.code + '\')"><span class="code">' + esc(st.code) + '</span>' +
+        esc(st.text) + '</div>').join("")).join("");
+  }
+
+  function pickStd(code) {
+    curStdCode = code;
+    const st = standards.flatMap((u) => u.standards).find((x) => x.code === code);
+    $("stdPickText").className = "";
+    $("stdPickText").innerHTML = st
+      ? '<span class="code">' + esc(st.code) + '</span>' + esc(st.text)
+      : "성취기준을 고르세요";
+    $("stdList").classList.add("hidden");
+  }
+
+  function setStdValue(code) {
+    curStdCode = code || "";
+    if (!code) {
+      $("stdPickText").className = "ph";
+      $("stdPickText").textContent = "성취기준을 고르세요";
+    } else pickStd(code);
+  }
+
+  /* ---------- 발문 루틴 ---------- */
+  // 자주 쓰는 발문. 배점은 위에서 정한 값을 자동으로 붙인다.
+  const ROUTINES = [
+    { g: "합답형", t: "이에 대한 설명으로 옳은 것만을 〈보기〉에서 있는 대로 고른 것은?" },
+    { g: "합답형", t: "이에 대한 설명으로 옳지 않은 것만을 〈보기〉에서 있는 대로 고른 것은?" },
+    { g: "합답형", t: "이에 대한 설명으로 옳은 것만을 〈보기〉에서 모두 고른 것은?" },
+    { g: "정답형", t: "이에 대한 설명으로 옳은 것은?" },
+    { g: "정답형", t: "이에 대한 설명으로 옳지 않은 것은?" },
+    { g: "정답형", t: "이에 대한 설명으로 가장 적절한 것은?" },
+    { g: "자료형", t: "그림에 대한 설명으로 옳은 것은?" },
+    { g: "자료형", t: "실험 결과에 대한 해석으로 옳은 것만을 〈보기〉에서 있는 대로 고른 것은?" },
+  ];
+
+  function toggleRoutines() {
+    const box = $("routineList");
+    if (!box) return;
+    if (box.classList.contains("hidden")) {
+      const pt = parseFloat($("qpoints").value) || 0;
+      const suffix = pt ? " (" + (Number.isInteger(pt) ? pt : pt) + "점)" : "";
+      box.innerHTML = ROUTINES.map((r, i) =>
+        '<div class="nz-routine" onclick="EP.applyRoutine(' + i + ')"><b>' + r.g + '</b>' +
+        esc(r.t + suffix) + '</div>').join("");
+    }
+    box.classList.toggle("hidden");
+  }
+
+  function applyRoutine(i) {
+    const pt = parseFloat($("qpoints").value) || 0;
+    const suffix = pt ? " (" + pt + "점)" : "";
+    $("qask").value = ROUTINES[i].t + suffix;
+    $("routineList").classList.add("hidden");
+  }
+
   /* ---------- 저장 전 체크리스트 ---------- */
   // 교사가 실제로 확인해야 하는 항목. '완성'으로 저장하려면 모두 체크하고 근거를 적어야 한다.
   const CHECKS = [
@@ -1036,7 +1111,7 @@ const EP = (() => {
 
   /* ---------- 명제에서 고르기 ---------- */
   async function pickFor(target, idx) {
-    const code = $("q-std2").value;
+    const code = stdValue();
     const params = new URLSearchParams();
     if (code) params.set("standard", code);
     const rows = await api("/api/propositions?" + params);
@@ -1135,6 +1210,10 @@ const EP = (() => {
   }
 
   async function init() {
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest(".nz-stdwrap")) { const b = $("stdList"); if (b) b.classList.add("hidden"); }
+      if (!e.target.closest(".nz-routinewrap")) { const b = $("routineList"); if (b) b.classList.add("hidden"); }
+    });
     initTabs();
     if (localStorage.getItem("ep_side_folded")) {
       const el = $("qside");
@@ -1153,6 +1232,7 @@ const EP = (() => {
     showStdFull, refillBankFilters, toggleSide, togglePicker, onBankUnitChange,
     setCheck, setCheckNote, renderChecklist, pickFor, applyPick,
     loadConfig, cfgToggleUnit, cfgAll, cfgSave, renderChoices, setSrc,
+    toggleStdList, pickStd, toggleRoutines, applyRoutine,
     onTypeChange, addBogi, setBogi, delBogi, addChoice, setChoice, setCombo, setAnswer, delChoice,
     applyPreset, loadPicker, useProp, searchEvidence, saveQuestion, checkQuestionDraft,
     loadQuestions, editQuestion, checkQuestion, delQuestion,

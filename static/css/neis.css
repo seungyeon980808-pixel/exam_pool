@@ -230,7 +230,7 @@ table.nz-t { width: 100%; border-collapse: collapse; font-size: 11.8px; }
 /* 펼치면 화면의 절반, 접으면 세로 막대 */
 .nz-qside { width: 50%; flex-shrink: 0; border: 1px solid var(--nz-line); border-radius: 3px;
   background: #fff; display: flex; flex-direction: column; position: sticky; top: 6px;
-  height: calc(100vh - 96px); overflow: hidden; transition: width .15s; }
+  height: calc(100vh - 88px); overflow: hidden; transition: width .15s; }
 .nz-qside.folded { width: 34px; }
 .nz-qside.folded .sidefull { display: none; }
 .nz-qside.folded .nz-sidehead { padding: 7px 4px; }
@@ -249,7 +249,7 @@ table.nz-t { width: 100%; border-collapse: collapse; font-size: 11.8px; }
   border-right: 1px solid var(--nz-line); }
 .nz-evsplit .nz-evview { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .nz-qside .nz-viewer-body { flex: 1; min-height: 0; }
-.nz-qside .nz-picker { overflow-y: auto; padding: 0 8px 8px; max-height: 20vh; flex-shrink: 0; }
+.nz-qside .nz-picker { display: none; }
 .nz-qside .nz-picker.hidden { display: none; }
 
 /* 출력/비출력 섹션 구분 */
@@ -401,3 +401,34 @@ table.nz-t { width: 100%; border-collapse: collapse; font-size: 11.8px; }
 .nz-srcbtn { border: 1px solid #c4cedd; background: #fff; border-radius: 3px; padding: 4px 10px;
   font-size: 11.5px; color: #46536b; cursor: pointer; }
 .nz-srcbtn.on { background: var(--nz-blue); color: #fff; border-color: var(--nz-blue); }
+
+
+/* ===== 성취기준 선택 (줄바꿈 허용) ===== */
+.nz-stdwrap { flex: 1; position: relative; min-width: 0; }
+.nz-stdpick { border: 1px solid #c4cedd; border-radius: 3px; background: #fff; cursor: pointer;
+  padding: 5px 26px 5px 9px; font-size: 12px; color: #1f2937; line-height: 1.45;
+  position: relative; word-break: keep-all; }
+.nz-stdpick .ph { color: #9aa4b4; }
+.nz-stdpick .code { color: var(--nz-code); font-weight: 600; margin-right: 5px; }
+.nz-stdpick .caret { position: absolute; right: 8px; top: 5px; color: #7a889c; font-size: 10px; }
+.nz-stdlist { position: absolute; left: 0; right: 0; top: 100%; z-index: 30; background: #fff;
+  border: 1px solid var(--nz-line); border-radius: 3px; box-shadow: 0 4px 14px rgba(0,0,0,.14);
+  max-height: 320px; overflow-y: auto; }
+.nz-stdlist.hidden { display: none; }
+.nz-stdopt { padding: 6px 10px; font-size: 11.5px; color: #46536b; cursor: pointer;
+  border-bottom: 1px solid #f0f2f6; line-height: 1.45; word-break: keep-all; }
+.nz-stdopt:hover { background: #eef4fb; }
+.nz-stdopt.on { background: #e3ecf8; }
+.nz-stdopt .code { color: var(--nz-code); font-weight: 600; margin-right: 5px; }
+.nz-stdgrp { padding: 4px 10px; background: #eef2f8; font-size: 11px; color: #1f4e96; font-weight: 600; }
+
+/* ===== 발문 루틴 ===== */
+.nz-routinewrap { position: relative; flex-shrink: 0; }
+.nz-routinelist { position: absolute; right: 0; top: 100%; z-index: 30; background: #fff;
+  border: 1px solid var(--nz-line); border-radius: 3px; box-shadow: 0 4px 14px rgba(0,0,0,.14);
+  width: 330px; max-height: 300px; overflow-y: auto; }
+.nz-routinelist.hidden { display: none; }
+.nz-routine { padding: 7px 10px; font-size: 11.5px; color: #46536b; cursor: pointer;
+  border-bottom: 1px solid #f0f2f6; line-height: 1.45; }
+.nz-routine:hover { background: #eef4fb; }
+.nz-routine b { display: block; color: #1f4e96; font-size: 11px; margin-bottom: 2px; }
