@@ -143,12 +143,39 @@ const EP = (() => {
     $("scopeModal").classList.add("hidden");
   }
 
+  /** 선택한 성취기준의 전문을 select 아래에 전부 보여준다 (select 는 잘리므로) */
+  function showStdFull() {
+    const code = $("q-std2") ? $("q-std2").value : "";
+    const box = $("stdFull");
+    if (!box) return;
+    const s = standards.flatMap((u) => u.standards).find((x) => x.code === code);
+    box.innerHTML = s ? `<b>${esc(s.code)}</b>${esc(s.text)}`
+                      : "성취기준을 고르면 전문이 여기 표시됩니다.";
+  }
+
+  /** 문항 은행 단원·성취기준 필터 채우기 */
+  function refillBankFilters() {
+    const uSel = $("qbUnit"), sSel = $("qbStd");
+    if (!uSel) return;
+    const cur = uSel.value;
+    uSel.innerHTML = '<option value="">전체 단원</option>';
+    scopedStandards().forEach((u) => uSel.appendChild(new Option(`${u.unit_no}. ${u.name}`, u.unit_no)));
+    uSel.value = cur;
+    const unit = +uSel.value || 0;
+    const list = unit ? scopedStandards().filter((u) => u.unit_no === unit) : scopedStandards();
+    sSel.innerHTML = '<option value="">전체 성취기준</option>';
+    list.forEach((u) => u.standards.forEach((st) =>
+      sSel.appendChild(new Option(`${st.code} ${st.text.slice(0, 14)}…`, st.code))));
+  }
+
   function refillStdSelects() {
     const opts = scopedStandards().flatMap((u) => u.standards.map((s) =>
       ({ v: s.code, t: `${s.code} ${s.text.slice(0, 20)}…` })));
     fillSelect($("q-std"), opts, "전체");
     fillSelect($("f-std"), opts);
     fillSelect($("q-std2"), opts);
+    refillBankFilters();
+    showStdFull();
   }
 
   /* ---------- 트리 (접기/펴기) ---------- */
@@ -523,6 +550,11 @@ const EP = (() => {
     if (img.complete) paint(); else img.onload = paint;
   }
 
+  function evZoom() {
+    if (!evViewer.docId) return alert("먼저 결과를 선택하세요.");
+    peekPage(evViewer.docId, evViewer.page, evViewer.q);
+  }
+
   function evViewPage(d) {
     if (!evViewer.docId) return;
     const p = evViewer.page + d;
@@ -583,7 +615,19 @@ const EP = (() => {
   }
 
   async function loadQuestions() {
-    const rows = await api("/api/questions");
+    refillBankFilters();
+    const params = new URLSearchParams();
+    const std = $("qbStd") ? $("qbStd").value : "";
+    const q = $("qbSearch") ? $("qbSearch").value.trim() : "";
+    if (std) params.set("standard", std);
+    if (q) params.set("q", q);
+    let rows = await api("/api/questions?" + params);
+    const unit = $("qbUnit") ? +$("qbUnit").value : 0;
+    if (unit && !std) {           // 단원만 고른 경우: 그 단원의 성취기준들로 거른다
+      const codes = new Set((scopedStandards().find((u) => u.unit_no === unit) || {standards: []})
+        .standards.map((x) => x.code));
+      rows = rows.filter((r) => codes.has(r.standard_code));
+    }
     $("qcnt").textContent = rows.length;
     $("qRows").innerHTML = rows.map((r, i) => `
       <tr><td class="cc">${i + 1}</td><td>${esc(r.title || "-")}</td>
@@ -605,7 +649,7 @@ const EP = (() => {
     $("qpassage").value = q.passage; $("qmaterial").value = q.material;
     $("qask").value = q.ask; $("qintent").value = q.intent;
     $("qpoints").value = q.default_points; $("qdiff").value = q.difficulty;
-    $("q-std2").value = q.standard_code || "";
+    $("q-std2").value = q.standard_code || ""; showStdFull();
     bogi = q.bogi_items || [];
     choices = d.choices.map((c) => ({ ...c, is_answer: !!c.is_answer }));
     onTypeChange(); renderBogi(); renderChoices();
@@ -909,7 +953,8 @@ const EP = (() => {
     loadProps, toggleForm, saveProp, delProp, openProp, addVariant, delVariant, delEvidence,
     markVerified, searchEvidenceFor, attachEvidence, exportCsv, peekPage,
     pickStandard, filterTree, openStdTable, closeStdTable, renderStdTable,
-    openScope, applyScope, foldMenu, renderPresets, resetQuestionForm, evShow, evViewPage,
+    openScope, applyScope, foldMenu, renderPresets, resetQuestionForm, evShow, evViewPage, evZoom,
+    showStdFull, refillBankFilters,
     onTypeChange, addBogi, setBogi, delBogi, addChoice, setChoice, setCombo, setAnswer, delChoice,
     applyPreset, loadPicker, useProp, searchEvidence, saveQuestion, checkQuestionDraft,
     loadQuestions, editQuestion, checkQuestion, delQuestion,

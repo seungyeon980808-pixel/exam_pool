@@ -75,17 +75,17 @@ body {
 .nz-mi.sub { padding-left: 28px; color: #5a6577; font-size: 11.5px; }
 .nz-mi.sub.on { padding-left: 25px; }
 
-.nz-main { flex: 1; padding: 13px 16px; min-width: 0; }
+.nz-main { flex: 1; padding: 9px 12px; min-width: 0; }
 
 /* ===== 섹션 제목 ===== */
-.nz-h { display: flex; align-items: center; gap: 7px; margin: 0 0 12px; }
+.nz-h { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; flex-wrap: wrap; }
 .nz-h::before { content: ""; width: 9px; height: 9px; background: var(--nz-blue); border-radius: 1px; }
-.nz-h b { color: #1f4e96; font-size: 14.5px; font-weight: 600; }
+.nz-h b { color: #1f4e96; font-size: 13.5px; font-weight: 600; }
 
 /* ===== 조회 필터 ===== */
 .nz-flt {
   border: 1px solid #dbe3ee; background: #f7f9fc; border-radius: 3px;
-  padding: 11px 13px; display: flex; flex-wrap: wrap; align-items: center; gap: 9px 15px; margin-bottom: 11px;
+  padding: 8px 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 7px 12px; margin-bottom: 8px;
 }
 .nz-lb { font-size: 12px; color: #48597a; font-weight: 500; }
 .nz-lb .req { color: var(--nz-req); margin-right: 2px; }
@@ -103,7 +103,7 @@ body {
 .nz-go:hover { background: #285ba9; }
 
 /* ===== 도구 버튼 ===== */
-.nz-tools { display: flex; gap: 5px; justify-content: flex-end; margin-bottom: 7px; }
+.nz-tools { display: flex; gap: 4px; justify-content: flex-end; margin-bottom: 5px; }
 .nz-tb {
   border: 1px solid #c4cedd; background: #fff; border-radius: 3px; padding: 5px 12px;
   font-size: 11.5px; color: #46536b; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
@@ -112,17 +112,17 @@ body {
 .nz-tb.grn { background: var(--nz-green); color: #fff; border-color: #369053; }
 .nz-tb.blu { background: #4a6fa5; color: #fff; border-color: #43648f; }
 
-.nz-cnt { font-size: 12px; color: #46536b; margin: 0 0 6px; }
+.nz-cnt { font-size: 11.5px; color: #46536b; margin: 0 0 4px; }
 .nz-cnt b { color: #1f4e96; }
 
 /* ===== 테이블 ===== */
 table.nz-t { width: 100%; border-collapse: collapse; font-size: 11.8px; }
 .nz-t th {
-  background: var(--nz-th); border: 1px solid var(--nz-line); padding: 7px 5px;
+  background: var(--nz-th); border: 1px solid var(--nz-line); padding: 5px 4px;
   color: #3a4a63; font-weight: 600; text-align: center; white-space: nowrap;
 }
 .nz-t th .ar { color: #9aa7ba; font-size: 9px; margin-left: 2px; }
-.nz-t td { border: 1px solid var(--nz-line2); padding: 6px 9px; color: var(--nz-text); }
+.nz-t td { border: 1px solid var(--nz-line2); padding: 4px 7px; color: var(--nz-text); }
 .nz-t tr:nth-child(even) td { background: #fafbfd; }
 .nz-t tbody tr:hover td { background: #eef4fb; }
 .nz-t .cc { text-align: center; }
@@ -140,13 +140,13 @@ table.nz-t { width: 100%; border-collapse: collapse; font-size: 11.8px; }
 /* ===== 등록 폼(인라인) ===== */
 .nz-form { border: 1px solid #dbe3ee; background: #fff; border-radius: 3px; padding: 13px; margin-bottom: 11px; }
 .nz-form.hidden { display: none; }
-.nz-fr { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
-.nz-fr label { width: 78px; font-size: 12px; color: #48597a; font-weight: 500; flex-shrink: 0; }
+.nz-fr { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; flex-wrap: wrap; }
+.nz-fr label { width: 62px; font-size: 11.5px; color: #48597a; font-weight: 500; flex-shrink: 0; }
 .nz-fr .req { color: var(--nz-req); margin-right: 2px; }
 .nz-fr input, .nz-fr select, .nz-fr textarea {
   flex: 1; border: 1px solid #c4cedd; border-radius: 3px; padding: 6px 9px; font-size: 12px; font-family: inherit;
 }
-.nz-fr textarea { resize: vertical; min-height: 46px; }
+.nz-fr textarea { resize: vertical; min-height: 34px; }
 .nz-fbtn { display: flex; gap: 6px; justify-content: flex-end; }
 
 /* ===== 문항 설계: 2단 레이아웃 ===== */
@@ -221,28 +221,46 @@ table.nz-t { width: 100%; border-collapse: collapse; font-size: 11.8px; }
   border-radius: 3px; padding: 5px 9px; font-size: 12px; cursor: pointer; background: #fff; }
 .nz-scope label.on { background: #e3ecf8; border-color: var(--nz-blue); color: var(--nz-navy); font-weight: 500; }
 .nz-scopebar { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #46536b;
-  background: #f7f9fc; border: 1px solid #dbe3ee; border-radius: 3px; padding: 6px 10px; margin-bottom: 9px; }
+  background: #f7f9fc; border: 1px solid #dbe3ee; border-radius: 3px; padding: 4px 9px; margin-bottom: 7px; }
 .nz-scopebar b { color: var(--nz-navy); }
 
-/* ===== 문항 설계: 근거 검색 존 (화면 위 1/3) ===== */
-.nz-evzone { display: flex; gap: 10px; height: 34vh; min-height: 260px; margin-bottom: 4px; }
-.nz-evlist { width: 46%; min-width: 280px; border: 1px solid var(--nz-line); border-radius: 3px;
-  overflow-y: auto; background: #fff; }
-.nz-evview { flex: 1; border: 1px solid var(--nz-line); border-radius: 3px; display: flex;
-  flex-direction: column; background: #fff; min-width: 0; }
+/* ===== 문항 설계: 좌 설계 / 우 근거검색(세로) ===== */
+.nz-qlayout { display: flex; gap: 10px; align-items: flex-start; }
+.nz-qmain { flex: 1; min-width: 0; }
+.nz-qside { width: 372px; flex-shrink: 0; border: 1px solid var(--nz-line); border-radius: 3px;
+  background: #fff; display: flex; flex-direction: column; position: sticky; top: 6px;
+  max-height: calc(100vh - 96px); overflow: hidden; }
+.nz-sidehead { display: flex; align-items: center; gap: 7px; padding: 7px 9px;
+  background: #eef2f8; font-size: 12px; color: #1f4e96; }
+.nz-sidehead b { font-size: 12.5px; }
+.nz-qside .nz-evlist { flex: 1 1 34%; min-height: 130px; overflow-y: auto;
+  border-top: 1px solid var(--nz-line); }
+.nz-qside .nz-viewer-body { flex: 1 1 40%; min-height: 150px; }
+.nz-qside .nz-picker { overflow-y: auto; padding: 0 8px 8px; }
 
 /* 출력/비출력 섹션 구분 */
-.nz-print, .nz-meta { border-radius: 4px; margin-bottom: 12px; overflow: hidden; }
+.nz-print, .nz-meta { border-radius: 4px; margin-bottom: 8px; overflow: hidden; }
 .nz-print { border: 2px solid #2f6ac0; }
 .nz-meta { border: 1px dashed #b8c2d2; }
-.nz-secbar { font-size: 11.5px; font-weight: 600; padding: 6px 11px; display: flex; align-items: center; gap: 6px; }
+.nz-secbar { font-size: 11px; font-weight: 600; padding: 4px 10px; display: flex; align-items: center; gap: 6px; }
 .nz-secbar.print { background: #e3ecf8; color: #1f4e96; }
 .nz-secbar.print::before { content: "인쇄"; background: #2f6ac0; color: #fff; border-radius: 2px;
-  padding: 1px 6px; font-size: 10px; }
+  padding: 1px 5px; font-size: 9.5px; }
 .nz-secbar.meta { background: #f4f6f9; color: #5f6b80; }
 .nz-secbar.meta::before { content: "관리"; background: #8a94a6; color: #fff; border-radius: 2px;
-  padding: 1px 6px; font-size: 10px; }
-.nz-secbody { padding: 11px 12px; background: #fff; }
+  padding: 1px 5px; font-size: 9.5px; }
+.nz-secbody { padding: 9px 10px; background: #fff; }
+.nz-secbody.tight .nz-fr { margin-bottom: 6px; }
+.nz-secbody.tight .nz-fr label { width: 56px; font-size: 11.5px; }
+.nz-secbody.tight .nz-fr label.inline { width: auto; margin-left: 8px; }
+.nz-secbody.tight textarea { min-height: 34px; }
+.nz-secbody.tight .nz-sub { margin: 7px 0 3px; }
+
+/* 성취기준 전문 (select 는 잘리므로 아래에 전부 보여준다) */
+.nz-stdfull { background: #eef4fb; border: 1px solid #cfe0f5; border-left: 3px solid var(--nz-blue);
+  border-radius: 3px; padding: 6px 9px; margin: 0 0 6px 56px; font-size: 11.5px;
+  color: #274470; line-height: 1.45; }
+.nz-stdfull b { color: var(--nz-code); margin-right: 5px; }
 
 /* 프리셋 버튼 */
 .nz-preset { border: 1px solid #c4cedd; background: #fff; border-radius: 3px; padding: 5px 10px;
