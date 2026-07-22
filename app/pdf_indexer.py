@@ -8,6 +8,8 @@ DocFinder 로직 재구현: 폴더 지정 → 하위 폴더 재귀 스캔 → Py
 """
 import os
 import sqlite3
+import threading
+from collections import OrderedDict
 
 from .db import connect
 
@@ -52,6 +54,7 @@ def _extract(path: str):
 
 def index_folder(root: str, doc_type: str = "교과서", progress=None) -> dict:
     """폴더를 인덱싱한다. 이미 등록된 파일(path 동일)은 갱신한다."""
+    close_all_docs()   # 캐시가 잡고 있는 파일 잠금을 먼저 푼다
     conn = connect()
     try:
         ensure_fts(conn)
@@ -167,14 +170,127 @@ def search(q: str, limit: int = 60, doc_id: int | None = None) -> dict:
         conn.close()
 
 
-def render_page_png(doc_id: int, page_no: int, terms: list[str] | None = None,
-                    dpi: int = 110) -> bytes:
-    """PDF 페이지를 PNG 로 렌더링한다. 검색어가 있으면 형광 표시를 그린다.
+# ===== 문서 핸들 캐시 (렌더링 속도) =====
+# 페이지를 넘길 때마다 fitz.open() 을 반복하면 큰 PDF 는 여는 것만으로 수백 ms 가 든다.
+# 열어둔 문서를 재사용한다. PyMuPDF 문서 객체는 스레드 안전이 아니므로 락으로 보호한다.
+_doc_lock = threading.RLock()
+_doc_cache: "OrderedDict[str, tuple[float, object]]" = OrderedDict()
+_DOC_CACHE_MAX = 4
 
-    원본 파일은 건드리지 않는다(메모리에서만 그리고 저장하지 않음).
+_png_lock = threading.Lock()
+_png_cache: "OrderedDict[tuple, bytes]" = OrderedDict()
+_PNG_CACHE_MAX = 40
+
+# 키워드별 형광 색 (여러 태그를 구분해 보여준다)
+HL_PALETTE = [
+    (1.00, 0.85, 0.30),   # 노랑
+    (0.55, 0.85, 1.00),   # 하늘
+    (0.65, 1.00, 0.65),   # 연두
+    (1.00, 0.72, 0.86),   # 분홍
+    (0.82, 0.76, 1.00),   # 보라
+]
+
+
+def _get_doc(path: str):
+    """열어둔 PDF 를 재사용한다. 파일이 바뀌면 다시 연다."""
+    import fitz
+
+    mtime = os.path.getmtime(path)
+    with _doc_lock:
+        cached = _doc_cache.get(path)
+        if cached and cached[0] == mtime:
+            _doc_cache.move_to_end(path)
+            return cached[1]
+        if cached:
+            try:
+                cached[1].close()
+            except Exception:
+                pass
+            _doc_cache.pop(path, None)
+        while len(_doc_cache) >= _DOC_CACHE_MAX:
+            _, (_, old) = _doc_cache.popitem(last=False)
+            try:
+                old.close()
+            except Exception:
+                pass
+        doc = fitz.open(path)
+        _doc_cache[path] = (mtime, doc)
+        return doc
+
+
+def close_all_docs() -> None:
+    """캐시된 문서를 모두 닫는다 (재색인 전에 파일 잠금을 푼다)."""
+    with _doc_lock:
+        for _, (_, doc) in _doc_cache.items():
+            try:
+                doc.close()
+            except Exception:
+                pass
+        _doc_cache.clear()
+    with _png_lock:
+        _png_cache.clear()
+
+
+# ===== 하이라이트: 색인과 같은 규칙으로 글자를 찾는다 =====
+def highlight_rects(page, terms: list[str]) -> tuple[dict, list[str]]:
+    """검색어가 실제로 어느 글자에 있는지 좌표를 찾는다.
+
+    **색인(FTS5)과 같은 규칙을 쓰는 것이 핵심이다.**
+    FTS5 는 unicode61 로 공백 분리 후 prefix 로 맞히므로, 여기서도 `get_text("words")`
+    (같은 공백 분리)에서 부분일치로 찾는다. `search_for()` 는 글리프 단위 탐색이라
+    색인과 경로가 갈려 '일치율 100%인데 형광펜 0개'가 날 수 있었다(06 보고서 2-2절).
+
+    한 단어가 여러 조각으로 쪼개진 경우(한글 PDF 에서 흔함)를 위해 줄 단위 폴백을 둔다.
+    반환: ({검색어: [Rect]}, 못 찾은 검색어 목록)
     """
     import fitz
 
+    words = page.get_text("words")  # (x0,y0,x1,y1,word,block,line,word_no)
+    hits: dict[str, list] = {}
+    misses: list[str] = []
+    for t in terms:
+        tl = t.lower()
+        rects = [fitz.Rect(w[:4]) for w in words if tl in w[4].lower()]
+        if not rects:
+            rects = _line_fallback(words, tl)   # 쪼개진 단어 구제
+        if rects:
+            hits[t] = rects
+        else:
+            misses.append(t)
+    return hits, misses
+
+
+def _line_fallback(words, term_lower: str) -> list:
+    """줄 안의 조각을 이어붙여 찾는다. '징 계 기 준' 처럼 쪼개진 단어 대응."""
+    import fitz
+    from collections import defaultdict
+
+    lines = defaultdict(list)
+    for w in words:
+        lines[(w[5], w[6])].append(w)
+
+    target = term_lower.replace(" ", "")
+    out = []
+    for ws in lines.values():
+        ws.sort(key=lambda w: w[7])
+        joined = "".join(w[4] for w in ws).lower()
+        start = joined.find(target)
+        if start < 0:
+            continue
+        end = start + len(target)
+        pos, rect = 0, None
+        for w in ws:
+            wlen = len(w[4])
+            if pos < end and pos + wlen > start:      # 이 조각이 검색어에 걸친다
+                r = fitz.Rect(w[:4])
+                rect = r if rect is None else (rect | r)
+            pos += wlen
+        if rect is not None:
+            out.append(rect)
+    return out
+
+
+def _doc_path(doc_id: int) -> str:
     conn = connect()
     try:
         row = conn.execute("SELECT file_path FROM document WHERE id = ?", (doc_id,)).fetchone()
@@ -182,17 +298,65 @@ def render_page_png(doc_id: int, page_no: int, terms: list[str] | None = None,
         conn.close()
     if not row:
         raise FileNotFoundError("문서를 찾을 수 없습니다.")
+    return row["file_path"]
 
-    doc = fitz.open(row["file_path"])
-    try:
+
+def render_page_png(doc_id: int, page_no: int, dpi: int = 110) -> bytes:
+    """PDF 페이지를 PNG 로 렌더링한다 (하이라이트 없는 순수 지면).
+
+    **형광 표시를 여기서 그리지 않는 이유**: `draw_rect` 는 페이지 콘텐츠를 실제로 바꾸므로
+    캐시된 문서를 재사용하면 표시가 눌어붙는다. 좌표만 따로 내보내 화면에서 겹치면
+    원본이 안전하고, 검색어가 달라도 같은 이미지를 재사용해 훨씬 빠르다.
+    """
+    key = (doc_id, page_no, dpi)
+    with _png_lock:
+        cached = _png_cache.get(key)
+        if cached is not None:
+            _png_cache.move_to_end(key)
+            return cached
+
+    path = _doc_path(doc_id)
+    with _doc_lock:                       # 문서 객체는 스레드 안전이 아니다
+        doc = _get_doc(path)
+        if page_no < 1 or page_no > doc.page_count:
+            raise FileNotFoundError("페이지 범위를 벗어났습니다.")
+        png = doc[page_no - 1].get_pixmap(dpi=dpi).tobytes("png")
+
+    with _png_lock:
+        _png_cache[key] = png
+        while len(_png_cache) > _PNG_CACHE_MAX:
+            _png_cache.popitem(last=False)
+    return png
+
+
+def page_highlights(doc_id: int, page_no: int, terms: list[str], dpi: int = 110) -> dict:
+    """검색어가 있는 위치를 화면 픽셀 좌표로 돌려준다.
+
+    반환: {"boxes": [{term, color_idx, x, y, w, h}], "misses": [...],
+           "hits": {검색어: 개수}, "page_w": .., "page_h": ..}
+    """
+    path = _doc_path(doc_id)
+    zoom = dpi / 72.0
+    with _doc_lock:
+        doc = _get_doc(path)
+        if page_no < 1 or page_no > doc.page_count:
+            raise FileNotFoundError("페이지 범위를 벗어났습니다.")
         page = doc[page_no - 1]
-        for t in (terms or []):
-            for rect in page.search_for(t):
-                page.draw_rect(rect, color=None, fill=(1, 0.85, 0.3), fill_opacity=0.42,
-                               overlay=True)
-        return page.get_pixmap(dpi=dpi).tobytes("png")
-    finally:
-        doc.close()
+        hits, misses = highlight_rects(page, terms)
+        pw, ph = page.rect.width * zoom, page.rect.height * zoom
+
+    boxes = []
+    for i, t in enumerate(terms):
+        for r in hits.get(t, []):
+            boxes.append({
+                "term": t, "color_idx": i % len(HL_PALETTE),
+                "x": round(r.x0 * zoom, 1), "y": round(r.y0 * zoom, 1),
+                "w": round((r.x1 - r.x0) * zoom, 1), "h": round((r.y1 - r.y0) * zoom, 1),
+            })
+    boxes.sort(key=lambda b: (b["y"], b["x"]))
+    return {"boxes": boxes, "misses": misses,
+            "hits": {t: len(hits.get(t, [])) for t in terms},
+            "page_w": round(pw), "page_h": round(ph)}
 
 
 def list_documents() -> list[dict]:

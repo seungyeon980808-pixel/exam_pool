@@ -249,6 +249,18 @@ table.nz-t { width: 100%; border-collapse: collapse; font-size: 11.8px; }
 .nz-viewer-body { flex: 1; overflow: auto; background: #eef1f5; text-align: center; padding: 10px; }
 .nz-viewer-body img { max-width: 100%; box-shadow: 0 1px 6px rgba(0,0,0,.16); background: #fff; }
 
+/* 페이지 이미지 위에 형광 표시를 겹친다 (원본을 건드리지 않는다) */
+.nz-pagewrap { position: relative; display: inline-block; line-height: 0; }
+.nz-pagewrap img { display: block; }
+.nz-hl { position: absolute; border-radius: 1px; pointer-events: none; mix-blend-mode: multiply; }
+
+.nz-hlbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 5px 8px; margin-bottom: 6px; font-size: 11.5px; color: #46536b; }
+.nz-leg { display: inline-flex; align-items: center; gap: 4px; }
+.nz-leg i { width: 11px; height: 11px; border-radius: 2px; border: 1px solid #c4cedd; }
+.nz-hlwarn { background: #fff7e6; border: 1px solid #f0dcae; color: #8a6414;
+  border-radius: 3px; padding: 4px 9px; font-size: 11.5px; }
+
 .nz-docgroup { border-bottom: 1px solid var(--nz-line2); }
 .nz-docgroup-head { display: flex; align-items: center; gap: 6px; padding: 7px 10px;
   background: #f4f7fb; font-size: 11.5px; color: #1f4e96; font-weight: 600; position: sticky; top: 0; }

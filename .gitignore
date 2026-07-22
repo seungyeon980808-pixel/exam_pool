@@ -18,6 +18,10 @@ __pycache__/
 venv/
 *.egg-info/
 
+# ===== Node (legacy/docfinder-electron 보관용) =====
+node_modules/
+package-lock.json
+
 # ===== 데모·홍보 영상 자산 (별도 관리) =====
 demo/
 promo/

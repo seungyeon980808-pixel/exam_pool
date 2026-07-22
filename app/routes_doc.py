@@ -68,16 +68,34 @@ def search_evidence(q: str = "", limit: int = 60, doc_id: int = 0):
 
 
 @router.get("/documents/{doc_id}/page/{page_no}/image")
-def page_image(doc_id: int, page_no: int, q: str = "", dpi: int = 110):
-    """PDF 페이지 미리보기 PNG (검색어 형광 표시 포함)."""
+def page_image(doc_id: int, page_no: int, dpi: int = 110):
+    """PDF 페이지 미리보기 PNG (하이라이트 없는 순수 지면).
+
+    검색어와 무관하므로 같은 페이지는 항상 캐시가 맞는다 → 페이지 넘김이 빠르다.
+    형광 표시는 /highlights 좌표를 화면에서 겹쳐 그린다.
+    """
     try:
-        png = pdf_indexer.render_page_png(doc_id, page_no, pdf_indexer.terms_of(q), dpi=dpi)
+        png = pdf_indexer.render_page_png(doc_id, page_no, dpi=dpi)
     except FileNotFoundError as e:
         raise HTTPException(404, str(e))
     except Exception as e:
         raise HTTPException(500, f"페이지를 그릴 수 없습니다: {e}")
     return Response(content=png, media_type="image/png",
-                    headers={"Cache-Control": "public, max-age=600"})
+                    headers={"Cache-Control": "public, max-age=3600"})
+
+
+@router.get("/documents/{doc_id}/page/{page_no}/highlights")
+def page_highlights(doc_id: int, page_no: int, q: str = "", dpi: int = 110):
+    """검색어 위치 좌표. 못 찾은 검색어(misses)를 함께 알려 조용한 실패를 막는다.
+
+    (06 보고서 2-2절: '일치율 100%인데 형광펜 0개'를 UI 가 표시할 수 있게)
+    """
+    try:
+        return pdf_indexer.page_highlights(doc_id, page_no, pdf_indexer.terms_of(q), dpi=dpi)
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"좌표를 계산할 수 없습니다: {e}")
 
 
 @router.get("/documents/{doc_id}/page/{page_no}")

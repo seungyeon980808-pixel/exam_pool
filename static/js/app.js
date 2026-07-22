@@ -245,7 +245,7 @@ const EP = (() => {
       </div>`).join("") : '<p class="nz-sub">검색 결과가 없습니다. 근거 문서 탭에서 교과서를 인덱싱했는지 확인하세요.</p>';
   }
 
-  /** 어디서든 PDF 페이지 원문을 크게 띄운다 (모달) */
+  /** 어디서든 PDF 페이지 원문을 크게 띄운다 (모달, 하이라이트 포함) */
   async function peekPage(docId, pageNo, q) {
     const meta = await api(`/api/documents/${docId}/page/${pageNo}`);
     let m = $("peekModal");
@@ -261,9 +261,25 @@ const EP = (() => {
         <button class="nz-tb" style="margin-left:auto" onclick="document.getElementById('peekModal').classList.add('hidden')">닫기</button>
       </div>
       <div class="nz-modal-body" style="background:#eef1f5;text-align:center">
-        <img src="/api/documents/${docId}/page/${pageNo}/image?q=${encodeURIComponent(q || "")}&dpi=130"
-             style="max-width:100%;box-shadow:0 1px 6px rgba(0,0,0,.16);background:#fff" />
+        <div class="nz-pagewrap" id="peekWrap">
+          <img id="peekImg" src="/api/documents/${docId}/page/${pageNo}/image?dpi=130" />
+        </div>
       </div></div>`;
+    if (!q) return;
+    const hl = await api(`/api/documents/${docId}/page/${pageNo}/highlights?q=` +
+      encodeURIComponent(q) + "&dpi=130");
+    const wrap = $("peekWrap"), img = $("peekImg");
+    const paint = () => {
+      const scale = img.clientWidth / hl.page_w;
+      hl.boxes.forEach((b) => {
+        const d = document.createElement("div");
+        d.className = "nz-hl";
+        d.style.cssText = `left:${b.x * scale}px;top:${b.y * scale}px;` +
+          `width:${b.w * scale}px;height:${b.h * scale}px;background:${HL_COLORS[b.color_idx]}`;
+        wrap.appendChild(d);
+      });
+    };
+    if (img.complete) paint(); else img.onload = paint;
   }
 
   async function attachEvidence(pid, hit) {
@@ -653,18 +669,77 @@ const EP = (() => {
     return esc(s).replace(/\[([^\]]+)\]/g, "<mark>$1</mark>");
   }
 
-  /* --- 페이지 미리보기 --- */
+  /* --- 페이지 미리보기 (이미지 + 좌표 오버레이) --- */
+  const HL_COLORS = ["rgba(255,217,77,.45)", "rgba(140,217,255,.45)", "rgba(166,255,166,.45)",
+                     "rgba(255,184,219,.45)", "rgba(209,194,255,.45)"];
+
   async function showPage(docId, pageNo, el) {
     document.querySelectorAll(".nz-res.on").forEach((n) => n.classList.remove("on"));
     if (el) el.classList.add("on");
     viewer.docId = docId; viewer.page = pageNo;
+
     const meta = await api(`/api/documents/${docId}/page/${pageNo}`);
     viewer.lastPage = meta.last_page;
-    $("viewerTitle").textContent = `${meta.title} — ${pageNo}페이지`;
-    const q = encodeURIComponent(searchTags.join(" "));
+    $("viewerTitle").textContent = `${meta.title} — ${pageNo} / ${meta.last_page}페이지`;
+
+    // 이미지는 검색어와 무관 → 캐시가 그대로 맞아 빠르다
     $("viewerBody").innerHTML =
-      `<img src="/api/documents/${docId}/page/${pageNo}/image?q=${q}" alt="${esc(meta.title)} ${pageNo}페이지" />`;
+      `<div class="nz-pagewrap" id="pagewrap">
+         <img id="pageImg" src="/api/documents/${docId}/page/${pageNo}/image"
+              alt="${esc(meta.title)} ${pageNo}페이지" />
+       </div>`;
+
+    prefetch(docId, pageNo + 1);   // 다음 페이지 미리 받아두기
+    if (!searchTags.length) return;
+
+    const hl = await api(`/api/documents/${docId}/page/${pageNo}/highlights?q=` +
+      encodeURIComponent(searchTags.join(" ")));
+    drawHighlights(hl);
   }
+
+  function drawHighlights(hl) {
+    const wrap = $("pagewrap"), img = $("pageImg");
+    if (!wrap || !img) return;
+    const paint = () => {
+      wrap.querySelectorAll(".nz-hl").forEach((n) => n.remove());
+      const scale = img.clientWidth / hl.page_w;   // 이미지가 축소돼 보여도 좌표가 맞도록
+      hl.boxes.forEach((b) => {
+        const d = document.createElement("div");
+        d.className = "nz-hl";
+        d.style.cssText = `left:${b.x * scale}px;top:${b.y * scale}px;` +
+          `width:${b.w * scale}px;height:${b.h * scale}px;background:${HL_COLORS[b.color_idx]}`;
+        d.title = b.term;
+        wrap.appendChild(d);
+      });
+      if (hl.boxes.length) {                      // 첫 일치로 스크롤
+        const first = hl.boxes[0];
+        $("viewerBody").scrollTop = Math.max(0, first.y * scale - 120);
+      }
+    };
+    if (img.complete) paint(); else img.onload = paint;
+
+    // 조용한 실패 방지 — 검색은 맞았는데 위치를 못 찾은 경우 알린다
+    const warn = hl.misses.length
+      ? `<div class="nz-hlwarn">이 페이지에서 <b>${esc(hl.misses.join(", "))}</b>의 정확한 위치를 찾지 못했습니다 (글자가 이미지이거나 조각나 있을 수 있음)</div>`
+      : "";
+    const legend = Object.entries(hl.hits).filter(([, n]) => n).map(([t, n], i) =>
+      `<span class="nz-leg"><i style="background:${HL_COLORS[i % HL_COLORS.length]}"></i>${esc(t)} ${n}</span>`).join("");
+    $("viewerTitle").insertAdjacentHTML("afterend", "");
+    const bar = document.createElement("div");
+    bar.className = "nz-hlbar";
+    bar.innerHTML = legend + warn;
+    wrap.parentElement.insertBefore(bar, wrap);
+  }
+
+  const _prefetched = new Set();
+  function prefetch(docId, pageNo) {
+    const key = `${docId}/${pageNo}`;
+    if (_prefetched.has(key)) return;
+    _prefetched.add(key);
+    const im = new Image();
+    im.src = `/api/documents/${docId}/page/${pageNo}/image`;
+  }
+
   function viewerPage(delta) {
     if (!viewer.docId) return;
     const p = viewer.page + delta;
