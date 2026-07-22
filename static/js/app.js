@@ -194,6 +194,12 @@ const EP = (() => {
     loadProps();
   }
 
+  /** 현재 출제 범위 안의 성취기준 코드. 범위가 없으면 null(전체) */
+  function allowedCodes() {
+    if (!scope.length && !stdScope.length) return null;
+    return new Set(scopedStandards().flatMap((u) => u.standards.map((s) => s.code)));
+  }
+
   /* ---------- 트리 (접기/펴기) ---------- */
   let openUnits = new Set();
 
@@ -258,7 +264,9 @@ const EP = (() => {
     const std = $("q-std").value, q = $("q-text").value.trim();
     if (std) params.set("standard", std);
     if (q) params.set("q", q);
-    curProps = await api("/api/propositions?" + params);
+    const rows = await api("/api/propositions?" + params);
+    const allow = allowedCodes();
+    curProps = allow ? rows.filter((r) => allow.has(r.standard_code)) : rows;
     const tb = $("propRows");
     tb.innerHTML = "";
     let ev = 0, va = 0;
@@ -493,7 +501,9 @@ const EP = (() => {
 
   async function loadPicker() {
     const q = $("pickSearch").value.trim();
-    const rows = await api("/api/propositions?" + new URLSearchParams(q ? { q } : {}));
+    let rows = await api("/api/propositions?" + new URLSearchParams(q ? { q } : {}));
+    const allowPk = allowedCodes();
+    if (allowPk) rows = rows.filter((r) => allowPk.has(r.standard_code));
     $("pickerList").innerHTML = rows.slice(0, 20).map((r) => `
       <div class="nz-hit">
         <div class="nz-hit-snip">${esc(r.text)}</div>
@@ -709,6 +719,8 @@ const EP = (() => {
     const stt = $("qbStatus") ? $("qbStatus").value : "";
     if (stt) params.set("status", stt);
     let rows = await api("/api/questions?" + params);
+    const allowQ = allowedCodes();
+    if (allowQ) rows = rows.filter((r) => !r.standard_code || allowQ.has(r.standard_code));
     const unit = $("qbUnit") ? +$("qbUnit").value : 0;
     if (unit && !std) {           // 단원만 고른 경우: 그 단원의 성취기준들로 거른다
       const codes = new Set((scopedStandards().find((u) => u.unit_no === unit) || {standards: []})
@@ -806,7 +818,9 @@ const EP = (() => {
     $("setFootL").textContent = `문항 ${db_.count}개`;
     $("setFootR").textContent = `배점 합 ${db_.total_points}점 · 성취기준 ${db_.standards.length}종`;
 
-    const qs = await api("/api/questions");
+    let qs = await api("/api/questions");
+    const allowS = allowedCodes();
+    if (allowS) qs = qs.filter((r) => !r.standard_code || allowS.has(r.standard_code));
     const inSet = new Set(d.items.map((it) => it.question.id));
     $("setPickRows").innerHTML = qs.filter((q) => !inSet.has(q.id)).map((q, i) => `
       <tr><td class="cc">${i + 1}</td><td>${esc(q.ask)}</td>
@@ -1318,7 +1332,9 @@ const EP = (() => {
     const code = stdValue();
     const params = new URLSearchParams();
     if (code) params.set("standard", code);
-    const rows = await api("/api/propositions?" + params);
+    let rows = await api("/api/propositions?" + params);
+    const allowP = allowedCodes();
+    if (allowP) rows = rows.filter((r) => allowP.has(r.standard_code));
     const detail = await Promise.all(rows.slice(0, 30).map((r) => api("/api/propositions/" + r.id)));
     let m = $("pickModal");
     if (!m) {
