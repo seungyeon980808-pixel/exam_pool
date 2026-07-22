@@ -20,6 +20,12 @@ def connect() -> sqlite3.Connection:
 
 # ===== 스키마 =====
 SCHEMA = """
+-- 앱 메타(과목·교육과정 출처 등). 다른 과목으로 교체할 때 여기 값이 바뀐다.
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS standard (
     code        TEXT PRIMARY KEY,
     grade_band  TEXT NOT NULL,
@@ -169,6 +175,15 @@ def _seed_standards(conn: sqlite3.Connection) -> None:
         [
             (s["code"], s["grade_band"], s["unit_no"], s["seq"], s["text"])
             for s in data["standards"]
+        ],
+    )
+    # 과목 메타 — 다른 과목 seed 로 교체하면 이 값이 따라 바뀐다 (확장성)
+    conn.executemany(
+        "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
+        [
+            ("subject", data.get("subject", "중학교 과학 (2022 개정)")),
+            ("source", data.get("source", "")),
+            ("extracted_at", data.get("extracted_at", "")),
         ],
     )
     conn.commit()

@@ -149,6 +149,53 @@ table.nz-t { width: 100%; border-collapse: collapse; font-size: 11.8px; }
 .nz-fr textarea { resize: vertical; min-height: 46px; }
 .nz-fbtn { display: flex; gap: 6px; justify-content: flex-end; }
 
+/* ===== 문항 설계: 2단 레이아웃 ===== */
+.nz-cols { display: flex; gap: 14px; align-items: flex-start; }
+.nz-col-main { flex: 1; min-width: 0; }
+.nz-col-side { width: 270px; flex-shrink: 0; border-left: 1px solid var(--nz-line); padding-left: 12px; }
+.nz-sub { font-size: 11.5px; color: #5f6b80; margin: 10px 0 5px; font-weight: 500; }
+.nz-tag { font-size: 10.5px; padding: 2px 6px; border-radius: 2px; background: #eef2f7; color: #5f6b80; border: 1px solid var(--nz-line); flex-shrink: 0; }
+.nz-tag.g { background: #e7f5ec; color: #2f8a4e; border-color: #bde0c9; }
+.nz-tag.r { background: #fdecea; color: #c0392b; border-color: #f3c4bf; }
+.nz-tb.mini { padding: 2px 7px; font-size: 11px; }
+
+/* 검색·선택 결과 목록 */
+.nz-picker { max-height: 260px; overflow-y: auto; margin-top: 6px; }
+.nz-hit { border: 1px solid var(--nz-line2); border-radius: 3px; padding: 7px 9px; margin-bottom: 6px; background: #fff; }
+.nz-hit-src { font-size: 11px; color: #2b5aa8; font-weight: 500; margin-bottom: 3px; }
+.nz-hit-snip { font-size: 11.5px; color: #46536b; line-height: 1.45; }
+
+/* 명제 상세 */
+.nz-detail { border-top: 2px solid var(--nz-blue); margin-top: 16px; }
+.nz-detail.hidden { display: none; }
+.nz-detail-body { padding: 4px 2px 14px; }
+.nz-prop-text { font-size: 13.5px; color: #1f2937; margin: 0 0 4px; font-weight: 500; }
+.g { color: #2f8a4e; }
+
+/* 검토 결과 */
+.nz-issues { border-radius: 3px; padding: 9px 12px; margin-top: 9px; font-size: 12px; }
+.nz-issues ul { margin: 5px 0 0; padding-left: 18px; }
+.nz-issues li { margin: 2px 0; }
+.nz-issues.ok { background: #e7f5ec; border: 1px solid #bde0c9; color: #256b3d; }
+.nz-issues.err { background: #fdecea; border: 1px solid #f3c4bf; color: #a4342a; }
+.nz-issues.warn { background: #fff7e6; border: 1px solid #f0dcae; color: #8a6414; }
+
+/* 세트 대시보드 */
+.nz-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; margin-bottom: 11px; }
+.nz-mc { background: #f4f7fb; border: 1px solid #dbe3ee; border-radius: 3px; padding: 9px 12px; }
+.nz-mlbl { font-size: 11px; color: #5f6b80; margin: 0 0 3px; }
+.nz-mval { font-size: 19px; font-weight: 600; color: #1f4e96; margin: 0; }
+.nz-mval.small { font-size: 14px; }
+
+/* 드래그 배열 */
+.nz-t tr[draggable="true"] { cursor: grab; }
+.nz-t .grip { color: #9aa7ba; user-select: none; }
+
+/* 출력 상자 */
+.nz-export { width: 100%; min-height: 200px; font-family: var(--font-mono, Consolas, monospace);
+  font-size: 12px; border: 1px solid var(--nz-line); border-radius: 3px; padding: 9px; }
+.hidden { display: none; }
+
 /* ===== 아직 안 만든 화면 ===== */
 .nz-todo { padding: 60px 0; text-align: center; color: #8a94a6; }
 .nz-todo i { font-size: 34px; display: block; margin-bottom: 10px; color: #b8c2d2; }
