@@ -170,6 +170,7 @@ class RefIn(BaseModel):
 class RefPatch(BaseModel):
     note: str | None = None
     tags: str | None = None
+    question_id: int | None = None
 
 
 @router.get("/exam-refs")
@@ -219,6 +220,8 @@ def update_ref(ref_id: int, p: RefPatch):
             conn.execute("UPDATE exam_ref SET note=? WHERE id=?", (p.note.strip(), ref_id))
         if p.tags is not None:
             conn.execute("UPDATE exam_ref SET tags=? WHERE id=?", (p.tags.strip(), ref_id))
+        if p.question_id is not None:
+            conn.execute("UPDATE exam_ref SET question_id=? WHERE id=?", (p.question_id, ref_id))
         conn.commit()
         return {"ok": True}
     finally:

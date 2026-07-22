@@ -659,14 +659,23 @@ const EP = (() => {
         + missing.map((m) => m.t).join(", "));
       if (!(checkState.note || "").trim()) return alert("확인 근거를 적어주세요.");
     }
+    let qid = editingQid;
     if (editingQid) { await put(`/api/questions/${editingQid}`, q); }
-    else { await post("/api/questions", q); }
+    else { const r = await post("/api/questions", q); qid = r.id; }
+    // 이 문항을 만들며 담은 참고 기출을 문항에 연결한다
+    for (const rf of refs.filter((x) => !x.question_id)) {
+      await api(`/api/exam-refs/${rf.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question_id: qid }),
+      });
+    }
     resetQuestionForm(); loadQuestions();
     alert("문항을 저장했습니다.");
   }
 
   function resetQuestionForm() {
     editingQid = null; bogi = []; choices = []; checkState = {}; renderChecklist();
+    refs = []; curRefId = null; renderRefs();
     ["qtitle", "qpassage", "qmaterial", "qask", "qintent"].forEach((id) => $(id).value = "");
     setStdValue("");
     $("isNeg").checked = false; $("qpoints").value = "3";
@@ -1025,70 +1034,83 @@ const EP = (() => {
 
 
 
-  /* ---------- 기출 스크랩 (참고 문항 + 메모) ---------- */
-  let scraps = [];
-  let curScrap = null;
-  let scrapTimer = null;
+  /* ---------- 참고 기출 (문항 설계 안에서) ---------- */
+  // 이 문항을 만들 때 참고한 기출들. 성취기준 아래 버튼으로 놓고, 누르면 옆에서 바로 본다.
+  let refs = [];            // 현재 문항의 참고 기출
+  let curRefId = null;
 
-  async function loadScraps() {
-    const q = $("scrapSearch") ? $("scrapSearch").value.trim() : "";
-    scraps = await api("/api/exam-refs" + (q ? "?q=" + encodeURIComponent(q) : ""));
-    $("scrapCnt").textContent = scraps.length;
-    $("scrapList").innerHTML = scraps.length ? scraps.map((r) => `
-      <div class="nz-scrapitem ${curScrap && curScrap.id === r.id ? "on" : ""}" onclick="EP.openScrap(${r.id})">
-        <b>${r.item_num}번</b> <span class="src">${esc(r.doc_title)} p.${r.page_no}</span>
-        ${r.note ? `<div class="memo">${esc(r.note)}</div>` : ""}
-        ${r.tags ? `<div class="tags">${r.tags.split(",").map((t) =>
-          t.trim() ? `<span class="nz-tag">${esc(t.trim())}</span>` : "").join("")}</div>` : ""}
-      </div>`).join("")
-      : '<p class="nz-sub" style="padding:12px">스크랩한 기출이 없습니다. 문항 설계의 기출 검색에서 “참고로 기록”을 누르세요.</p>';
+  async function loadRefs(questionId) {
+    const all = await api("/api/exam-refs");
+    refs = questionId ? all.filter((r) => r.question_id === questionId)
+                      : all.filter((r) => !r.question_id);   // 아직 저장 안 한 문항의 임시 스크랩
+    renderRefs();
   }
 
-  function openScrap(id) {
-    curScrap = scraps.find((r) => r.id === id);
-    if (!curScrap) return;
-    document.querySelectorAll(".nz-scrapitem.on").forEach((n) => n.classList.remove("on"));
-    const el = [...document.querySelectorAll(".nz-scrapitem")][scraps.indexOf(curScrap)];
-    if (el) el.classList.add("on");
-    $("scrapTitle").textContent = `${curScrap.doc_title} — ${curScrap.page_no}p ${curScrap.item_num}번`;
-    $("scrapImg").innerHTML =
-      `<img src="/api/documents/${curScrap.document_id}/page/${curScrap.page_no}/item/${curScrap.item_num}/image?dpi=130"
-            style="max-width:100%;box-shadow:0 1px 6px rgba(0,0,0,.14);background:#fff" />`;
-    $("scrapNote").value = curScrap.note || "";
-    $("scrapTags").value = curScrap.tags || "";
-    $("scrapSaved").textContent = "";
+  function renderRefs() {
+    const bar = $("refBar");
+    if (!bar) return;
+    bar.innerHTML = refs.length ? refs.map((r) => `
+      <span class="nz-refbtn ${curRefId === r.id ? "on" : ""}" onclick="EP.showRef(${r.id})">
+        <b>${r.item_num}번</b>${esc(r.doc_title)}
+        ${r.note ? `<span class="memo">${esc(r.note)}</span>` : ""}
+        <span class="x" onclick="event.stopPropagation();EP.delRef(${r.id})">×</span>
+      </span>`).join("")
+      : '<span class="nz-refempty">기출 검색에서 “참고로 기록”을 누르면 여기 버튼으로 담깁니다.</span>';
   }
 
-  function scrapNoteChanged() {
-    if (!curScrap) return;
-    $("scrapSaved").textContent = "저장 중…";
-    clearTimeout(scrapTimer);
-    scrapTimer = setTimeout(async () => {
-      await api(`/api/exam-refs/${curScrap.id}`, {
+  /** 참고 기출 버튼 → 오른쪽 패널에 그 문항과 메모를 띄운다 */
+  function showRef(refId) {
+    const r = refs.find((x) => x.id === refId);
+    if (!r) return;
+    curRefId = refId;
+    renderRefs();
+    $("evViewTitle").textContent = `${r.doc_title} — ${r.page_no}p ${r.item_num}번 (참고 기출)`;
+    $("evViewBody").innerHTML = `
+      <div class="nz-refview">
+        <img src="/api/documents/${r.document_id}/page/${r.page_no}/item/${r.item_num}/image?dpi=130" />
+      </div>
+      <div class="nz-refnote">
+        <div class="nz-fr" style="margin:0">
+          <label>메모</label>
+          <textarea id="refNote" rows="2" placeholder="변형 아이디어·주의점"
+                    oninput="EP.refNoteChanged(${r.id})">${esc(r.note || "")}</textarea>
+          <span class="nz-sub" id="refSaved" style="margin:0;min-width:44px"></span>
+        </div>
+      </div>`;
+  }
+
+  let refTimer = null;
+  function refNoteChanged(refId) {
+    $("refSaved").textContent = "저장 중…";
+    clearTimeout(refTimer);
+    refTimer = setTimeout(async () => {
+      const note = $("refNote").value;
+      await api(`/api/exam-refs/${refId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ note: $("scrapNote").value, tags: $("scrapTags").value }),
+        body: JSON.stringify({ note }),
       });
-      curScrap.note = $("scrapNote").value;
-      curScrap.tags = $("scrapTags").value;
-      $("scrapSaved").textContent = "저장됨";
-      loadScraps();
+      const r = refs.find((x) => x.id === refId);
+      if (r) r.note = note;
+      $("refSaved").textContent = "저장됨";
+      renderRefs();
     }, 500);
   }
 
-  async function scrapDelete() {
-    if (!curScrap) return;
-    if (!confirm(`${curScrap.doc_title} ${curScrap.item_num}번 스크랩을 지울까요?`)) return;
-    await del(`/api/exam-refs/${curScrap.id}`);
-    curScrap = null;
-    $("scrapImg").innerHTML = '<p class="nz-sub" style="padding:16px;text-align:center">삭제했습니다.</p>';
-    $("scrapNote").value = ""; $("scrapTags").value = "";
-    loadScraps();
+  async function delRef(refId) {
+    await del(`/api/exam-refs/${refId}`);
+    refs = refs.filter((r) => r.id !== refId);
+    if (curRefId === refId) curRefId = null;
+    renderRefs();
   }
 
-  async function scrapOpenOriginal() {
-    if (!curScrap) return;
-    try { await post(`/api/documents/${curScrap.document_id}/open?page_no=${curScrap.page_no}`, {}); }
-    catch (e) { alert("원본을 열 수 없습니다: " + e.message); }
+  /* ---------- 검색 결과: 방향키로 오르내리기 ---------- */
+  function moveResult(delta) {
+    const list = [...document.querySelectorAll("#evList .nz-res")];
+    if (!list.length) return;
+    const cur = list.findIndex((el) => el.classList.contains("on"));
+    const next = cur < 0 ? 0 : Math.min(list.length - 1, Math.max(0, cur + delta));
+    list[next].click();
+    list[next].scrollIntoView({ block: "nearest" });
   }
 
   /* ---------- 기출: 문항 하나씩 보기 ---------- */
@@ -1138,10 +1160,8 @@ const EP = (() => {
     if (el && !el.value.includes(`${title} ${num}번`)) {
       el.value = (el.value ? el.value.replace(/\s*$/, "\n") : "") + `참고 기출: ${title} ${num}번`;
     }
-    if (confirm((r.existed ? "이미 스크랩된 문항입니다. 메모를 갱신했습니다."
-      : "기출 스크랩에 담았습니다.") + "\n\n스크랩 탭으로 갈까요?")) {
-      document.querySelector('.nz-navi[data-tab="scrap"]').click();
-    }
+    await loadRefs(editingQid);
+    showRef(r.id);
   }
 
   /* ---------- 실시간 검색 (입력하면서 바로) ---------- */
@@ -1381,12 +1401,11 @@ const EP = (() => {
         document.querySelectorAll(".nz-navi").forEach((b) => b.classList.remove("on"));
         btn.classList.add("on");
         const tab = btn.dataset.tab;
-        ["bank", "question", "qbank", "set", "doc", "scrap", "config"].forEach((t) => {
+        ["bank", "question", "qbank", "set", "doc", "config"].forEach((t) => {
           const el = $("tab-" + t); if (el) el.hidden = t !== tab;
         });
-        if (tab === "question") { loadPicker(); renderPresets(); renderChecklist(); onTypeChange(); }
+        if (tab === "question") { loadPicker(); renderPresets(); renderChecklist(); onTypeChange(); loadRefs(editingQid); }
         if (tab === "qbank") loadQuestions();
-        if (tab === "scrap") loadScraps();
         if (tab === "config") loadConfig();
         if (tab === "set") loadSets();
         if (tab === "doc") loadDocs();
@@ -1395,6 +1414,13 @@ const EP = (() => {
   }
 
   async function init() {
+    document.addEventListener("keydown", (e) => {
+      const t = e.target.tagName;
+      if (t === "INPUT" || t === "TEXTAREA" || t === "SELECT") return;
+      if ($("tab-question") && $("tab-question").hidden) return;
+      if (e.key === "ArrowDown") { e.preventDefault(); moveResult(1); }
+      if (e.key === "ArrowUp") { e.preventDefault(); moveResult(-1); }
+    });
     document.addEventListener("click", (e) => {
       if (!e.target.closest(".nz-stdwrap")) { const b = $("stdList"); if (b) b.classList.add("hidden"); }
       if (!e.target.closest(".nz-routinewrap")) { const b = $("routineList"); if (b) b.classList.add("hidden"); }
@@ -1419,7 +1445,7 @@ const EP = (() => {
     loadConfig, cfgToggleUnit, cfgAll, cfgSave, renderChoices, setSrc,
     toggleStdList, pickStd, toggleRoutines, applyRoutine,
     onEvInput, onDocInput, runSearchFromInput, useExam,
-    loadScraps, openScrap, scrapNoteChanged, scrapDelete, scrapOpenOriginal,
+    loadRefs, showRef, refNoteChanged, delRef, moveResult,
     onTypeChange, addBogi, setBogi, delBogi, addChoice, setChoice, setCombo, setAnswer, delChoice,
     applyPreset, loadPicker, useProp, searchEvidence, saveQuestion, checkQuestionDraft,
     loadQuestions, editQuestion, checkQuestion, delQuestion,

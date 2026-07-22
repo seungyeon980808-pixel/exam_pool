@@ -21,7 +21,6 @@
     <button class="nz-navi" data-tab="qbank">문항 은행</button>
     <button class="nz-navi" data-tab="set">세트 관리</button>
     <button class="nz-navi" data-tab="doc">근거·기출</button>
-    <button class="nz-navi" data-tab="scrap">기출 스크랩</button>
     <button class="nz-navi" data-tab="config">환경설정</button>
   </div>
 
@@ -152,6 +151,10 @@
                     <div class="nz-stdlist hidden" id="stdList"></div>
                   </div>
                 </div>
+                <div class="nz-fr" style="align-items:flex-start">
+                  <label style="padding-top:4px">참고 기출</label>
+                  <div class="nz-refbar" id="refBar"></div>
+                </div>
                 <div class="nz-fr"><label>출제 의도</label><textarea id="qintent" rows="2" placeholder="예: 오개념(속력 불변) 판별 · 엔터로 줄 추가"></textarea></div>
               </div>
             </div>
@@ -258,42 +261,6 @@
           </tr></thead>
           <tbody id="qRows"></tbody>
         </table>
-      </section>
-
-      <!-- ============ 기출 스크랩 ============ -->
-      <section id="tab-scrap" hidden>
-        <div class="nz-h"><b>기출 스크랩</b>
-          <span class="nz-sub" style="margin:0 0 0 6px">참고한 기출 문항과 메모</span>
-          <input class="nz-inp" id="scrapSearch" style="min-width:180px;margin-left:auto"
-                 placeholder="시험명·메모 검색" oninput="EP.loadScraps()" />
-          <span class="nz-cnt" style="margin:0">Total <b id="scrapCnt">0</b></span>
-        </div>
-        <div class="nz-scraplayout">
-          <div class="nz-scraplist" id="scrapList"></div>
-          <div class="nz-scrapview">
-            <div class="nz-viewer-head"><span id="scrapTitle">문항</span>
-              <span style="margin-left:auto;display:flex;gap:4px">
-                <button class="nz-tb mini" onclick="EP.scrapOpenOriginal()">원본 열기</button>
-                <button class="nz-tb mini" onclick="EP.scrapDelete()">스크랩 삭제</button>
-              </span>
-            </div>
-            <div class="nz-viewer-body" id="scrapImg">
-              <p class="nz-sub" style="padding:16px;text-align:center">왼쪽에서 문항을 고르면 여기 표시됩니다.</p>
-            </div>
-            <div class="nz-scrapnote">
-              <div class="nz-fr" style="margin:0">
-                <label>메모</label>
-                <textarea id="scrapNote" rows="3" placeholder="이 문항에 대한 메모 (변형 아이디어, 주의점 등)"
-                          oninput="EP.scrapNoteChanged()"></textarea>
-              </div>
-              <div class="nz-fr" style="margin:6px 0 0">
-                <label>태그</label>
-                <input id="scrapTags" placeholder="쉼표로 구분 (예: 굴절, 그래프)" oninput="EP.scrapNoteChanged()" />
-                <span class="nz-sub" id="scrapSaved" style="margin:0;min-width:60px"></span>
-              </div>
-            </div>
-          </div>
-        </div>
       </section>
 
       <!-- ============ 환경설정 ============ -->
