@@ -196,6 +196,73 @@ table.nz-t { width: 100%; border-collapse: collapse; font-size: 11.8px; }
   font-size: 12px; border: 1px solid var(--nz-line); border-radius: 3px; padding: 9px; }
 .hidden { display: none; }
 
+/* ===== 성취기준 트리 (내용까지 보이게) ===== */
+.nz-menu { width: 232px; }
+.nz-treefilter { width: calc(100% - 16px); margin: 7px 8px; padding: 5px 8px; font-size: 11.5px;
+  border: 1px solid #c4cedd; border-radius: 3px; }
+.nz-mi.sub { padding: 5px 10px 5px 20px; line-height: 1.4; }
+.nz-mi.sub .code { color: var(--nz-code); font-weight: 600; font-size: 11px; display: block; }
+.nz-mi.sub .txt { color: #6b7789; font-size: 11px; display: block; margin-top: 1px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.nz-mi.sub.on .txt { color: #33518a; }
+
+/* 선택된 성취기준 전문 배너 */
+.nz-banner { background: #eef4fb; border: 1px solid #cfe0f5; border-left: 3px solid var(--nz-blue);
+  border-radius: 3px; padding: 9px 12px; margin-bottom: 10px; font-size: 12px; color: #274470; }
+.nz-banner b { color: var(--nz-code); margin-right: 6px; }
+.nz-banner.hidden { display: none; }
+
+/* 성취기준 전체보기 모달 */
+.nz-modal { position: fixed; inset: 0; background: rgba(20,32,54,.42); z-index: 50;
+  display: flex; align-items: center; justify-content: center; }
+.nz-modal.hidden { display: none; }
+.nz-modal-box { background: #fff; border-radius: 4px; width: min(1000px, 92vw); max-height: 86vh;
+  display: flex; flex-direction: column; box-shadow: 0 8px 28px rgba(0,0,0,.22); }
+.nz-modal-head { display: flex; align-items: center; gap: 6px; padding: 11px 14px;
+  border-bottom: 1px solid var(--nz-line); background: #f7f9fc; }
+.nz-modal-head b { color: #1f4e96; font-size: 14px; }
+.nz-modal-body { overflow-y: auto; padding: 12px 14px; }
+
+/* ===== 근거 문서: DocFinder 방식 ===== */
+.nz-path { font-size: 11.5px; color: #6b7789; font-weight: normal; margin-left: 10px;
+  max-width: 460px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.nz-tagbar { display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+  border: 1px solid #dbe3ee; background: #f7f9fc; border-radius: 3px; padding: 8px 11px; margin-bottom: 10px; }
+.nz-tags { display: flex; gap: 5px; flex-wrap: wrap; }
+.nz-chip { display: inline-flex; align-items: center; gap: 5px; background: #fff;
+  border: 1px solid #c4cedd; border-radius: 14px; padding: 3px 9px 3px 7px; font-size: 11.5px; color: #33518a; }
+.nz-chip .dot { width: 7px; height: 7px; border-radius: 50%; background: #e2443b; }
+.nz-chip button { border: none; background: none; color: #8a94a6; cursor: pointer; font-size: 13px; padding: 0 0 0 2px; }
+.nz-taginput { flex: 1; min-width: 200px; border: 1px solid #c4cedd; border-radius: 3px;
+  padding: 5px 9px; font-size: 12px; }
+.nz-hits { font-size: 11.5px; color: #46536b; white-space: nowrap; }
+.nz-hits b { color: #1f4e96; }
+
+.nz-finder { display: flex; gap: 10px; align-items: stretch; height: calc(100vh - 250px); min-height: 460px; }
+.nz-finder-list { width: 42%; min-width: 300px; border: 1px solid var(--nz-line); border-radius: 3px;
+  overflow-y: auto; background: #fff; }
+.nz-finder-view { flex: 1; border: 1px solid var(--nz-line); border-radius: 3px; display: flex;
+  flex-direction: column; background: #fff; min-width: 0; }
+.nz-viewer-head { display: flex; align-items: center; gap: 6px; padding: 7px 10px;
+  border-bottom: 1px solid var(--nz-line); background: #f7f9fc; font-size: 12px; color: #33518a; font-weight: 500; }
+.nz-viewer-body { flex: 1; overflow: auto; background: #eef1f5; text-align: center; padding: 10px; }
+.nz-viewer-body img { max-width: 100%; box-shadow: 0 1px 6px rgba(0,0,0,.16); background: #fff; }
+
+.nz-docgroup { border-bottom: 1px solid var(--nz-line2); }
+.nz-docgroup-head { display: flex; align-items: center; gap: 6px; padding: 7px 10px;
+  background: #f4f7fb; font-size: 11.5px; color: #1f4e96; font-weight: 600; position: sticky; top: 0; }
+.nz-docgroup-head .n { color: #6b7789; font-weight: normal; }
+.nz-res { padding: 8px 11px; border-bottom: 1px solid #eef1f5; cursor: pointer; }
+.nz-res:hover { background: #f4f8fd; }
+.nz-res.on { background: #e3ecf8; border-left: 3px solid var(--nz-blue); padding-left: 8px; }
+.nz-res-top { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; }
+.nz-pct { background: #2f6ac0; color: #fff; border-radius: 10px; padding: 1px 7px; font-size: 10.5px; font-weight: 600; }
+.nz-pct.low { background: #8a9ab5; }
+.nz-res-page { font-size: 11.5px; color: #46536b; }
+.nz-res-snip { font-size: 11.5px; color: #46536b; line-height: 1.5; }
+.nz-res-snip mark { background: #ffe9a8; color: #7a5a00; padding: 0 1px; }
+
 /* ===== 아직 안 만든 화면 ===== */
 .nz-todo { padding: 60px 0; text-align: center; color: #8a94a6; }
 .nz-todo i { font-size: 34px; display: block; margin-bottom: 10px; color: #b8c2d2; }

@@ -54,14 +54,44 @@ class TestFtsSearch(unittest.TestCase):
 
     def test_and_search_finds_page(self):
         res = pi.search("빛 굴절")
-        hits = [r for r in res if r["document_id"] == self.doc_id]
+        hits = [r for r in res["items"] if r["document_id"] == self.doc_id]
         self.assertTrue(hits)
         self.assertEqual(hits[0]["page_no"], 1)
         self.assertIn("p.1", hits[0]["source_label"])
 
     def test_no_match(self):
         res = pi.search("존재하지않는단어xyz")
-        self.assertEqual([r for r in res if r["document_id"] == self.doc_id], [])
+        self.assertEqual([r for r in res["items"] if r["document_id"] == self.doc_id], [])
+
+    def test_hashtag_multi_search(self):
+        """#해시태그로 여러 키워드를 넣어도 AND 검색이 된다."""
+        res = pi.search("#빛 #굴절")
+        self.assertEqual(res["terms"], ["빛", "굴절"])
+        self.assertTrue([r for r in res["items"] if r["document_id"] == self.doc_id])
+
+    def test_match_pct_present(self):
+        res = pi.search("빛")
+        hits = [r for r in res["items"] if r["document_id"] == self.doc_id]
+        self.assertTrue(hits)
+        self.assertTrue(1 <= hits[0]["match_pct"] <= 100)
+
+    def test_total_count(self):
+        res = pi.search("빛")
+        self.assertGreaterEqual(res["total"], 1)
+
+    def test_doc_filter(self):
+        """특정 문서로 좁히기."""
+        res = pi.search("빛", doc_id=self.doc_id)
+        self.assertTrue(all(r["document_id"] == self.doc_id for r in res["items"]))
+
+
+class TestTermsOf(unittest.TestCase):
+    def test_hashtag_and_space(self):
+        self.assertEqual(pi.terms_of("#빛 #굴절"), ["빛", "굴절"])
+        self.assertEqual(pi.terms_of("빛 굴절"), ["빛", "굴절"])
+
+    def test_empty(self):
+        self.assertEqual(pi.terms_of("  #  "), [])
 
 
 if __name__ == "__main__":

@@ -31,15 +31,36 @@
     </div>
 
     <div class="nz-menu">
-      <div class="nz-mh">성취기준</div>
+      <div class="nz-mh">성취기준
+        <button class="nz-tb mini" style="margin-left:auto" onclick="EP.openStdTable()">전체보기</button>
+      </div>
+      <input class="nz-treefilter" id="treeFilter" placeholder="단원·성취기준 검색" oninput="EP.filterTree()" />
       <div id="tree"></div>
     </div>
 
     <div class="nz-main">
 
+      <!-- 성취기준 전체보기 모달 -->
+      <div id="stdModal" class="nz-modal hidden">
+        <div class="nz-modal-box">
+          <div class="nz-modal-head">
+            <b>성취기준 전체</b>
+            <input class="nz-inp" id="stdModalFilter" placeholder="검색" oninput="EP.renderStdTable()" style="margin-left:12px;min-width:200px" />
+            <button class="nz-tb" style="margin-left:auto" onclick="EP.closeStdTable()">닫기</button>
+          </div>
+          <div class="nz-modal-body">
+            <table class="nz-t">
+              <thead><tr><th style="width:80px">코드</th><th style="width:120px">단원</th><th>성취기준 내용</th><th style="width:52px">명제</th></tr></thead>
+              <tbody id="stdTableRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       <!-- ============ 명제 은행 ============ -->
       <section id="tab-bank">
         <div class="nz-h"><b>명제 은행 조회</b></div>
+        <div id="stdBanner" class="nz-banner hidden"></div>
 
         <div class="nz-form hidden" id="propForm">
           <div class="nz-fr"><label><span class="req">*</span>성취기준</label><select id="f-std"></select></div>
@@ -194,30 +215,55 @@
         </div>
       </section>
 
-      <!-- ============ 근거 문서 ============ -->
+      <!-- ============ 근거 문서 (DocFinder 방식) ============ -->
       <section id="tab-doc" hidden>
-        <div class="nz-h"><b>근거 문서 관리</b></div>
-        <div class="nz-flt">
-          <span class="nz-lb"><span class="req">*</span>폴더 경로</span>
-          <input class="nz-inp" id="docFolder" style="min-width:340px" placeholder="예: C:\Users\user\Desktop\교과서" />
-          <span class="nz-lb">종류</span>
-          <select class="nz-sel" id="docType" style="min-width:100px"><option>교과서</option><option>교육과정</option><option>기타</option></select>
-          <button class="nz-go" onclick="EP.indexFolder()">인덱싱</button>
+        <div class="nz-h"><b>근거 문서 검색</b>
+          <span class="nz-path" id="docFolderLabel">폴더가 지정되지 않았습니다</span>
+          <span style="margin-left:auto;display:flex;gap:5px">
+            <select class="nz-sel" id="docType" style="min-width:92px"><option>교과서</option><option>교육과정</option><option>기타</option></select>
+            <button class="nz-tb blu" onclick="EP.pickFolder()">폴더 선택</button>
+            <button class="nz-tb" onclick="EP.indexFolder()">재색인</button>
+            <button class="nz-tb" onclick="EP.toggleDocList()">문서 목록</button>
+          </span>
         </div>
-        <p class="nz-sub">폴더를 지정하면 하위 폴더까지 PDF를 훑어 페이지 단위로 색인합니다. 필요 없는 문서는 목록에서 제거하세요.</p>
 
-        <p class="nz-cnt">등록 문서 &nbsp;Total <b id="docCnt">0</b></p>
-        <table class="nz-t">
-          <thead><tr><th style="width:34px">순번</th><th>문서명</th><th style="width:70px">종류</th><th style="width:56px">페이지</th><th style="width:120px">색인 시각</th><th style="width:50px">제거</th></tr></thead>
-          <tbody id="docRows"></tbody>
-        </table>
-
-        <p class="nz-sub" style="margin-top:14px">근거 검색 테스트</p>
-        <div class="nz-flt">
-          <input class="nz-inp" id="docSearch" style="min-width:260px" placeholder="예: 빛 굴절" onkeydown="if(event.key==='Enter')EP.docSearch()" />
-          <button class="nz-go" onclick="EP.docSearch()">검색</button>
+        <!-- 해시태그 검색 -->
+        <div class="nz-tagbar">
+          <div class="nz-tags" id="searchTags"></div>
+          <input class="nz-taginput" id="docSearch" placeholder="키워드 입력 후 Enter (여러 개를 넣으면 모두 포함하는 페이지만)"
+                 onkeydown="EP.onTagKey(event)" />
+          <span class="nz-hits" id="docHits"></span>
         </div>
-        <div id="docSearchResult"></div>
+
+        <!-- 문서 목록 (접기) -->
+        <div id="docListBox" class="hidden">
+          <p class="nz-cnt">등록 문서 &nbsp;Total <b id="docCnt">0</b></p>
+          <table class="nz-t">
+            <thead><tr><th style="width:34px">순번</th><th>문서명</th><th style="width:70px">종류</th>
+              <th style="width:56px">페이지</th><th style="width:110px">색인 시각</th><th style="width:70px">이 문서만</th><th style="width:44px">제거</th></tr></thead>
+            <tbody id="docRows"></tbody>
+          </table>
+        </div>
+
+        <!-- 좌: 결과 / 우: 미리보기 -->
+        <div class="nz-finder">
+          <div class="nz-finder-list" id="docResults">
+            <p class="nz-sub" style="padding:14px">키워드를 입력해 검색하세요.</p>
+          </div>
+          <div class="nz-finder-view">
+            <div class="nz-viewer-head">
+              <span id="viewerTitle">미리보기</span>
+              <span style="margin-left:auto;display:flex;gap:5px">
+                <button class="nz-tb mini" onclick="EP.viewerPage(-1)">◀</button>
+                <button class="nz-tb mini" onclick="EP.viewerPage(1)">▶</button>
+                <button class="nz-tb mini" onclick="EP.openOriginal()">원본 열기</button>
+              </span>
+            </div>
+            <div class="nz-viewer-body" id="viewerBody">
+              <p class="nz-sub" style="padding:20px;text-align:center">왼쪽 결과를 클릭하면 그 페이지가 여기 표시됩니다.</p>
+            </div>
+          </div>
+        </div>
       </section>
 
       <div class="nz-ver">ExamPool v0.2.0 · 2026-07-22</div>

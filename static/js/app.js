@@ -27,15 +27,7 @@ const EP = (() => {
   /* ---------- 공통: 성취기준 ---------- */
   async function loadStandards() {
     standards = await api("/api/standards");
-    const tree = $("tree");
-    tree.innerHTML = "";
-    standards.forEach((u) => {
-      const el = document.createElement("div");
-      el.className = "nz-mi";
-      el.textContent = `${u.unit_no}. ${u.name}`;
-      el.onclick = () => toggleUnit(u.unit_no, el);
-      tree.appendChild(el);
-    });
+    renderTree();
     const opts = standards.flatMap((u) => u.standards.map((s) =>
       ({ v: s.code, t: `${s.code} ${s.text.slice(0, 20)}…` })));
     fillSelect($("q-std"), opts, "전체");
@@ -62,11 +54,83 @@ const EP = (() => {
     unit.standards.forEach((s) => {
       const e = document.createElement("div");
       e.className = "nz-mi sub";
-      e.textContent = `· ${s.code}`;
-      e.onclick = (ev) => { ev.stopPropagation(); $("q-std").value = s.code; loadProps(); };
+      e.title = `${s.code} ${s.text}`;   // 전문 툴팁
+      e.innerHTML = `<span class="code">${esc(s.code)}</span><span class="txt">${esc(s.text)}</span>`;
+      e.onclick = (ev) => { ev.stopPropagation(); pickStandard(s, e); };
       frag.appendChild(e);
     });
     el.after(frag);
+  }
+
+  /** 성취기준 선택 — 목록 필터 + 전문 배너 */
+  function pickStandard(s, el) {
+    document.querySelectorAll(".nz-mi.sub.on").forEach((n) => n.classList.remove("on"));
+    if (el) el.classList.add("on");
+    $("q-std").value = s.code;
+    const b = $("stdBanner");
+    b.classList.remove("hidden");
+    b.innerHTML = `<b>${esc(s.code)}</b>${esc(s.text)}`;
+    loadProps();
+  }
+
+  /** 좌측 트리 검색 — 단원명·성취기준 코드/내용 모두 */
+  function filterTree() {
+    const q = $("treeFilter").value.trim().toLowerCase();
+    const tree = $("tree");
+    tree.innerHTML = "";
+    if (!q) { renderTree(); return; }
+    standards.forEach((u) => {
+      const unitHit = `${u.unit_no}. ${u.name}`.toLowerCase().includes(q);
+      const hits = u.standards.filter((s) =>
+        s.code.toLowerCase().includes(q) || s.text.toLowerCase().includes(q));
+      if (!unitHit && !hits.length) return;
+      const uEl = document.createElement("div");
+      uEl.className = "nz-mi";
+      uEl.textContent = `${u.unit_no}. ${u.name}`;
+      tree.appendChild(uEl);
+      (hits.length ? hits : u.standards).forEach((s) => {
+        const e = document.createElement("div");
+        e.className = "nz-mi sub";
+        e.title = `${s.code} ${s.text}`;
+        e.innerHTML = `<span class="code">${esc(s.code)}</span><span class="txt">${esc(s.text)}</span>`;
+        e.onclick = () => pickStandard(s, e);
+        tree.appendChild(e);
+      });
+    });
+  }
+
+  function renderTree() {
+    const tree = $("tree");
+    tree.innerHTML = "";
+    standards.forEach((u) => {
+      const el = document.createElement("div");
+      el.className = "nz-mi";
+      el.textContent = `${u.unit_no}. ${u.name}`;
+      el.onclick = () => toggleUnit(u.unit_no, el);
+      tree.appendChild(el);
+    });
+  }
+
+  /* ---------- 성취기준 전체보기 ---------- */
+  function openStdTable() { $("stdModal").classList.remove("hidden"); renderStdTable(); }
+  function closeStdTable() { $("stdModal").classList.add("hidden"); }
+  async function renderStdTable() {
+    const q = ($("stdModalFilter").value || "").trim().toLowerCase();
+    const props = await api("/api/propositions");
+    const countBy = {};
+    props.forEach((p) => { countBy[p.standard_code] = (countBy[p.standard_code] || 0) + 1; });
+    const rows = [];
+    standards.forEach((u) => u.standards.forEach((s) => {
+      if (q && !(s.code.toLowerCase().includes(q) || s.text.toLowerCase().includes(q)
+        || u.name.toLowerCase().includes(q))) return;
+      rows.push(`<tr>
+        <td class="cc code">${esc(s.code)}</td>
+        <td class="cc">${esc(u.name)}</td>
+        <td>${esc(s.text)}</td>
+        <td class="cc ${countBy[s.code] ? "g" : ""}">${countBy[s.code] || "-"}</td></tr>`);
+    }));
+    $("stdTableRows").innerHTML = rows.join("") ||
+      '<tr class="nz-empty"><td colspan="4">일치하는 성취기준이 없습니다.</td></tr>';
   }
 
   /* ---------- 명제 은행 ---------- */
@@ -168,13 +232,38 @@ const EP = (() => {
   async function searchEvidenceFor(pid) {
     const q = $("pev-q").value.trim();
     if (!q) return;
-    const res = await api("/api/evidence/search?q=" + encodeURIComponent(q));
-    $("pevList").innerHTML = res.length ? res.map((r) => `
+    const r = await api("/api/evidence/search?q=" + encodeURIComponent(q) + "&limit=12");
+    $("pevList").innerHTML = r.items.length ? r.items.map((h) => `
       <div class="nz-hit">
-        <div class="nz-hit-src">${esc(r.source_label)}</div>
-        <div class="nz-hit-snip">${esc(r.snippet)}</div>
-        <button class="nz-tb mini" onclick='EP.attachEvidence(${pid}, ${JSON.stringify(r).replace(/'/g, "&#39;")})'>근거로 저장</button>
+        <div class="nz-hit-src"><span class="nz-pct ${h.match_pct < 60 ? "low" : ""}">${h.match_pct}%</span>
+          ${esc(h.source_label)}</div>
+        <div class="nz-hit-snip">${mark(h.snippet)}</div>
+        <div style="display:flex;gap:4px;margin-top:5px">
+          <button class="nz-tb mini" onclick='EP.attachEvidence(${pid}, ${JSON.stringify(h).replace(/'/g, "&#39;")})'>근거로 저장</button>
+          <button class="nz-tb mini" onclick="EP.peekPage(${h.document_id}, ${h.page_no}, '${esc(q)}')">원문 보기</button>
+        </div>
       </div>`).join("") : '<p class="nz-sub">검색 결과가 없습니다. 근거 문서 탭에서 교과서를 인덱싱했는지 확인하세요.</p>';
+  }
+
+  /** 어디서든 PDF 페이지 원문을 크게 띄운다 (모달) */
+  async function peekPage(docId, pageNo, q) {
+    const meta = await api(`/api/documents/${docId}/page/${pageNo}`);
+    let m = $("peekModal");
+    if (!m) {
+      m = document.createElement("div");
+      m.id = "peekModal"; m.className = "nz-modal";
+      m.onclick = (e) => { if (e.target === m) m.classList.add("hidden"); };
+      document.body.appendChild(m);
+    }
+    m.classList.remove("hidden");
+    m.innerHTML = `<div class="nz-modal-box">
+      <div class="nz-modal-head"><b>${esc(meta.title)} — ${pageNo}페이지</b>
+        <button class="nz-tb" style="margin-left:auto" onclick="document.getElementById('peekModal').classList.add('hidden')">닫기</button>
+      </div>
+      <div class="nz-modal-body" style="background:#eef1f5;text-align:center">
+        <img src="/api/documents/${docId}/page/${pageNo}/image?q=${encodeURIComponent(q || "")}&dpi=130"
+             style="max-width:100%;box-shadow:0 1px 6px rgba(0,0,0,.16);background:#fff" />
+      </div></div>`;
   }
 
   async function attachEvidence(pid, hit) {
@@ -283,10 +372,15 @@ const EP = (() => {
   async function searchEvidence() {
     const q = $("evSearch").value.trim();
     if (!q) return;
-    const res = await api("/api/evidence/search?q=" + encodeURIComponent(q));
-    $("evList").innerHTML = res.length ? res.map((r) => `
-      <div class="nz-hit"><div class="nz-hit-src">${esc(r.source_label)}</div>
-      <div class="nz-hit-snip">${esc(r.snippet)}</div></div>`).join("")
+    const r = await api("/api/evidence/search?q=" + encodeURIComponent(q) + "&limit=12");
+    $("evList").innerHTML = r.items.length ? r.items.map((h) => `
+      <div class="nz-hit">
+        <div class="nz-hit-src"><span class="nz-pct ${h.match_pct < 60 ? "low" : ""}">${h.match_pct}%</span>
+          ${esc(h.source_label)}</div>
+        <div class="nz-hit-snip">${mark(h.snippet)}</div>
+        <button class="nz-tb mini" style="margin-top:5px"
+          onclick="EP.peekPage(${h.document_id}, ${h.page_no}, '${esc(q)}')">원문 보기</button>
+      </div>`).join("")
       : '<p class="nz-sub">결과 없음 — 근거 문서 탭에서 인덱싱하세요.</p>';
   }
 
@@ -458,40 +552,129 @@ const EP = (() => {
     catch { alert("아래 상자의 내용을 복사해 한글에 붙여넣으세요."); }
   }
 
-  /* ---------- 근거 문서 ---------- */
+  /* ---------- 근거 문서 (DocFinder 방식) ---------- */
+  let searchTags = [];        // 해시태그 다중 검색
+  let curFolder = "";
+  let onlyDocId = 0;          // 특정 문서로 좁히기
+  let viewer = { docId: null, page: 1, lastPage: 1 };
+
   async function loadDocs() {
     const docs = await api("/api/documents");
     $("docCnt").textContent = docs.length;
     $("docRows").innerHTML = docs.map((d, i) => `
       <tr><td class="cc">${i + 1}</td><td>${esc(d.title)}</td><td class="cc">${esc(d.doc_type)}</td>
       <td class="cc">${d.pages}</td><td class="cc">${esc((d.indexed_at || "").slice(0, 16))}</td>
+      <td class="cc"><button class="nz-tb mini ${onlyDocId === d.id ? "blu" : ""}"
+        onclick="EP.onlyDoc(${d.id})">${onlyDocId === d.id ? "해제" : "선택"}</button></td>
       <td class="cc"><button class="nz-tb mini" onclick="EP.delDoc(${d.id})">×</button></td></tr>`).join("")
-      || '<tr class="nz-empty"><td colspan="6">등록된 문서가 없습니다. 폴더를 인덱싱하세요.</td></tr>';
+      || '<tr class="nz-empty"><td colspan="7">등록된 문서가 없습니다. “폴더 선택”으로 PDF 폴더를 지정하세요.</td></tr>';
   }
-  async function indexFolder() {
-    const folder = $("docFolder").value.trim();
-    if (!folder) return alert("폴더 경로를 입력하세요.");
-    const btn = event.target; btn.textContent = "인덱싱 중…"; btn.disabled = true;
+  function toggleDocList() { $("docListBox").classList.toggle("hidden"); loadDocs(); }
+  function onlyDoc(id) { onlyDocId = onlyDocId === id ? 0 : id; loadDocs(); runSearch(); }
+
+  async function pickFolder() {
     try {
-      const r = await post("/api/documents/index", { folder, doc_type: $("docType").value });
+      const r = await post("/api/pick-folder", {});
+      if (!r.folder) return;
+      curFolder = r.folder;
+      $("docFolderLabel").textContent = curFolder;
+      await indexFolder();
+    } catch (e) { alert("폴더 선택 실패: " + e.message); }
+  }
+
+  async function indexFolder() {
+    if (!curFolder) return alert("먼저 “폴더 선택”으로 PDF 폴더를 지정하세요.");
+    $("docHits").textContent = "색인 중…";
+    try {
+      const r = await post("/api/documents/index", { folder: curFolder, doc_type: $("docType").value });
+      $("docHits").textContent = "";
       alert(`문서 ${r.documents}권 · ${r.pages}페이지를 색인했습니다.` +
         (r.skipped.length ? `\n건너뜀 ${r.skipped.length}건(텍스트 없음/열기 실패)` : ""));
-      loadDocs();
-    } catch (e) { alert("인덱싱 실패: " + e.message); }
-    finally { btn.textContent = "인덱싱"; btn.disabled = false; }
+      loadDocs(); runSearch();
+    } catch (e) { $("docHits").textContent = ""; alert("인덱싱 실패: " + e.message); }
   }
+
   async function delDoc(id) {
     if (!confirm("이 문서를 근거 검색에서 제거할까요? (원본 파일은 그대로입니다)")) return;
-    await del(`/api/documents/${id}`); loadDocs();
+    await del(`/api/documents/${id}`);
+    if (onlyDocId === id) onlyDocId = 0;
+    loadDocs(); runSearch();
   }
-  async function docSearch() {
-    const q = $("docSearch").value.trim();
-    if (!q) return;
-    const res = await api("/api/evidence/search?q=" + encodeURIComponent(q));
-    $("docSearchResult").innerHTML = res.length
-      ? res.map((r) => `<div class="nz-hit"><div class="nz-hit-src">${esc(r.source_label)}</div>
-          <div class="nz-hit-snip">${esc(r.snippet)}</div></div>`).join("")
-      : '<p class="nz-sub">결과가 없습니다.</p>';
+
+  /* --- 해시태그 --- */
+  function onTagKey(e) {
+    const inp = e.target;
+    if (e.key === "Enter") {
+      const v = inp.value.trim().replace(/^#/, "");
+      if (v && !searchTags.includes(v)) { searchTags.push(v); inp.value = ""; renderTags(); runSearch(); }
+      e.preventDefault();
+    } else if (e.key === "Backspace" && !inp.value && searchTags.length) {
+      searchTags.pop(); renderTags(); runSearch();
+    }
+  }
+  function renderTags() {
+    $("searchTags").innerHTML = searchTags.map((t, i) =>
+      `<span class="nz-chip"><span class="dot"></span>${esc(t)}<button onclick="EP.delTag(${i})">×</button></span>`).join("");
+  }
+  function delTag(i) { searchTags.splice(i, 1); renderTags(); runSearch(); }
+
+  async function runSearch() {
+    if (!searchTags.length) {
+      $("docResults").innerHTML = '<p class="nz-sub" style="padding:14px">키워드를 입력해 검색하세요.</p>';
+      $("docHits").textContent = "";
+      return;
+    }
+    const params = new URLSearchParams({ q: searchTags.join(" ") });
+    if (onlyDocId) params.set("doc_id", onlyDocId);
+    const r = await api("/api/evidence/search?" + params);
+    $("docHits").innerHTML = `<b>${r.total}</b>개 페이지 일치 · ${r.items.length}개 표시`;
+
+    // 문서별 그룹
+    const groups = {};
+    r.items.forEach((it) => { (groups[it.doc_title] ||= []).push(it); });
+    const html = Object.entries(groups).map(([title, items]) => `
+      <div class="nz-docgroup">
+        <div class="nz-docgroup-head">${esc(title)} <span class="n">${items.length}개 페이지 · 최고 ${items[0].match_pct}%</span></div>
+        ${items.map((it) => `
+          <div class="nz-res" data-doc="${it.document_id}" data-page="${it.page_no}"
+               onclick="EP.showPage(${it.document_id}, ${it.page_no}, this)">
+            <div class="nz-res-top">
+              <span class="nz-pct ${it.match_pct < 60 ? "low" : ""}">${it.match_pct}%</span>
+              <span class="nz-res-page">${it.page_no}페이지</span>
+            </div>
+            <div class="nz-res-snip">${mark(it.snippet)}</div>
+          </div>`).join("")}
+      </div>`).join("");
+    $("docResults").innerHTML = html || '<p class="nz-sub" style="padding:14px">결과가 없습니다.</p>';
+  }
+
+  // snippet 의 [키워드] 표시를 <mark> 로
+  function mark(s) {
+    return esc(s).replace(/\[([^\]]+)\]/g, "<mark>$1</mark>");
+  }
+
+  /* --- 페이지 미리보기 --- */
+  async function showPage(docId, pageNo, el) {
+    document.querySelectorAll(".nz-res.on").forEach((n) => n.classList.remove("on"));
+    if (el) el.classList.add("on");
+    viewer.docId = docId; viewer.page = pageNo;
+    const meta = await api(`/api/documents/${docId}/page/${pageNo}`);
+    viewer.lastPage = meta.last_page;
+    $("viewerTitle").textContent = `${meta.title} — ${pageNo}페이지`;
+    const q = encodeURIComponent(searchTags.join(" "));
+    $("viewerBody").innerHTML =
+      `<img src="/api/documents/${docId}/page/${pageNo}/image?q=${q}" alt="${esc(meta.title)} ${pageNo}페이지" />`;
+  }
+  function viewerPage(delta) {
+    if (!viewer.docId) return;
+    const p = viewer.page + delta;
+    if (p < 1 || p > viewer.lastPage) return;
+    showPage(viewer.docId, p, null);
+  }
+  async function openOriginal() {
+    if (!viewer.docId) return alert("먼저 결과를 선택하세요.");
+    try { await post(`/api/documents/${viewer.docId}/open?page_no=${viewer.page}`, {}); }
+    catch (e) { alert("원본을 열 수 없습니다: " + e.message); }
   }
 
   /* ---------- 탭 ---------- */
@@ -518,11 +701,13 @@ const EP = (() => {
 
   return {
     loadProps, toggleForm, saveProp, delProp, openProp, addVariant, delVariant, delEvidence,
-    markVerified, searchEvidenceFor, attachEvidence, exportCsv,
+    markVerified, searchEvidenceFor, attachEvidence, exportCsv, peekPage,
+    pickStandard, filterTree, openStdTable, closeStdTable, renderStdTable,
     onTypeChange, addBogi, setBogi, delBogi, addChoice, setChoice, setCombo, setAnswer, delChoice,
     applyPreset, loadPicker, useProp, searchEvidence, saveQuestion, checkQuestionDraft,
     loadQuestions, editQuestion, checkQuestion, delQuestion,
     loadSets, createSet, loadSet, addItem, removeItem, dragStart, dropOn, checkSet, exportSet,
-    loadDocs, indexFolder, delDoc, docSearch,
+    loadDocs, toggleDocList, onlyDoc, pickFolder, indexFolder, delDoc,
+    onTagKey, delTag, showPage, viewerPage, openOriginal,
   };
 })();

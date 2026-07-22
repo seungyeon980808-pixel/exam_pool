@@ -110,36 +110,89 @@ def _fts_query(q: str) -> str:
     return " AND ".join(f'"{t}"*' for t in terms)
 
 
-def search(q: str, limit: int = 20) -> list[dict]:
-    """근거 검색. bm25() 오름차순(작을수록 관련 높음)."""
-    if not q.strip():
-        return []
+def terms_of(q: str) -> list[str]:
+    """검색어(공백/해시태그 구분) → 키워드 목록. '#빛 #굴절' 도 받는다."""
+    cleaned = q.replace("#", " ")
+    return [t for t in "".join(c if c.isalnum() else " " for c in cleaned).split() if t]
+
+
+def search(q: str, limit: int = 60, doc_id: int | None = None) -> dict:
+    """근거 검색.
+
+    반환: {"total": 전체 일치 수, "terms": [키워드], "items": [...]}
+    각 item 에는 일치율(match_pct)이 붙는다 — 최고점을 100%로 한 상대 환산(DocFinder 방식).
+    """
+    terms = terms_of(q)
+    if not terms:
+        return {"total": 0, "terms": [], "items": []}
     conn = connect()
     try:
         ensure_fts(conn)
-        match = _fts_query(q)
-        if not match:
-            return []
-        rows = conn.execute(
+        match = " AND ".join(f'"{t}"*' for t in terms)
+        sql = (
             "SELECT doc_title, page_no, document_id, "
-            "  snippet(page_fts, 0, '[', ']', ' … ', 18) AS snippet, "
+            "  snippet(page_fts, 0, '[', ']', ' … ', 20) AS snippet, "
             "  bm25(page_fts) AS score "
-            "FROM page_fts WHERE page_fts MATCH ? ORDER BY score LIMIT ?",
-            (match, limit),
-        ).fetchall()
-        result = []
+            "FROM page_fts WHERE page_fts MATCH ?"
+        )
+        args: list = [match]
+        if doc_id:
+            sql += " AND document_id = ?"
+            args.append(doc_id)
+        sql += " ORDER BY score LIMIT ?"
+        args.append(limit)
+        rows = conn.execute(sql, args).fetchall()
+
+        total = conn.execute(
+            "SELECT COUNT(*) AS c FROM page_fts WHERE page_fts MATCH ?" +
+            (" AND document_id = ?" if doc_id else ""),
+            [match] + ([doc_id] if doc_id else []),
+        ).fetchone()["c"]
+
+        best = rows[0]["score"] if rows else -1
+        items = []
         for r in rows:
             snip = " ".join((r["snippet"] or "").split())
-            result.append({
+            pct = round((r["score"] / best) * 100) if best else 100
+            items.append({
                 "doc_title": r["doc_title"],
                 "page_no": r["page_no"],
                 "document_id": r["document_id"],
                 "source_label": f"{r['doc_title']} p.{r['page_no']}",
                 "snippet": snip,
+                "match_pct": max(1, min(100, pct)),
             })
-        return result
+        return {"total": total, "terms": terms, "items": items}
     finally:
         conn.close()
+
+
+def render_page_png(doc_id: int, page_no: int, terms: list[str] | None = None,
+                    dpi: int = 110) -> bytes:
+    """PDF 페이지를 PNG 로 렌더링한다. 검색어가 있으면 형광 표시를 그린다.
+
+    원본 파일은 건드리지 않는다(메모리에서만 그리고 저장하지 않음).
+    """
+    import fitz
+
+    conn = connect()
+    try:
+        row = conn.execute("SELECT file_path FROM document WHERE id = ?", (doc_id,)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        raise FileNotFoundError("문서를 찾을 수 없습니다.")
+
+    doc = fitz.open(row["file_path"])
+    try:
+        page = doc[page_no - 1]
+        for t in (terms or []):
+            for rect in page.search_for(t):
+                page.draw_rect(rect, color=None, fill=(1, 0.85, 0.3), fill_opacity=0.42,
+                               overlay=True)
+        return page.get_pixmap(dpi=dpi).tobytes("png")
+    finally:
+        doc.close()
 
 
 def list_documents() -> list[dict]:
