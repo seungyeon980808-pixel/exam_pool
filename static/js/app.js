@@ -528,7 +528,12 @@ const EP = (() => {
 
   async function searchEvidence() {
     const q = $("evSearch").value.trim();
-    if (!q) return;
+    const terms = splitTerms(q);
+    if (!terms.length) {
+      $("evList").innerHTML = '<p class="nz-sub" style="padding:10px">키워드를 넣으면 교과서에서 근거를 찾습니다.</p>';
+      renderTermBar([]);
+      return;
+    }
     evViewer.q = q;
     const r = await api("/api/evidence/search?q=" + encodeURIComponent(q) + "&limit=60");
     let items = r.items;
@@ -550,10 +555,17 @@ const EP = (() => {
                 <span class="nz-pct ${h.match_pct < 60 ? "low" : ""}">${h.match_pct}%</span>
                 <span class="nz-res-page">${h.page_no}페이지</span>
               </div>
-              <div class="nz-res-snip">${mark(h.snippet)}</div>
+              <div class="nz-res-snip">${markTerms(h.snippet, terms)}</div>
             </div>`).join("")}
         </div>`).join("")
-      : '<p class="nz-sub" style="padding:12px">결과 없음 — 근거 문서 탭에서 교과서를 인덱싱하세요.</p>';
+      : '<p class="nz-sub" style="padding:12px">결과 없음 — 근거·기출 탭에서 문서를 인덱싱하세요.</p>';
+
+    // 단어별 적중 수를 칩에 표시
+    const counts = {};
+    terms.forEach((t) => {
+      counts[t] = items.filter((it) => (it.snippet || "").toLowerCase().includes(t.toLowerCase())).length;
+    });
+    renderTermBar(terms, counts);
   }
 
   /** 문항 설계 화면의 근거 뷰어 — 교과서 원문을 옆에 띄워두고 문항을 쓴다 */
@@ -869,20 +881,18 @@ const EP = (() => {
 
   /* --- 해시태그 --- */
   function onTagKey(e) {
-    const inp = e.target;
-    if (e.key === "Enter") {
-      const v = inp.value.trim().replace(/^#/, "");
-      if (v && !searchTags.includes(v)) { searchTags.push(v); inp.value = ""; renderTags(); runSearch(); }
-      e.preventDefault();
-    } else if (e.key === "Backspace" && !inp.value && searchTags.length) {
-      searchTags.pop(); renderTags(); runSearch();
-    }
+    if (e.key === "Enter") { e.preventDefault(); runSearchFromInput(); }
   }
   function renderTags() {
     $("searchTags").innerHTML = searchTags.map((t, i) =>
-      `<span class="nz-chip"><span class="dot"></span>${esc(t)}<button onclick="EP.delTag(${i})">×</button></span>`).join("");
+      `<span class="nz-chip"><span class="dot" style="background:${HL_COLORS[i % HL_COLORS.length]}"></span>` +
+      `${esc(t)}<button onclick="EP.delTag(${i})">×</button></span>`).join("");
   }
-  function delTag(i) { searchTags.splice(i, 1); renderTags(); runSearch(); }
+  function delTag(i) {
+    searchTags.splice(i, 1);
+    if ($("docSearch")) $("docSearch").value = searchTags.join(" ");
+    renderTags(); runSearch();
+  }
 
   async function runSearch() {
     if (!searchTags.length) {
@@ -908,7 +918,7 @@ const EP = (() => {
               <span class="nz-pct ${it.match_pct < 60 ? "low" : ""}">${it.match_pct}%</span>
               <span class="nz-res-page">${it.page_no}페이지</span>
             </div>
-            <div class="nz-res-snip">${mark(it.snippet)}</div>
+            <div class="nz-res-snip">${markTerms(it.snippet, searchTags)}</div>
           </div>`).join("")}
       </div>`).join("");
     $("docResults").innerHTML = html || '<p class="nz-sub" style="padding:14px">결과가 없습니다.</p>';
@@ -1001,6 +1011,49 @@ const EP = (() => {
   }
 
 
+
+
+  /* ---------- 실시간 검색 (입력하면서 바로) ---------- */
+  function debounce(fn, ms) {
+    let t;
+    return function () { clearTimeout(t); t = setTimeout(fn, ms); };
+  }
+
+  // 띄어쓰기로 나눈 각 단어를 별도 키워드로 본다 (모두 포함하는 페이지만 = AND)
+  function splitTerms(q) {
+    return (q || "").replace(/#/g, " ").split(/\s+/).map((t) => t.trim()).filter(Boolean);
+  }
+
+  const onEvInput = debounce(() => { searchEvidence(); }, 220);
+  const onDocInput = debounce(() => { runSearchFromInput(); }, 220);
+
+  /** 근거 문서 탭: 입력창의 단어들을 그대로 태그로 삼아 검색 */
+  function runSearchFromInput() {
+    const raw = $("docSearch").value;
+    const typed = splitTerms(raw);
+    searchTags = typed;          // 입력한 단어가 곧 태그
+    renderTags();
+    runSearch();
+  }
+
+  /** 검색어 단어별 색상 칩 — 어느 색이 어느 단어인지 보이게 */
+  function renderTermBar(terms, hitCounts) {
+    const bar = $("termBar");
+    if (!bar) return;
+    bar.innerHTML = terms.map((t, i) =>
+      '<span class="nz-termchip"><span class="sw" style="background:' + HL_COLORS[i % HL_COLORS.length] +
+      '"></span>' + esc(t) + (hitCounts && hitCounts[t] != null ? '<span class="n">' + hitCounts[t] + '</span>' : "") +
+      '</span>').join("");
+  }
+
+  /** 스니펫의 [단어] 를 단어별 색으로 칠한다 */
+  function markTerms(snippet, terms) {
+    return esc(snippet).replace(/\[([^\]]*)\]/g, (m, w) => {
+      let idx = terms.findIndex((t) => w.toLowerCase().includes(t.toLowerCase()));
+      if (idx < 0) idx = 0;
+      return '<mark style="background:' + HL_COLORS[idx % HL_COLORS.length] + '">' + w + '</mark>';
+    });
+  }
 
   /* ---------- 성취기준 선택 (줄바꿈 허용 커스텀 UI) ---------- */
   let curStdCode = "";
@@ -1233,6 +1286,7 @@ const EP = (() => {
     setCheck, setCheckNote, renderChecklist, pickFor, applyPick,
     loadConfig, cfgToggleUnit, cfgAll, cfgSave, renderChoices, setSrc,
     toggleStdList, pickStd, toggleRoutines, applyRoutine,
+    onEvInput, onDocInput, runSearchFromInput,
     onTypeChange, addBogi, setBogi, delBogi, addChoice, setChoice, setCombo, setAnswer, delChoice,
     applyPreset, loadPicker, useProp, searchEvidence, saveQuestion, checkQuestionDraft,
     loadQuestions, editQuestion, checkQuestion, delQuestion,

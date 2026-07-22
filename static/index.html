@@ -207,10 +207,10 @@
                 <button class="nz-srcbtn" data-src="기출" onclick="EP.setSrc('기출')">기출</button>
               </span>
               <input class="nz-inp sidefull" id="evSearch" style="flex:1;min-width:0;margin-left:6px"
-                     placeholder="예: 빛 굴절" onkeydown="if(event.key==='Enter')EP.searchEvidence()" />
-              <button class="nz-go sidefull" style="margin:0;padding:5px 12px" onclick="EP.searchEvidence()">검색</button>
+                     placeholder="띄어쓰기로 여러 단어 (예: 빛 굴절)" oninput="EP.onEvInput()" />
             </div>
 
+            <div class="nz-termbar sidefull" id="termBar"></div>
             <div class="nz-evsplit sidefull">
               <div class="nz-evlist" id="evList">
                 <p class="nz-sub" style="padding:10px">키워드를 넣으면 교과서에서 근거를 찾습니다.</p>
@@ -328,8 +328,8 @@
         <!-- 해시태그 검색 -->
         <div class="nz-tagbar">
           <div class="nz-tags" id="searchTags"></div>
-          <input class="nz-taginput" id="docSearch" placeholder="키워드 입력 후 Enter (여러 개를 넣으면 모두 포함하는 페이지만)"
-                 onkeydown="EP.onTagKey(event)" />
+          <input class="nz-taginput" id="docSearch" placeholder="띄어쓰기로 여러 단어 · 입력하면 바로 검색"
+                 onkeydown="EP.onTagKey(event)" oninput="EP.onDocInput()" />
           <span class="nz-hits" id="docHits"></span>
         </div>
 

@@ -432,3 +432,14 @@ table.nz-t { width: 100%; border-collapse: collapse; font-size: 11.8px; }
   border-bottom: 1px solid #f0f2f6; line-height: 1.45; }
 .nz-routine:hover { background: #eef4fb; }
 .nz-routine b { display: block; color: #1f4e96; font-size: 11px; margin-bottom: 2px; }
+
+
+/* ===== 검색어 단어 칩 (단어마다 다른 색) ===== */
+.nz-termbar { display: flex; flex-wrap: wrap; gap: 5px; padding: 5px 9px; min-height: 0;
+  border-top: 1px solid var(--nz-line); background: #f7f9fc; }
+.nz-termbar:empty { display: none; }
+.nz-termchip { display: inline-flex; align-items: center; gap: 5px; border-radius: 12px;
+  padding: 2px 9px; font-size: 11px; color: #33518a; border: 1px solid #c4cedd; background: #fff; }
+.nz-termchip .sw { width: 9px; height: 9px; border-radius: 50%; }
+.nz-termchip .n { color: #8a94a6; font-size: 10.5px; }
+.nz-res-snip mark { padding: 0 1px; border-radius: 2px; color: #4a3a00; }
