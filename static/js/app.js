@@ -1163,19 +1163,13 @@ const EP = (() => {
     return true;
   }
 
-  /** 참고한 기출을 스크랩으로 저장한다 (메모 포함) */
+  /** 참고한 기출을 담는다. 출제 의도는 건드리지 않는다 — 참고 기출은 버튼으로만 관리한다. */
   async function useExam(docId, pageNo, num, title) {
-    const note = prompt(`${title} ${num}번 — 메모 (없으면 비워두세요)`, "");
-    if (note === null) return;
     const r = await post("/api/exam-refs", {
-      document_id: docId, doc_title: title, page_no: pageNo, item_num: num, note: note || "",
+      document_id: docId, doc_title: title, page_no: pageNo, item_num: num, note: "",
     });
-    const el = $("qintent");
-    if (el && !el.value.includes(`${title} ${num}번`)) {
-      el.value = (el.value ? el.value.replace(/\s*$/, "\n") : "") + `참고 기출: ${title} ${num}번`;
-    }
     await loadRefs(editingQid);
-    showRef(r.id);
+    showRef(r.id);      // 담자마자 오른쪽에 뜨고, 메모는 거기서 적는다
   }
 
   /* ---------- 실시간 검색 (입력하면서 바로) ---------- */
