@@ -227,16 +227,30 @@ table.nz-t { width: 100%; border-collapse: collapse; font-size: 11.8px; }
 /* ===== 문항 설계: 좌 설계 / 우 근거검색(세로) ===== */
 .nz-qlayout { display: flex; gap: 10px; align-items: flex-start; }
 .nz-qmain { flex: 1; min-width: 0; }
-.nz-qside { width: 372px; flex-shrink: 0; border: 1px solid var(--nz-line); border-radius: 3px;
+/* 펼치면 화면의 절반, 접으면 세로 막대 */
+.nz-qside { width: 50%; flex-shrink: 0; border: 1px solid var(--nz-line); border-radius: 3px;
   background: #fff; display: flex; flex-direction: column; position: sticky; top: 6px;
-  max-height: calc(100vh - 96px); overflow: hidden; }
-.nz-sidehead { display: flex; align-items: center; gap: 7px; padding: 7px 9px;
-  background: #eef2f8; font-size: 12px; color: #1f4e96; }
-.nz-sidehead b { font-size: 12.5px; }
-.nz-qside .nz-evlist { flex: 1 1 34%; min-height: 130px; overflow-y: auto;
-  border-top: 1px solid var(--nz-line); }
-.nz-qside .nz-viewer-body { flex: 1 1 40%; min-height: 150px; }
-.nz-qside .nz-picker { overflow-y: auto; padding: 0 8px 8px; }
+  height: calc(100vh - 96px); overflow: hidden; transition: width .15s; }
+.nz-qside.folded { width: 34px; }
+.nz-qside.folded .sidefull { display: none; }
+.nz-qside.folded .nz-sidehead { padding: 7px 4px; }
+.nz-qside.folded .nz-sidehead b { display: none; }
+.nz-sidefolded { display: none; writing-mode: vertical-rl; text-orientation: mixed;
+  padding: 10px 0; color: #1f4e96; font-size: 12px; font-weight: 600; letter-spacing: 2px; }
+.nz-qside.folded .nz-sidefolded { display: block; }
+
+.nz-sidehead { display: flex; align-items: center; gap: 7px; padding: 6px 9px;
+  background: #eef2f8; font-size: 12px; color: #1f4e96; flex-shrink: 0; }
+.nz-sidehead b { font-size: 12.5px; white-space: nowrap; }
+
+/* 넓어졌으니 결과 | 원문 을 좌우로 — 교과서를 크게 본다 */
+.nz-evsplit { flex: 1; display: flex; min-height: 0; border-top: 1px solid var(--nz-line); }
+.nz-evsplit .nz-evlist { width: 42%; min-width: 220px; overflow-y: auto;
+  border-right: 1px solid var(--nz-line); }
+.nz-evsplit .nz-evview { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.nz-qside .nz-viewer-body { flex: 1; min-height: 0; }
+.nz-qside .nz-picker { overflow-y: auto; padding: 0 8px 8px; max-height: 20vh; flex-shrink: 0; }
+.nz-qside .nz-picker.hidden { display: none; }
 
 /* 출력/비출력 섹션 구분 */
 .nz-print, .nz-meta { border-radius: 4px; margin-bottom: 8px; overflow: hidden; }

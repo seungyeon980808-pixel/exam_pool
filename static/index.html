@@ -186,38 +186,45 @@
             </table>
           </div>
 
-          <!-- 오른쪽: 근거 검색 (세로) -->
-          <aside class="nz-qside">
+          <!-- 오른쪽: 근거 검색 (펼치면 화면 절반) -->
+          <aside class="nz-qside" id="qside">
             <div class="nz-sidehead">
+              <button class="foldbtn" id="evFoldBtn" onclick="EP.toggleSide()" title="접기/펴기">▶</button>
               <b>근거 검색</b>
-              <span class="nz-sub" style="margin:0">교과서·교육과정·기출</span>
-            </div>
-            <div style="display:flex;gap:4px;padding:0 8px 6px">
-              <input class="nz-inp" id="evSearch" style="flex:1;min-width:0"
+              <span class="nz-sub sidefull" style="margin:0">교과서·교육과정·기출</span>
+              <input class="nz-inp sidefull" id="evSearch" style="flex:1;min-width:0;margin-left:6px"
                      placeholder="예: 빛 굴절" onkeydown="if(event.key==='Enter')EP.searchEvidence()" />
-              <button class="nz-go" style="margin:0;padding:5px 11px" onclick="EP.searchEvidence()">검색</button>
-            </div>
-            <div class="nz-evlist" id="evList">
-              <p class="nz-sub" style="padding:10px">키워드를 넣으면 교과서에서 근거를 찾습니다.</p>
-            </div>
-            <div class="nz-viewer-head" style="border-top:1px solid var(--nz-line)">
-              <span id="evViewTitle">원문</span>
-              <span style="margin-left:auto;display:flex;gap:3px">
-                <button class="nz-tb mini" onclick="EP.evViewPage(-1)">◀</button>
-                <button class="nz-tb mini" onclick="EP.evViewPage(1)">▶</button>
-                <button class="nz-tb mini" onclick="EP.evZoom()">확대</button>
-              </span>
-            </div>
-            <div class="nz-viewer-body" id="evViewBody">
-              <p class="nz-sub" style="padding:12px;text-align:center">결과를 클릭하면 원문이 뜹니다.</p>
+              <button class="nz-go sidefull" style="margin:0;padding:5px 12px" onclick="EP.searchEvidence()">검색</button>
             </div>
 
-            <div class="nz-sidehead" style="border-top:1px solid var(--nz-line)">
+            <div class="nz-evsplit sidefull">
+              <div class="nz-evlist" id="evList">
+                <p class="nz-sub" style="padding:10px">키워드를 넣으면 교과서에서 근거를 찾습니다.</p>
+              </div>
+              <div class="nz-evview">
+                <div class="nz-viewer-head">
+                  <span id="evViewTitle">원문</span>
+                  <span style="margin-left:auto;display:flex;gap:3px">
+                    <button class="nz-tb mini" onclick="EP.evViewPage(-1)">◀</button>
+                    <button class="nz-tb mini" onclick="EP.evViewPage(1)">▶</button>
+                    <button class="nz-tb mini" onclick="EP.evZoom()">확대</button>
+                  </span>
+                </div>
+                <div class="nz-viewer-body" id="evViewBody">
+                  <p class="nz-sub" style="padding:14px;text-align:center">결과를 클릭하면 원문이 뜹니다.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="nz-sidehead sidefull" style="border-top:1px solid var(--nz-line)">
               <b>명제 은행</b>
               <input class="nz-inp" id="pickSearch" style="flex:1;min-width:0;margin-left:6px"
                      placeholder="명제 검색" onkeydown="if(event.key==='Enter')EP.loadPicker()" />
+              <button class="nz-tb mini" onclick="EP.togglePicker()">▾</button>
             </div>
-            <div id="pickerList" class="nz-picker" style="max-height:22vh"></div>
+            <div id="pickerList" class="nz-picker sidefull"></div>
+
+            <div class="nz-sidefolded">근거 검색</div>
           </aside>
         </div>
       </section>

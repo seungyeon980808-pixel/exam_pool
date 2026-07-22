@@ -550,6 +550,16 @@ const EP = (() => {
     if (img.complete) paint(); else img.onload = paint;
   }
 
+  /** 근거 검색 접기/펴기 — 펼치면 화면 절반 */
+  function toggleSide() {
+    const el = $("qside");
+    el.classList.toggle("folded");
+    const folded = el.classList.contains("folded");
+    $("evFoldBtn").textContent = folded ? "◀" : "▶";
+    localStorage.setItem("ep_side_folded", folded ? "1" : "");
+  }
+  function togglePicker() { $("pickerList").classList.toggle("hidden"); }
+
   function evZoom() {
     if (!evViewer.docId) return alert("먼저 결과를 선택하세요.");
     peekPage(evViewer.docId, evViewer.page, evViewer.q);
@@ -944,6 +954,10 @@ const EP = (() => {
 
   async function init() {
     initTabs();
+    if (localStorage.getItem("ep_side_folded")) {
+      const el = $("qside");
+      if (el) { el.classList.add("folded"); $("evFoldBtn").textContent = "◀"; }
+    }
     await loadStandards();
     await loadProps();
   }
@@ -954,7 +968,7 @@ const EP = (() => {
     markVerified, searchEvidenceFor, attachEvidence, exportCsv, peekPage,
     pickStandard, filterTree, openStdTable, closeStdTable, renderStdTable,
     openScope, applyScope, foldMenu, renderPresets, resetQuestionForm, evShow, evViewPage, evZoom,
-    showStdFull, refillBankFilters,
+    showStdFull, refillBankFilters, toggleSide, togglePicker,
     onTypeChange, addBogi, setBogi, delBogi, addChoice, setChoice, setCombo, setAnswer, delChoice,
     applyPreset, loadPicker, useProp, searchEvidence, saveQuestion, checkQuestionDraft,
     loadQuestions, editQuestion, checkQuestion, delQuestion,
