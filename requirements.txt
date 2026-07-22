@@ -1,0 +1,4 @@
+fastapi>=0.110
+uvicorn>=0.27
+pymupdf>=1.24
+pyperclip>=1.8

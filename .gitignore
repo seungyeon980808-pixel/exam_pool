@@ -1,0 +1,28 @@
+# ===== 개인·민감 데이터 (시험 유출 방지 — 최우선) =====
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+config.json
+.env
+
+# ===== 근거 문서 원본 (교과서·교육과정 PDF는 개인 소유) =====
+docs_source/
+*.pdf
+
+# ===== Python =====
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# ===== 데모 영상 자산 (별도 관리 — 이번 커밋 범위 밖) =====
+demo/
+
+# ===== OS·에디터 =====
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/

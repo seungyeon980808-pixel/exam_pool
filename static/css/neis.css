@@ -1,0 +1,157 @@
+/* ===== ExamPool — 나이스(NEIS) 디자인 언어 공용 스타일 ===== */
+/* 목업(2026-07-22)에서 정립한 톤. 전 화면이 이 파일을 공유한다. */
+
+:root {
+  --nz-blue: #2b5aa0;        /* 헤더 바 */
+  --nz-go: #2f6ac0;          /* 조회/주요 버튼 */
+  --nz-green: #3c9d5a;       /* 엑셀 */
+  --nz-navy: #1a3e7a;        /* 선택 텍스트 */
+  --nz-th: #eef2f7;          /* 테이블 헤더 */
+  --nz-line: #d5dce6;        /* 테두리 */
+  --nz-line2: #e0e6ef;       /* 행 테두리 */
+  --nz-foot: #6b7684;        /* 합계 바 */
+  --nz-req: #e2443b;         /* 필수 별 */
+  --nz-text: #3a4553;
+  --nz-code: #2b5aa8;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "맑은 고딕", "Malgun Gothic", "Segoe UI", sans-serif;
+  font-size: 12.5px;
+  color: #333;
+  line-height: 1.45;
+  background: #eef1f5;
+}
+
+/* ===== 상단 바 ===== */
+.nz-top {
+  background: var(--nz-blue);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  font-size: 12.5px;
+}
+.nz-logo { display: flex; align-items: center; gap: 7px; font-weight: 600; font-size: 14px; }
+.nz-logo img { width: 22px; height: 22px; border-radius: 5px; }
+.nz-top .spacer { margin-left: auto; }
+.nz-top .muted { opacity: .82; }
+
+/* ===== 상단 네비 ===== */
+.nz-nav { display: flex; background: #fff; border-bottom: 1px solid var(--nz-line); padding: 0 8px; }
+.nz-navi {
+  padding: 9px 16px; color: #2d4a7a; font-size: 12.5px; font-weight: 500;
+  background: none; border: none; cursor: pointer;
+}
+.nz-navi.on { color: var(--nz-navy); font-weight: 600; box-shadow: inset 0 -3px 0 var(--nz-blue); }
+
+/* ===== 좌우 레이아웃 ===== */
+.nz-wrap { display: flex; background: #fff; min-height: calc(100vh - 78px); }
+.nz-rail {
+  width: 40px; background: #eef3fa; border-right: 1px solid #dbe3ee;
+  display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0; flex-shrink: 0;
+}
+.nz-rail i {
+  width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+  color: #4a6ea8; font-size: 17px; border-radius: 5px;
+}
+.nz-rail i.on { background: var(--nz-blue); color: #fff; }
+
+.nz-menu { width: 150px; border-right: 1px solid var(--nz-line); flex-shrink: 0; overflow-y: auto; }
+.nz-mh {
+  background: #eef2f8; font-size: 11.5px; color: #3a4a63; font-weight: 600;
+  padding: 7px 11px; border-bottom: 1px solid #dbe3ee; display: flex; align-items: center; gap: 5px;
+}
+.nz-mi {
+  padding: 6px 11px 6px 18px; color: #46536b; font-size: 12px;
+  border-bottom: 1px solid #f0f2f6; cursor: pointer;
+}
+.nz-mi:hover { background: #f4f7fb; }
+.nz-mi.on { background: #e3ecf8; color: var(--nz-navy); font-weight: 500; border-left: 3px solid var(--nz-blue); padding-left: 15px; }
+.nz-mi.sub { padding-left: 28px; color: #5a6577; font-size: 11.5px; }
+.nz-mi.sub.on { padding-left: 25px; }
+
+.nz-main { flex: 1; padding: 13px 16px; min-width: 0; }
+
+/* ===== 섹션 제목 ===== */
+.nz-h { display: flex; align-items: center; gap: 7px; margin: 0 0 12px; }
+.nz-h::before { content: ""; width: 9px; height: 9px; background: var(--nz-blue); border-radius: 1px; }
+.nz-h b { color: #1f4e96; font-size: 14.5px; font-weight: 600; }
+
+/* ===== 조회 필터 ===== */
+.nz-flt {
+  border: 1px solid #dbe3ee; background: #f7f9fc; border-radius: 3px;
+  padding: 11px 13px; display: flex; flex-wrap: wrap; align-items: center; gap: 9px 15px; margin-bottom: 11px;
+}
+.nz-lb { font-size: 12px; color: #48597a; font-weight: 500; }
+.nz-lb .req { color: var(--nz-req); margin-right: 2px; }
+.nz-inp, .nz-sel {
+  border: 1px solid #c4cedd; border-radius: 3px; padding: 5px 8px; font-size: 12px;
+  background: #fff; color: #333;
+}
+.nz-inp { min-width: 150px; }
+.nz-sel { min-width: 200px; }
+.nz-go {
+  background: var(--nz-go); color: #fff; border: none; border-radius: 3px;
+  padding: 6px 16px; font-size: 12px; font-weight: 500; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 4px; margin-left: auto;
+}
+.nz-go:hover { background: #285ba9; }
+
+/* ===== 도구 버튼 ===== */
+.nz-tools { display: flex; gap: 5px; justify-content: flex-end; margin-bottom: 7px; }
+.nz-tb {
+  border: 1px solid #c4cedd; background: #fff; border-radius: 3px; padding: 5px 12px;
+  font-size: 11.5px; color: #46536b; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
+}
+.nz-tb:hover { background: #f4f7fb; }
+.nz-tb.grn { background: var(--nz-green); color: #fff; border-color: #369053; }
+.nz-tb.blu { background: #4a6fa5; color: #fff; border-color: #43648f; }
+
+.nz-cnt { font-size: 12px; color: #46536b; margin: 0 0 6px; }
+.nz-cnt b { color: #1f4e96; }
+
+/* ===== 테이블 ===== */
+table.nz-t { width: 100%; border-collapse: collapse; font-size: 11.8px; }
+.nz-t th {
+  background: var(--nz-th); border: 1px solid var(--nz-line); padding: 7px 5px;
+  color: #3a4a63; font-weight: 600; text-align: center; white-space: nowrap;
+}
+.nz-t th .ar { color: #9aa7ba; font-size: 9px; margin-left: 2px; }
+.nz-t td { border: 1px solid var(--nz-line2); padding: 6px 9px; color: var(--nz-text); }
+.nz-t tr:nth-child(even) td { background: #fafbfd; }
+.nz-t tbody tr:hover td { background: #eef4fb; }
+.nz-t .cc { text-align: center; }
+.nz-t .code { color: var(--nz-code); font-weight: 500; }
+.nz-t .g { color: #2f8a4e; }
+.nz-t .r { color: #c0392b; }
+.nz-empty td { text-align: center; color: #8a94a6; padding: 26px 0; }
+
+/* ===== 합계 바 ===== */
+.nz-foot {
+  background: var(--nz-foot); color: #fff; display: flex; justify-content: space-between;
+  padding: 9px 15px; font-size: 12px; margin-top: 8px; border-radius: 3px;
+}
+
+/* ===== 등록 폼(인라인) ===== */
+.nz-form { border: 1px solid #dbe3ee; background: #fff; border-radius: 3px; padding: 13px; margin-bottom: 11px; }
+.nz-form.hidden { display: none; }
+.nz-fr { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
+.nz-fr label { width: 78px; font-size: 12px; color: #48597a; font-weight: 500; flex-shrink: 0; }
+.nz-fr .req { color: var(--nz-req); margin-right: 2px; }
+.nz-fr input, .nz-fr select, .nz-fr textarea {
+  flex: 1; border: 1px solid #c4cedd; border-radius: 3px; padding: 6px 9px; font-size: 12px; font-family: inherit;
+}
+.nz-fr textarea { resize: vertical; min-height: 46px; }
+.nz-fbtn { display: flex; gap: 6px; justify-content: flex-end; }
+
+/* ===== 아직 안 만든 화면 ===== */
+.nz-todo { padding: 60px 0; text-align: center; color: #8a94a6; }
+.nz-todo i { font-size: 34px; display: block; margin-bottom: 10px; color: #b8c2d2; }
+
+/* 하단 버전 표기 */
+.nz-ver { padding: 10px 16px; font-size: 11px; color: #9aa4b4; text-align: right; }

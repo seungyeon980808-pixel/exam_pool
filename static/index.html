@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ExamPool</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/icon.svg" />
+  <link rel="stylesheet" href="/static/css/neis.css" />
+</head>
+<body>
+
+  <!-- ===== 상단 바 ===== -->
+  <div class="nz-top">
+    <span class="nz-logo"><img src="/assets/icon.svg" alt="" />ExamPool</span>
+    <span class="muted">박승연 (physics0808)</span>
+    <span class="spacer muted">과학 · 2022 개정</span>
+  </div>
+
+  <!-- ===== 상단 네비 ===== -->
+  <div class="nz-nav">
+    <button class="nz-navi on" data-tab="bank">명제 은행</button>
+    <button class="nz-navi" data-tab="question">문항 설계</button>
+    <button class="nz-navi" data-tab="set">세트 관리</button>
+    <button class="nz-navi" data-tab="doc">근거 문서</button>
+  </div>
+
+  <div class="nz-wrap">
+    <!-- 좌측 아이콘 레일 -->
+    <div class="nz-rail">
+      <span class="on" title="명제 은행"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg></span>
+      <span title="문항 설계"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/></svg></span>
+      <span title="세트 관리"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></svg></span>
+      <span title="근거 문서"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5a2 2 0 0 1 2-2h5v18H5a2 2 0 0 1-2-2z"/><path d="M14 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5z"/></svg></span>
+    </div>
+
+    <!-- 좌측 메뉴(성취기준 트리) -->
+    <div class="nz-menu" id="menu">
+      <div class="nz-mh">성취기준</div>
+      <div id="tree"></div>
+    </div>
+
+    <!-- 메인 -->
+    <div class="nz-main">
+
+      <!-- ===== 명제 은행 ===== -->
+      <section id="tab-bank">
+        <div class="nz-h"><b>명제 은행 조회</b></div>
+
+        <!-- 등록 폼 -->
+        <div class="nz-form hidden" id="propForm">
+          <div class="nz-fr">
+            <label><span class="req">*</span>성취기준</label>
+            <select id="f-std"></select>
+          </div>
+          <div class="nz-fr">
+            <label><span class="req">*</span>명제</label>
+            <textarea id="f-text" placeholder="참인 명제를 한 문장으로 입력"></textarea>
+          </div>
+          <div class="nz-fr">
+            <label>태그</label>
+            <input id="f-tags" placeholder="쉼표로 구분 (예: 그래프해석, 실험)" />
+          </div>
+          <div class="nz-fr">
+            <label>메모</label>
+            <input id="f-note" placeholder="선택" />
+          </div>
+          <div class="nz-fbtn">
+            <button class="nz-tb" onclick="EP.toggleForm(false)">취소</button>
+            <button class="nz-tb blu" onclick="EP.saveProp()">저장</button>
+          </div>
+        </div>
+
+        <!-- 조회 필터 -->
+        <div class="nz-flt">
+          <span class="nz-lb">성취기준</span>
+          <select class="nz-sel" id="q-std"><option value="">전체</option></select>
+          <span class="nz-lb">검색어</span>
+          <input class="nz-inp" id="q-text" placeholder="명제 내용" onkeydown="if(event.key==='Enter')EP.loadProps()" />
+          <button class="nz-go" onclick="EP.loadProps()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>조회
+          </button>
+        </div>
+
+        <!-- 도구 -->
+        <div class="nz-tools">
+          <button class="nz-tb grn" onclick="EP.notReady('엑셀 내려받기')">엑셀</button>
+          <button class="nz-tb blu" onclick="EP.toggleForm(true)">＋ 명제 등록</button>
+          <button class="nz-tb" onclick="EP.notReady('변형 추가')">변형 추가</button>
+          <button class="nz-tb" onclick="EP.notReady('문항으로 보내기')">문항으로 보내기</button>
+        </div>
+
+        <p class="nz-cnt">명제 목록 &nbsp;Total <b id="cnt">0</b></p>
+        <table class="nz-t">
+          <thead><tr>
+            <th style="width:34px">순번</th>
+            <th style="width:80px">성취기준</th>
+            <th>명제 내용</th>
+            <th style="width:70px">단원</th>
+            <th style="width:44px">근거</th>
+            <th style="width:44px">변형</th>
+            <th style="width:44px">수업</th>
+            <th style="width:40px">삭제</th>
+          </tr></thead>
+          <tbody id="propRows"></tbody>
+        </table>
+        <div class="nz-foot"><span id="footL">선택 명제 0건</span><span id="footR">근거 0건 · 변형 0건</span></div>
+      </section>
+
+      <!-- ===== 아직 안 만든 탭 ===== -->
+      <section id="tab-question" hidden><div class="nz-todo"><i>◷</i>문항 설계 — 다음 단계에서 구현합니다.</div></section>
+      <section id="tab-set" hidden><div class="nz-todo"><i>◷</i>세트 관리 — 다음 단계에서 구현합니다.</div></section>
+      <section id="tab-doc" hidden><div class="nz-todo"><i>◷</i>근거 문서 — 다음 단계에서 구현합니다.</div></section>
+
+      <div class="nz-ver">ExamPool v0.1.0 · 2026-07-22</div>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
