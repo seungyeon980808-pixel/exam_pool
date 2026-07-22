@@ -452,3 +452,20 @@ table.nz-t { width: 100%; border-collapse: collapse; font-size: 11.8px; }
   background: #eef2f8; font-size: 11.5px; color: #1f4e96; }
 .nz-examhead b { font-size: 12.5px; }
 .nz-examitem img { display: block; width: 100%; height: auto; background: #fff; }
+
+
+/* ===== 기출 스크랩 ===== */
+.nz-scraplayout { display: flex; gap: 10px; align-items: stretch; height: calc(100vh - 150px); min-height: 420px; }
+.nz-scraplist { width: 330px; flex-shrink: 0; border: 1px solid var(--nz-line); border-radius: 3px;
+  overflow-y: auto; background: #fff; }
+.nz-scrapview { flex: 1; border: 1px solid var(--nz-line); border-radius: 3px; display: flex;
+  flex-direction: column; background: #fff; min-width: 0; }
+.nz-scrapnote { border-top: 1px solid var(--nz-line); padding: 8px 10px; background: #f7f9fc; flex-shrink: 0; }
+.nz-scrapitem { padding: 8px 10px; border-bottom: 1px solid #eef1f5; cursor: pointer; }
+.nz-scrapitem:hover { background: #f4f8fd; }
+.nz-scrapitem.on { background: #e3ecf8; border-left: 3px solid var(--nz-blue); padding-left: 7px; }
+.nz-scrapitem b { color: #1f4e96; font-size: 12px; }
+.nz-scrapitem .src { font-size: 11px; color: #6b7789; }
+.nz-scrapitem .memo { font-size: 11.5px; color: #46536b; margin-top: 3px; line-height: 1.4;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.nz-scrapitem .tags { margin-top: 3px; display: flex; gap: 4px; flex-wrap: wrap; }

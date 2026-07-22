@@ -145,6 +145,20 @@ CREATE TABLE IF NOT EXISTS lesson (
     summary    TEXT NOT NULL DEFAULT ''
 );
 
+-- 참고한 기출 문항 스크랩 (문항 단위 북마크 + 메모)
+CREATE TABLE IF NOT EXISTS exam_ref (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id INTEGER NOT NULL,
+    doc_title   TEXT NOT NULL,
+    page_no     INTEGER NOT NULL,
+    item_num    INTEGER NOT NULL,
+    note        TEXT NOT NULL DEFAULT '',
+    tags        TEXT NOT NULL DEFAULT '',
+    question_id INTEGER,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ref_uniq ON exam_ref(document_id, page_no, item_num);
+
 CREATE INDEX IF NOT EXISTS idx_prop_std ON proposition(standard_code);
 CREATE INDEX IF NOT EXISTS idx_prop_unit ON proposition(unit_no);
 """

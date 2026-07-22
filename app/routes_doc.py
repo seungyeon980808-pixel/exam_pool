@@ -154,3 +154,83 @@ def item_image(doc_id: int, page_no: int, num: int, dpi: int = 120):
         raise HTTPException(500, f"문항을 그릴 수 없습니다: {e}")
     return Response(content=png, media_type="image/png",
                     headers={"Cache-Control": "public, max-age=3600"})
+
+
+# ===== 기출 스크랩 (참고 문항 + 메모) =====
+class RefIn(BaseModel):
+    document_id: int
+    doc_title: str = ""
+    page_no: int
+    item_num: int
+    note: str = ""
+    tags: str = ""
+    question_id: int | None = None
+
+
+class RefPatch(BaseModel):
+    note: str | None = None
+    tags: str | None = None
+
+
+@router.get("/exam-refs")
+def list_refs(q: str = ""):
+    conn = db.connect()
+    try:
+        sql = "SELECT * FROM exam_ref WHERE 1=1"
+        args = []
+        if q:
+            sql += " AND (doc_title LIKE ? OR note LIKE ? OR tags LIKE ?)"
+            args += [f"%{q}%"] * 3
+        sql += " ORDER BY id DESC"
+        return [dict(r) for r in conn.execute(sql, args).fetchall()]
+    finally:
+        conn.close()
+
+
+@router.post("/exam-refs")
+def create_ref(r: RefIn):
+    """이미 담은 문항이면 메모만 갱신한다(중복 방지)."""
+    conn = db.connect()
+    try:
+        old = conn.execute(
+            "SELECT id FROM exam_ref WHERE document_id=? AND page_no=? AND item_num=?",
+            (r.document_id, r.page_no, r.item_num)).fetchone()
+        if old:
+            if r.note.strip():
+                conn.execute("UPDATE exam_ref SET note=? WHERE id=?", (r.note.strip(), old["id"]))
+                conn.commit()
+            return {"id": old["id"], "existed": True}
+        cur = conn.execute(
+            "INSERT INTO exam_ref (document_id, doc_title, page_no, item_num, note, tags, question_id) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (r.document_id, r.doc_title.strip(), r.page_no, r.item_num,
+             r.note.strip(), r.tags.strip(), r.question_id))
+        conn.commit()
+        return {"id": cur.lastrowid, "existed": False}
+    finally:
+        conn.close()
+
+
+@router.patch("/exam-refs/{ref_id}")
+def update_ref(ref_id: int, p: RefPatch):
+    conn = db.connect()
+    try:
+        if p.note is not None:
+            conn.execute("UPDATE exam_ref SET note=? WHERE id=?", (p.note.strip(), ref_id))
+        if p.tags is not None:
+            conn.execute("UPDATE exam_ref SET tags=? WHERE id=?", (p.tags.strip(), ref_id))
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
+@router.delete("/exam-refs/{ref_id}")
+def delete_ref(ref_id: int):
+    conn = db.connect()
+    try:
+        conn.execute("DELETE FROM exam_ref WHERE id=?", (ref_id,))
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()

@@ -1024,6 +1024,73 @@ const EP = (() => {
 
 
 
+
+  /* ---------- 기출 스크랩 (참고 문항 + 메모) ---------- */
+  let scraps = [];
+  let curScrap = null;
+  let scrapTimer = null;
+
+  async function loadScraps() {
+    const q = $("scrapSearch") ? $("scrapSearch").value.trim() : "";
+    scraps = await api("/api/exam-refs" + (q ? "?q=" + encodeURIComponent(q) : ""));
+    $("scrapCnt").textContent = scraps.length;
+    $("scrapList").innerHTML = scraps.length ? scraps.map((r) => `
+      <div class="nz-scrapitem ${curScrap && curScrap.id === r.id ? "on" : ""}" onclick="EP.openScrap(${r.id})">
+        <b>${r.item_num}번</b> <span class="src">${esc(r.doc_title)} p.${r.page_no}</span>
+        ${r.note ? `<div class="memo">${esc(r.note)}</div>` : ""}
+        ${r.tags ? `<div class="tags">${r.tags.split(",").map((t) =>
+          t.trim() ? `<span class="nz-tag">${esc(t.trim())}</span>` : "").join("")}</div>` : ""}
+      </div>`).join("")
+      : '<p class="nz-sub" style="padding:12px">스크랩한 기출이 없습니다. 문항 설계의 기출 검색에서 “참고로 기록”을 누르세요.</p>';
+  }
+
+  function openScrap(id) {
+    curScrap = scraps.find((r) => r.id === id);
+    if (!curScrap) return;
+    document.querySelectorAll(".nz-scrapitem.on").forEach((n) => n.classList.remove("on"));
+    const el = [...document.querySelectorAll(".nz-scrapitem")][scraps.indexOf(curScrap)];
+    if (el) el.classList.add("on");
+    $("scrapTitle").textContent = `${curScrap.doc_title} — ${curScrap.page_no}p ${curScrap.item_num}번`;
+    $("scrapImg").innerHTML =
+      `<img src="/api/documents/${curScrap.document_id}/page/${curScrap.page_no}/item/${curScrap.item_num}/image?dpi=130"
+            style="max-width:100%;box-shadow:0 1px 6px rgba(0,0,0,.14);background:#fff" />`;
+    $("scrapNote").value = curScrap.note || "";
+    $("scrapTags").value = curScrap.tags || "";
+    $("scrapSaved").textContent = "";
+  }
+
+  function scrapNoteChanged() {
+    if (!curScrap) return;
+    $("scrapSaved").textContent = "저장 중…";
+    clearTimeout(scrapTimer);
+    scrapTimer = setTimeout(async () => {
+      await api(`/api/exam-refs/${curScrap.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note: $("scrapNote").value, tags: $("scrapTags").value }),
+      });
+      curScrap.note = $("scrapNote").value;
+      curScrap.tags = $("scrapTags").value;
+      $("scrapSaved").textContent = "저장됨";
+      loadScraps();
+    }, 500);
+  }
+
+  async function scrapDelete() {
+    if (!curScrap) return;
+    if (!confirm(`${curScrap.doc_title} ${curScrap.item_num}번 스크랩을 지울까요?`)) return;
+    await del(`/api/exam-refs/${curScrap.id}`);
+    curScrap = null;
+    $("scrapImg").innerHTML = '<p class="nz-sub" style="padding:16px;text-align:center">삭제했습니다.</p>';
+    $("scrapNote").value = ""; $("scrapTags").value = "";
+    loadScraps();
+  }
+
+  async function scrapOpenOriginal() {
+    if (!curScrap) return;
+    try { await post(`/api/documents/${curScrap.document_id}/open?page_no=${curScrap.page_no}`, {}); }
+    catch (e) { alert("원본을 열 수 없습니다: " + e.message); }
+  }
+
   /* ---------- 기출: 문항 하나씩 보기 ---------- */
   let docTypes = {};        // {문서id: 종류}
 
@@ -1060,14 +1127,21 @@ const EP = (() => {
     return true;
   }
 
-  /** 참고한 기출을 자료 칸에 출처로 남긴다 */
-  function useExam(docId, pageNo, num, title) {
-    const ref = `${title} ${num}번`;
+  /** 참고한 기출을 스크랩으로 저장한다 (메모 포함) */
+  async function useExam(docId, pageNo, num, title) {
+    const note = prompt(`${title} ${num}번 — 메모 (없으면 비워두세요)`, "");
+    if (note === null) return;
+    const r = await post("/api/exam-refs", {
+      document_id: docId, doc_title: title, page_no: pageNo, item_num: num, note: note || "",
+    });
     const el = $("qintent");
-    if (el) {
-      el.value = (el.value ? el.value.replace(/\s*$/, "\n") : "") + `참고 기출: ${ref}`;
+    if (el && !el.value.includes(`${title} ${num}번`)) {
+      el.value = (el.value ? el.value.replace(/\s*$/, "\n") : "") + `참고 기출: ${title} ${num}번`;
     }
-    alert(`출제 의도에 “참고 기출: ${ref}” 를 기록했습니다.`);
+    if (confirm((r.existed ? "이미 스크랩된 문항입니다. 메모를 갱신했습니다."
+      : "기출 스크랩에 담았습니다.") + "\n\n스크랩 탭으로 갈까요?")) {
+      document.querySelector('.nz-navi[data-tab="scrap"]').click();
+    }
   }
 
   /* ---------- 실시간 검색 (입력하면서 바로) ---------- */
@@ -1307,11 +1381,12 @@ const EP = (() => {
         document.querySelectorAll(".nz-navi").forEach((b) => b.classList.remove("on"));
         btn.classList.add("on");
         const tab = btn.dataset.tab;
-        ["bank", "question", "qbank", "set", "doc", "config"].forEach((t) => {
+        ["bank", "question", "qbank", "set", "doc", "scrap", "config"].forEach((t) => {
           const el = $("tab-" + t); if (el) el.hidden = t !== tab;
         });
         if (tab === "question") { loadPicker(); renderPresets(); renderChecklist(); onTypeChange(); }
         if (tab === "qbank") loadQuestions();
+        if (tab === "scrap") loadScraps();
         if (tab === "config") loadConfig();
         if (tab === "set") loadSets();
         if (tab === "doc") loadDocs();
@@ -1344,6 +1419,7 @@ const EP = (() => {
     loadConfig, cfgToggleUnit, cfgAll, cfgSave, renderChoices, setSrc,
     toggleStdList, pickStd, toggleRoutines, applyRoutine,
     onEvInput, onDocInput, runSearchFromInput, useExam,
+    loadScraps, openScrap, scrapNoteChanged, scrapDelete, scrapOpenOriginal,
     onTypeChange, addBogi, setBogi, delBogi, addChoice, setChoice, setCombo, setAnswer, delChoice,
     applyPreset, loadPicker, useProp, searchEvidence, saveQuestion, checkQuestionDraft,
     loadQuestions, editQuestion, checkQuestion, delQuestion,
