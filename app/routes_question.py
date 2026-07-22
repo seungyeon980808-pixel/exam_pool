@@ -57,6 +57,9 @@ class ChoiceIn(BaseModel):
 class QuestionIn(BaseModel):
     title: str = ""
     qtype: str = "정답형"
+    image_choices: bool = False
+    status: str = "초안"
+    review_note: str = "{}"
     is_negative: bool = False
     passage: str = ""
     material: str = ""
@@ -79,7 +82,7 @@ def _load_question(conn, qid):
 
 
 @router.get("/questions")
-def list_questions(standard: str = "", q: str = ""):
+def list_questions(standard: str = "", q: str = "", status: str = ""):
     sql = """
         SELECT q.*, (SELECT COUNT(*) FROM choice c WHERE c.question_id = q.id) AS choice_count
         FROM question q WHERE 1=1
@@ -88,7 +91,10 @@ def list_questions(standard: str = "", q: str = ""):
     if standard:
         sql += " AND q.standard_code = ?"; args.append(standard)
     if q:
-        sql += " AND (q.ask LIKE ? OR q.passage LIKE ?)"; args += [f"%{q}%", f"%{q}%"]
+        sql += " AND (q.ask LIKE ? OR q.passage LIKE ? OR q.title LIKE ?)"
+        args += [f"%{q}%", f"%{q}%", f"%{q}%"]
+    if status:
+        sql += " AND q.status = ?"; args.append(status)
     sql += " ORDER BY q.id DESC"
     conn = db.connect()
     try:
@@ -117,10 +123,10 @@ def create_question(qin: QuestionIn):
     conn = db.connect()
     try:
         cur = conn.execute(
-            "INSERT INTO question (title, qtype, is_negative, passage, material, ask, bogi_items, "
-            " answer, default_points, difficulty, standard_code, intent) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            (qin.title.strip(), qin.qtype, int(qin.is_negative), qin.passage.strip(), qin.material.strip(),
+            "INSERT INTO question (title, qtype, image_choices, status, review_note, is_negative, "
+            " passage, material, ask, bogi_items, answer, default_points, difficulty, standard_code, intent) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (qin.title.strip(), qin.qtype, int(qin.image_choices), qin.status, qin.review_note, int(qin.is_negative), qin.passage.strip(), qin.material.strip(),
              qin.ask.strip(), json.dumps(qin.bogi_items, ensure_ascii=False), qin.answer,
              qin.default_points, qin.difficulty, qin.standard_code, qin.intent.strip()))
         qid = cur.lastrowid
@@ -136,10 +142,10 @@ def update_question(qid: int, qin: QuestionIn):
     conn = db.connect()
     try:
         conn.execute(
-            "UPDATE question SET title=?, qtype=?, is_negative=?, passage=?, material=?, ask=?, "
-            " bogi_items=?, answer=?, default_points=?, difficulty=?, standard_code=?, intent=? "
-            "WHERE id=?",
-            (qin.title.strip(), qin.qtype, int(qin.is_negative), qin.passage.strip(), qin.material.strip(),
+            "UPDATE question SET title=?, qtype=?, image_choices=?, status=?, review_note=?, is_negative=?, "
+            " passage=?, material=?, ask=?, bogi_items=?, answer=?, default_points=?, difficulty=?, "
+            " standard_code=?, intent=? WHERE id=?",
+            (qin.title.strip(), qin.qtype, int(qin.image_choices), qin.status, qin.review_note, int(qin.is_negative), qin.passage.strip(), qin.material.strip(),
              qin.ask.strip(), json.dumps(qin.bogi_items, ensure_ascii=False), qin.answer,
              qin.default_points, qin.difficulty, qin.standard_code, qin.intent.strip(), qid))
         conn.execute("DELETE FROM choice WHERE question_id = ?", (qid,))

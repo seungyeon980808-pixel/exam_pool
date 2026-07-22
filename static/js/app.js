@@ -82,9 +82,15 @@ const EP = (() => {
   /* ---------- 출제 범위(단원 선택) ---------- */
   // 시험 한 번에 23개 단원을 다 쓰지 않는다. 필요한 단원만 골라 그 안에서 작업한다.
   let scope = JSON.parse(localStorage.getItem("ep_scope") || "[]");
+  let stdScope = JSON.parse(localStorage.getItem("ep_std_scope") || "[]");
 
   function inScope(unitNo) { return !scope.length || scope.includes(unitNo); }
-  function scopedStandards() { return standards.filter((u) => inScope(u.unit_no)); }
+  function scopedStandards() {
+    return standards.filter((u) => inScope(u.unit_no)).map((u) => ({
+      unit_no: u.unit_no, name: u.name,
+      standards: stdScope.length ? u.standards.filter((s) => stdScope.includes(s.code)) : u.standards,
+    })).filter((u) => u.standards.length);
+  }
 
   function saveScope(list) {
     scope = list;
@@ -143,15 +149,7 @@ const EP = (() => {
     $("scopeModal").classList.add("hidden");
   }
 
-  /** 선택한 성취기준의 전문을 select 아래에 전부 보여준다 (select 는 잘리므로) */
-  function showStdFull() {
-    const code = $("q-std2") ? $("q-std2").value : "";
-    const box = $("stdFull");
-    if (!box) return;
-    const s = standards.flatMap((u) => u.standards).find((x) => x.code === code);
-    box.innerHTML = s ? `<b>${esc(s.code)}</b>${esc(s.text)}`
-                      : "성취기준을 고르면 전문이 여기 표시됩니다.";
-  }
+  function showStdFull() {}   // 전문은 select 안에 그대로 들어간다 (별도 공간 없음)
 
   /** 문항 은행 단원·성취기준 필터 채우기 */
   function refillBankFilters() {
@@ -170,12 +168,30 @@ const EP = (() => {
 
   function refillStdSelects() {
     const opts = scopedStandards().flatMap((u) => u.standards.map((s) =>
-      ({ v: s.code, t: `${s.code} ${s.text.slice(0, 20)}…` })));
+      ({ v: s.code, t: `${s.code} ${s.text}` })));   // 자르지 않고 전문
     fillSelect($("q-std"), opts, "전체");
     fillSelect($("f-std"), opts);
     fillSelect($("q-std2"), opts);
+    refillUnitSelect();
     refillBankFilters();
-    showStdFull();
+  }
+
+  /** 명제 은행: 단원 select — 단원을 먼저 고르고 성취기준을 좁힌다 */
+  function refillUnitSelect() {
+    const sel = $("q-unit");
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">전체 단원</option>';
+    scopedStandards().forEach((u) => sel.appendChild(new Option(`${u.unit_no}. ${u.name}`, u.unit_no)));
+    sel.value = cur;
+  }
+
+  function onBankUnitChange() {
+    const unit = +$("q-unit").value || 0;
+    const list = unit ? scopedStandards().filter((u) => u.unit_no === unit) : scopedStandards();
+    const opts = list.flatMap((u) => u.standards.map((s) => ({ v: s.code, t: `${s.code} ${s.text}` })));
+    fillSelect($("q-std"), opts, "전체");
+    loadProps();
   }
 
   /* ---------- 트리 (접기/펴기) ---------- */
@@ -408,7 +424,8 @@ const EP = (() => {
   function onTypeChange() {
     const hap = $("qtype").value === "합답형";
     $("bogiBox").classList.toggle("hidden", !hap);
-    $("presetBox").classList.toggle("hidden", !hap);
+    $("presetBox").classList.toggle("hidden", !hap);     // 정답형엔 프리셋 없음
+    $("imgChoiceBox").classList.toggle("hidden", hap);   // 그림 선지는 정답형만
     if (hap && !bogi.length) { addBogi(); addBogi(); addBogi(); }
     renderChoices();
   }
@@ -423,6 +440,7 @@ const EP = (() => {
       <div class="nz-fr">
         <label>${b.label}</label>
         <input value="${esc(b.text)}" oninput="EP.setBogi(${i}, this.value)" placeholder="보기 문장" />
+        <button class="nz-tb mini" onclick="EP.pickFor('bogi', ${i})">명제</button>
         <span class="nz-tag ${b.proposition_id || b.variant_id ? "g" : ""}">${b.proposition_id ? "명제" : b.variant_id ? "변형" : "직접"}</span>
         <button class="nz-tb mini" onclick="EP.delBogi(${i})">×</button>
       </div>`).join("");
@@ -437,12 +455,15 @@ const EP = (() => {
   }
   function renderChoices() {
     const hap = $("qtype").value === "합답형";
+    const img = $("imgChoices") && $("imgChoices").checked;
     $("choiceRows").innerHTML = choices.map((c, i) => `
       <div class="nz-fr">
         <label>${"①②③④⑤"[i] || i + 1}</label>
         ${hap
           ? `<input value="${esc((c.combo || []).join(", "))}" oninput="EP.setCombo(${i}, this.value)" placeholder="예: ㄱ, ㄷ" />`
-          : `<input value="${esc(c.text)}" oninput="EP.setChoice(${i}, this.value)" placeholder="선지 문장" />`}
+          : `<input value="${esc(c.text)}" oninput="EP.setChoice(${i}, this.value)"
+               placeholder="${img ? "그림 파일명 (예: 보기1.png)" : "선지 문장"}" />`}
+        ${hap ? "" : `<button class="nz-tb mini" onclick="EP.pickFor('choice', ${i})">명제</button>`}
         <span class="nz-tag ${c.proposition_id || c.variant_id || c.custom_evidence || (c.combo && c.combo.length) ? "g" : "r"}">
           ${c.proposition_id ? "명제" : c.variant_id ? "변형" : (c.combo && c.combo.length) ? "조합" : c.custom_evidence ? "직접근거" : "근거없음"}</span>
         <label class="nz-lb"><input type="radio" name="ans" ${c.is_answer ? "checked" : ""} onchange="EP.setAnswer(${i})" /> 정답</label>
@@ -496,16 +517,30 @@ const EP = (() => {
   }
 
   let evViewer = { docId: null, page: 1, lastPage: 1, q: "" };
+  let evSrc = "";      // "" | 교과서 | 교육과정 | 기출
+
+  function setSrc(src) {
+    evSrc = src;
+    document.querySelectorAll(".nz-srcbtn").forEach((b) =>
+      b.classList.toggle("on", (b.dataset.src || "") === src));
+    if ($("evSearch").value.trim()) searchEvidence();
+  }
 
   async function searchEvidence() {
     const q = $("evSearch").value.trim();
     if (!q) return;
     evViewer.q = q;
-    const r = await api("/api/evidence/search?q=" + encodeURIComponent(q) + "&limit=40");
+    const r = await api("/api/evidence/search?q=" + encodeURIComponent(q) + "&limit=60");
+    let items = r.items;
+    if (evSrc) {
+      const docs = await api("/api/documents");
+      const ids = new Set(docs.filter((d) => d.doc_type === evSrc).map((d) => d.id));
+      items = items.filter((it) => ids.has(it.document_id));
+    }
     const groups = {};
-    r.items.forEach((it) => { (groups[it.doc_title] ||= []).push(it); });
-    $("evList").innerHTML = r.items.length
-      ? `<div class="nz-hlbar" style="padding:6px 10px"><b>${r.total}</b>개 페이지 일치 · ${r.items.length}개 표시</div>` +
+    items.forEach((it) => { (groups[it.doc_title] ||= []).push(it); });
+    $("evList").innerHTML = items.length
+      ? `<div class="nz-hlbar" style="padding:6px 10px"><b>${r.total}</b>개 일치 · ${items.length}개 표시${evSrc ? " · " + evSrc : ""}</div>` +
         Object.entries(groups).map(([title, items]) => `
         <div class="nz-docgroup">
           <div class="nz-docgroup-head">${esc(title)} <span class="n">${items.length}개</span></div>
@@ -586,6 +621,9 @@ const EP = (() => {
       difficulty: $("qdiff").value,
       standard_code: $("q-std2").value || null,
       intent: $("qintent").value,
+      image_choices: $("imgChoices") ? $("imgChoices").checked : false,
+      status: $("qstatus") ? $("qstatus").value : "초안",
+      review_note: JSON.stringify(checkState),
       choices,
     };
   }
@@ -594,6 +632,12 @@ const EP = (() => {
     const q = collectQuestion();
     if (!q.ask.trim()) return alert("발문을 입력하세요.");
     if (!q.choices.length) return alert("선지를 추가하세요.");
+    if (q.status === "완성") {
+      const missing = CHECKS.filter((c) => !checkState[c.k]);
+      if (missing.length) return alert("'완성'으로 저장하려면 확인 항목을 모두 체크해야 합니다.\n\n미확인: "
+        + missing.map((m) => m.t).join(", "));
+      if (!(checkState.note || "").trim()) return alert("확인 근거를 적어주세요.");
+    }
     if (editingQid) { await put(`/api/questions/${editingQid}`, q); }
     else { await post("/api/questions", q); }
     resetQuestionForm(); loadQuestions();
@@ -601,7 +645,7 @@ const EP = (() => {
   }
 
   function resetQuestionForm() {
-    editingQid = null; bogi = []; choices = [];
+    editingQid = null; bogi = []; choices = []; checkState = {}; renderChecklist();
     ["qtitle", "qpassage", "qmaterial", "qask", "qintent"].forEach((id) => $(id).value = "");
     $("isNeg").checked = false; $("qpoints").value = "3";
     renderBogi(); renderChoices(); $("qCheckResult").innerHTML = "";
@@ -631,6 +675,8 @@ const EP = (() => {
     const q = $("qbSearch") ? $("qbSearch").value.trim() : "";
     if (std) params.set("standard", std);
     if (q) params.set("q", q);
+    const stt = $("qbStatus") ? $("qbStatus").value : "";
+    if (stt) params.set("status", stt);
     let rows = await api("/api/questions?" + params);
     const unit = $("qbUnit") ? +$("qbUnit").value : 0;
     if (unit && !std) {           // 단원만 고른 경우: 그 단원의 성취기준들로 거른다
@@ -639,18 +685,30 @@ const EP = (() => {
       rows = rows.filter((r) => codes.has(r.standard_code));
     }
     $("qcnt").textContent = rows.length;
+    const st = { "초안": 0, "검토중": 0, "완성": 0 };
+    rows.forEach((r) => { st[r.status || "초안"] = (st[r.status || "초안"] || 0) + 1; });
+    if ($("qbStats")) $("qbStats").innerHTML =
+      `<div class="nz-statcard"><b>${rows.length}</b>전체</div>` +
+      `<div class="nz-statcard"><b>${st["초안"]}</b>초안</div>` +
+      `<div class="nz-statcard"><b>${st["검토중"]}</b>검토중</div>` +
+      `<div class="nz-statcard"><b>${st["완성"]}</b>완성</div>`;
     $("qRows").innerHTML = rows.map((r, i) => `
-      <tr><td class="cc">${i + 1}</td><td>${esc(r.title || "-")}</td>
+      <tr><td class="cc">${i + 1}</td>
+      <td class="cc"><span class="nz-badge ${esc(r.status || "초안")}">${esc(r.status || "초안")}</span></td>
+      <td>${esc(r.title || "-")}</td>
       <td class="cc">${esc(r.qtype)}${r.is_negative ? "·부정" : ""}</td>
       <td>${esc(r.ask)}</td><td class="cc code">${esc(r.standard_code || "-")}</td>
       <td class="cc">${esc(r.difficulty)}</td><td class="cc">${r.default_points}</td>
-      <td class="cc"><button class="nz-tb mini" onclick="EP.editQuestion(${r.id})">수정</button>
+      <td class="cc"><button class="nz-tb mini" onclick="EP.editQuestion(${r.id}, true)">수정</button>
       <button class="nz-tb mini" onclick="EP.checkQuestion(${r.id})">검토</button>
       <button class="nz-tb mini" onclick="EP.delQuestion(${r.id})">×</button></td></tr>`).join("")
-      || '<tr class="nz-empty"><td colspan="7">문항이 없습니다.</td></tr>';
+      || '<tr class="nz-empty"><td colspan="9">문항이 없습니다.</td></tr>';
   }
 
-  async function editQuestion(qid) {
+  async function editQuestion(qid, jump) {
+    if (jump) {   // 문항 은행에서 눌렀으면 설계 탭으로 이동
+      document.querySelector('.nz-navi[data-tab="question"]').click();
+    }
     const d = await api(`/api/questions/${qid}`);
     editingQid = qid;
     const q = d.question;
@@ -661,6 +719,10 @@ const EP = (() => {
     $("qpoints").value = q.default_points; $("qdiff").value = q.difficulty;
     $("q-std2").value = q.standard_code || ""; showStdFull();
     bogi = q.bogi_items || [];
+    if ($("qstatus")) $("qstatus").value = q.status || "초안";
+    if ($("imgChoices")) $("imgChoices").checked = !!q.image_choices;
+    try { checkState = JSON.parse(q.review_note || "{}"); } catch (e) { checkState = {}; }
+    renderChecklist();
     choices = d.choices.map((c) => ({ ...c, is_answer: !!c.is_answer }));
     onTypeChange(); renderBogi(); renderChoices();
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -937,6 +999,122 @@ const EP = (() => {
     catch (e) { alert("원본을 열 수 없습니다: " + e.message); }
   }
 
+
+  /* ---------- 저장 전 체크리스트 ---------- */
+  // 교사가 실제로 확인해야 하는 항목. '완성'으로 저장하려면 모두 체크하고 근거를 적어야 한다.
+  const CHECKS = [
+    { k: "curriculum", t: "교육과정을 벗어나지 않는가" },
+    { k: "standard", t: "성취기준에 부합하는가" },
+    { k: "textbook", t: "교과서(또는 수업)에서 다룬 내용인가" },
+    { k: "single", t: "복수정답 가능성이 없는가" },
+    { k: "clear", t: "발문이 모호하지 않은가" },
+    { k: "typo", t: "오탈자·기호를 확인했는가" },
+  ];
+  let checkState = {};
+
+  function renderChecklist() {
+    const box = $("checkBox");
+    if (!box) return;
+    box.innerHTML = CHECKS.map((c) =>
+      '<label class="nz-chkrow"><input type="checkbox" ' + (checkState[c.k] ? "checked" : "") +
+      ' onchange="EP.setCheck(\'' + c.k + '\', this.checked)" /><span>' + esc(c.t) + '</span></label>').join("") +
+      '<div class="nz-fr" style="margin-top:6px"><label>확인 근거</label>' +
+      '<textarea id="checkNote" rows="2" placeholder="무엇을 근거로 확인했는지 (예: 교과서 p.104, 3/12 수업에서 다룸)"' +
+      ' oninput="EP.setCheckNote(this.value)">' + esc(checkState.note || "") + '</textarea></div>' +
+      '<p class="nz-sub" id="checkStat"></p>';
+    updateCheckStat();
+  }
+  function setCheck(k, v) { checkState[k] = v; updateCheckStat(); }
+  function setCheckNote(v) { checkState.note = v; }
+  function updateCheckStat() {
+    const done = CHECKS.filter((c) => checkState[c.k]).length;
+    const el = $("checkStat");
+    if (el) el.innerHTML = done === CHECKS.length
+      ? '<span class="g">확인 완료 — 근거를 적고 저장하세요</span>'
+      : '확인 ' + done + '/' + CHECKS.length + " · '완성'으로 저장하려면 모두 확인해야 합니다";
+  }
+
+  /* ---------- 명제에서 고르기 ---------- */
+  async function pickFor(target, idx) {
+    const code = $("q-std2").value;
+    const params = new URLSearchParams();
+    if (code) params.set("standard", code);
+    const rows = await api("/api/propositions?" + params);
+    const detail = await Promise.all(rows.slice(0, 30).map((r) => api("/api/propositions/" + r.id)));
+    let m = $("pickModal");
+    if (!m) {
+      m = document.createElement("div");
+      m.id = "pickModal"; m.className = "nz-modal";
+      m.onclick = (e) => { if (e.target === m) m.classList.add("hidden"); };
+      document.body.appendChild(m);
+    }
+    m.classList.remove("hidden");
+    const body = detail.length ? detail.map((d) => {
+      const pj = JSON.stringify(d.proposition.text);
+      let html = '<div class="nz-pickgroup"><div class="nz-pickprop"><span>' + esc(d.proposition.text) + '</span>' +
+        '<button class="nz-tb mini blu" onclick=\'EP.applyPick("' + target + '",' + idx + ',' + pj + ',' + d.proposition.id + ',null)\'>참 명제로</button></div>';
+      d.variants.forEach((v) => {
+        html += '<div class="nz-pickvar"><span class="nz-tag r">' + esc(v.distortion) + '</span><span>' + esc(v.text) + '</span>' +
+          '<button class="nz-tb mini" onclick=\'EP.applyPick("' + target + '",' + idx + ',' + JSON.stringify(v.text) + ',null,' + v.id + ')\'>오답으로</button></div>';
+      });
+      return html + '</div>';
+    }).join("") : '<p class="nz-sub">이 성취기준에 등록된 명제가 없습니다. 명제 은행에서 먼저 등록하세요.</p>';
+
+    m.innerHTML = '<div class="nz-modal-box" style="width:min(880px,94vw)">' +
+      '<div class="nz-modal-head"><b>명제에서 고르기</b><span class="nz-sub" style="margin:0 0 0 10px">' +
+      (code ? esc(code) : "전체") + ' 범위 · 참 명제와 오답 변형</span>' +
+      '<button class="nz-tb" style="margin-left:auto" onclick="document.getElementById(\'pickModal\').classList.add(\'hidden\')">닫기</button></div>' +
+      '<div class="nz-modal-body">' + body + '</div></div>';
+  }
+
+  function applyPick(target, idx, text, propId, varId) {
+    if (target === "bogi") {
+      bogi[idx] = Object.assign({}, bogi[idx], { text: text, proposition_id: propId, variant_id: varId });
+      renderBogi();
+    } else {
+      choices[idx] = Object.assign({}, choices[idx], { text: text, proposition_id: propId, variant_id: varId });
+      renderChoices();
+    }
+    $("pickModal").classList.add("hidden");
+  }
+
+  /* ---------- 환경설정 ---------- */
+  async function loadConfig() {
+    const subj = await api("/api/subject");
+    $("cfgSubject").textContent = subj.subject + " · 성취기준 " + subj.standard_count + "개";
+    const allStd = standards.flatMap((u) => u.standards).length;
+    $("cfgTree").innerHTML = standards.map((u) => {
+      const unitOn = !scope.length || scope.includes(u.unit_no);
+      const stds = u.standards.map((st) => {
+        const on = !stdScope.length || stdScope.includes(st.code);
+        return '<label class="nz-cfgstd"><input type="checkbox" data-std="' + esc(st.code) + '"' +
+          (on && unitOn ? " checked" : "") + ' /><span class="code">' + esc(st.code) + '</span> ' + esc(st.text) + '</label>';
+      }).join("");
+      return '<div class="nz-cfgunit"><label class="nz-cfghead"><input type="checkbox" data-unit="' + u.unit_no + '"' +
+        (unitOn ? " checked" : "") + ' onchange="EP.cfgToggleUnit(' + u.unit_no + ', this.checked)" />' +
+        '<b>' + u.unit_no + '. ' + esc(u.name) + '</b><span class="nz-sub" style="margin:0">' +
+        u.standards.length + '개</span></label><div class="nz-cfgstds">' + stds + '</div></div>';
+    }).join("");
+  }
+  function cfgToggleUnit(unitNo, on) {
+    const head = document.querySelector('#cfgTree input[data-unit="' + unitNo + '"]');
+    if (!head) return;
+    head.closest(".nz-cfgunit").querySelectorAll("input[data-std]").forEach((i) => { i.checked = on; });
+  }
+  function cfgAll(on) {
+    document.querySelectorAll("#cfgTree input").forEach((i) => { i.checked = on; });
+  }
+  function cfgSave() {
+    const units = [...document.querySelectorAll("#cfgTree input[data-unit]:checked")].map((i) => +i.dataset.unit);
+    const stds = [...document.querySelectorAll("#cfgTree input[data-std]:checked")].map((i) => i.dataset.std);
+    const allStd = standards.flatMap((u) => u.standards).length;
+    stdScope = (stds.length === allStd) ? [] : stds;
+    localStorage.setItem("ep_std_scope", JSON.stringify(stdScope));
+    const allUnits = standards.length;
+    saveScope(units.length === allUnits ? [] : units);
+    alert("범위를 저장했습니다.\n단원 " + (units.length || "전체") + " · 성취기준 " + (stdScope.length || "전체"));
+  }
+
   /* ---------- 탭 ---------- */
   function initTabs() {
     document.querySelectorAll(".nz-navi").forEach((btn) => {
@@ -944,8 +1122,12 @@ const EP = (() => {
         document.querySelectorAll(".nz-navi").forEach((b) => b.classList.remove("on"));
         btn.classList.add("on");
         const tab = btn.dataset.tab;
-        ["bank", "question", "set", "doc"].forEach((t) => $("tab-" + t).hidden = t !== tab);
-        if (tab === "question") { loadQuestions(); loadPicker(); renderPresets(); }
+        ["bank", "question", "qbank", "set", "doc", "config"].forEach((t) => {
+          const el = $("tab-" + t); if (el) el.hidden = t !== tab;
+        });
+        if (tab === "question") { loadPicker(); renderPresets(); renderChecklist(); onTypeChange(); }
+        if (tab === "qbank") loadQuestions();
+        if (tab === "config") loadConfig();
         if (tab === "set") loadSets();
         if (tab === "doc") loadDocs();
       };
@@ -968,7 +1150,9 @@ const EP = (() => {
     markVerified, searchEvidenceFor, attachEvidence, exportCsv, peekPage,
     pickStandard, filterTree, openStdTable, closeStdTable, renderStdTable,
     openScope, applyScope, foldMenu, renderPresets, resetQuestionForm, evShow, evViewPage, evZoom,
-    showStdFull, refillBankFilters, toggleSide, togglePicker,
+    showStdFull, refillBankFilters, toggleSide, togglePicker, onBankUnitChange,
+    setCheck, setCheckNote, renderChecklist, pickFor, applyPick,
+    loadConfig, cfgToggleUnit, cfgAll, cfgSave, renderChoices, setSrc,
     onTypeChange, addBogi, setBogi, delBogi, addChoice, setChoice, setCombo, setAnswer, delChoice,
     applyPreset, loadPicker, useProp, searchEvidence, saveQuestion, checkQuestionDraft,
     loadQuestions, editQuestion, checkQuestion, delQuestion,

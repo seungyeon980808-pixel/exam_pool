@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS question (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     title          TEXT NOT NULL DEFAULT '',
     qtype          TEXT NOT NULL,
+    image_choices  INTEGER NOT NULL DEFAULT 0,
     is_negative    INTEGER NOT NULL DEFAULT 0,
     passage        TEXT NOT NULL DEFAULT '',
     material       TEXT NOT NULL DEFAULT '',
@@ -165,6 +166,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(question)")}
     if "title" not in cols:
         conn.execute("ALTER TABLE question ADD COLUMN title TEXT NOT NULL DEFAULT ''")
+    if "image_choices" not in cols:
+        conn.execute("ALTER TABLE question ADD COLUMN image_choices INTEGER NOT NULL DEFAULT 0")
 
 
 # ===== 성취기준 seed 적재 (첫 실행 시 1회) =====
