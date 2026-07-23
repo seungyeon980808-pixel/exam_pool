@@ -253,6 +253,8 @@
     const el = $("qside");
     el.classList.toggle("folded");
     const folded = el.classList.contains("folded");
+    // 접을 땐 인라인 폭을 비운다 — 안 그러면 드래그로 정한 폭이 34px 규칙을 이긴다
+    if (folded) el.style.width = ""; else EP.applyWidths();
     $("evFoldBtn").textContent = folded ? "◀" : "▶";
     localStorage.setItem("ep_side_folded", folded ? "1" : "");
   };
@@ -525,8 +527,14 @@
           <button class="nz-tb mini" style="margin-left:auto"
             onclick="EP.useExam(${docId}, ${pageNo}, ${x.num}, '${esc(title)}')">참고로 기록</button>
         </div>
-        <img src="/api/documents/${docId}/page/${pageNo}/item/${x.num}/image?dpi=120"
-             alt="${esc(title)} ${x.num}번" loading="lazy" />
+        <div class="nz-itemwrap">
+          <img src="/api/documents/${docId}/page/${pageNo}/item/${x.num}/image?dpi=120"
+               alt="${esc(title)} ${x.num}번" loading="lazy" />
+          ${(x.boxes || []).map((b) =>
+            `<div class="nz-hl" title="${esc(b.term)}" style="left:${b.x * 100}%;top:${
+              b.y * 100}%;width:${b.w * 100}%;height:${b.h * 100}%;background:${
+              EP.HL_COLORS[b.color_idx]}"></div>`).join("")}
+        </div>
       </div>`;
     }).join("");
     return true;

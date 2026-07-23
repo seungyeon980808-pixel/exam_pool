@@ -244,24 +244,35 @@ def close_all_docs() -> None:
 def highlight_rects(page, terms: list[str]) -> tuple[dict, list[str]]:
     """검색어가 실제로 어느 글자에 있는지 좌표를 찾는다.
 
-    **색인(FTS5)과 같은 규칙을 쓰는 것이 핵심이다.**
-    FTS5 는 unicode61 로 공백 분리 후 prefix 로 맞히므로, 여기서도 `get_text("words")`
-    (같은 공백 분리)에서 부분일치로 찾는다. `search_for()` 는 글리프 단위 탐색이라
-    색인과 경로가 갈려 '일치율 100%인데 형광펜 0개'가 날 수 있었다(06 보고서 2-2절).
+    **글자 단위로 찾는다.**
+    `get_text("words")` 는 공백으로만 잘리는데, 한글 PDF 의 텍스트 층은 띄어쓰기가
+    통째로 빠진 경우가 많다('에너지증가량과같다'가 한 단어). 단어 단위로 칠하면
+    검색어가 아닌 줄 전체가 형광이 된다. 그래서 `rawdict` 의 글자별 bbox 를 모아
+    줄 문자열을 만들고, 검색어에 해당하는 **글자들만** 묶어서 상자를 만든다.
+    공백을 빼고 맞히므로 '징 계 기 준' 처럼 쪼개진 경우도 같이 잡힌다
+    (예전 _line_fallback 이 하던 일).
 
-    한 단어가 여러 조각으로 쪼개진 경우(한글 PDF 에서 흔함)를 위해 줄 단위 폴백을 둔다.
+    `search_for()` 를 쓰지 않는 이유는 색인(FTS5)과 탐색 경로가 갈려
+    '일치율 100%인데 형광펜 0개'가 나기 때문이다(06 보고서 2-2절).
+
     반환: ({검색어: [Rect]}, 못 찾은 검색어 목록)
     """
-    import fitz
-
-    words = page.get_text("words")  # (x0,y0,x1,y1,word,block,line,word_no)
+    lines = _char_lines(page)
     hits: dict[str, list] = {}
     misses: list[str] = []
     for t in terms:
-        tl = t.lower()
-        rects = [fitz.Rect(w[:4]) for w in words if tl in w[4].lower()]
-        if not rects:
-            rects = _line_fallback(words, tl)   # 쪼개진 단어 구제
+        target = t.lower().replace(" ", "")
+        rects = []
+        if target:
+            for text, rs in lines:
+                start = text.find(target)
+                while start >= 0:
+                    span = rs[start:start + len(target)]
+                    rect = span[0]
+                    for r in span[1:]:
+                        rect = rect | r
+                    rects.append(rect)
+                    start = text.find(target, start + 1)
         if rects:
             hits[t] = rects
         else:
@@ -269,33 +280,29 @@ def highlight_rects(page, terms: list[str]) -> tuple[dict, list[str]]:
     return hits, misses
 
 
-def _line_fallback(words, term_lower: str) -> list:
-    """줄 안의 조각을 이어붙여 찾는다. '징 계 기 준' 처럼 쪼개진 단어 대응."""
+def _char_lines(page) -> list[tuple[str, list]]:
+    """페이지를 줄 단위로 → [(공백 제거한 소문자 줄 문자열, [글자별 Rect])].
+
+    문자열의 i 번째 글자와 Rect 목록의 i 번째가 1:1 로 맞는다 — 그래야 검색어에
+    걸린 글자만 정확히 골라낼 수 있다.
+    """
     import fitz
-    from collections import defaultdict
 
-    lines = defaultdict(list)
-    for w in words:
-        lines[(w[5], w[6])].append(w)
-
-    target = term_lower.replace(" ", "")
     out = []
-    for ws in lines.values():
-        ws.sort(key=lambda w: w[7])
-        joined = "".join(w[4] for w in ws).lower()
-        start = joined.find(target)
-        if start < 0:
+    for block in page.get_text("rawdict").get("blocks", []):
+        if block.get("type") != 0:          # 0 = 텍스트 (이미지 블록은 건너뜀)
             continue
-        end = start + len(target)
-        pos, rect = 0, None
-        for w in ws:
-            wlen = len(w[4])
-            if pos < end and pos + wlen > start:      # 이 조각이 검색어에 걸친다
-                r = fitz.Rect(w[:4])
-                rect = r if rect is None else (rect | r)
-            pos += wlen
-        if rect is not None:
-            out.append(rect)
+        for line in block.get("lines", []):
+            chars, rects = [], []
+            for span in line.get("spans", []):
+                for ch in span.get("chars", []):
+                    c = ch.get("c", "")
+                    if not c.strip():       # 공백은 문자열에서도 뺀다
+                        continue
+                    chars.append(c.lower())
+                    rects.append(fitz.Rect(ch["bbox"]))
+            if chars:
+                out.append(("".join(chars), rects))
     return out
 
 
@@ -386,8 +393,13 @@ def page_items(doc_id: int, page_no: int, terms: list[str] | None = None,
                dpi: int = 110) -> dict:
     """페이지의 문항 목록. 검색어가 있으면 어느 문항에 들어있는지도 표시한다.
 
-    반환: {"items":[{num, x,y,w,h, hits:{단어:개수}, has_hit}], "page_w","page_h"}
+    반환: {"items":[{num, x,y,w,h, hits:{단어:개수}, has_hit,
+                     boxes:[{term,color_idx,x,y,w,h}]}], "page_w","page_h"}
     문항을 못 찾으면 items 가 빈 목록 → 호출 쪽이 페이지 전체를 쓰면 된다.
+
+    boxes 는 **문항 상자를 1로 본 비율(0~1)**이다. 문항 이미지는 페이지와 다른 dpi 로
+    잘라 렌더링하므로(render_item_png 기본 120), 픽셀 좌표를 주면 화면에서 어긋난다.
+    비율로 주면 이미지가 어떤 크기로 나와도 그대로 겹칠 수 있다.
     """
     from . import exam_items
 
@@ -405,18 +417,31 @@ def page_items(doc_id: int, page_no: int, terms: list[str] | None = None,
 
     out = []
     for it in found:
-        hits = {}
+        iw = max(it["x1"] - it["x0"], 1e-6)
+        ih = max(it["y1"] - it["y0"], 1e-6)
+        hits, boxes = {}, []
         for t, rects in hit_map.items():
-            n = sum(1 for r in rects
-                    if it["x0"] <= r.x0 <= it["x1"] and it["y0"] <= r.y0 <= it["y1"])
-            if n:
-                hits[t] = n
+            inside = [r for r in rects
+                      if it["x0"] <= r.x0 <= it["x1"] and it["y0"] <= r.y0 <= it["y1"]]
+            if not inside:
+                continue
+            hits[t] = len(inside)
+            ci = terms.index(t) % len(HL_PALETTE) if t in terms else 0
+            for r in inside:
+                boxes.append({
+                    "term": t, "color_idx": ci,
+                    "x": round((r.x0 - it["x0"]) / iw, 4),
+                    "y": round((r.y0 - it["y0"]) / ih, 4),
+                    "w": round((r.x1 - r.x0) / iw, 4),
+                    "h": round((r.y1 - r.y0) / ih, 4),
+                })
+        boxes.sort(key=lambda b: (b["y"], b["x"]))
         out.append({
             "num": it["num"],
             "x": round(it["x0"] * zoom, 1), "y": round(it["y0"] * zoom, 1),
             "w": round((it["x1"] - it["x0"]) * zoom, 1),
             "h": round((it["y1"] - it["y0"]) * zoom, 1),
-            "hits": hits, "has_hit": bool(hits),
+            "hits": hits, "has_hit": bool(hits), "boxes": boxes,
         })
     return {"items": out, "page_w": round(pw), "page_h": round(ph)}
 
