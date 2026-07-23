@@ -278,7 +278,9 @@
         <div class="nz-h"><b>환경설정</b></div>
         <div class="nz-flt">
           <span class="nz-lb">과목</span><span id="cfgSubject" class="nz-sub" style="margin:0"></span>
-          <button class="nz-tb" style="margin-left:auto" onclick="EP.cfgAll(true)">전체 선택</button>
+          <button class="nz-tb" style="margin-left:auto" onclick="EP.cfgOpenAll(true)">모두 펼치기</button>
+          <button class="nz-tb" onclick="EP.cfgOpenAll(false)">모두 접기</button>
+          <button class="nz-tb" onclick="EP.cfgAll(true)">전체 선택</button>
           <button class="nz-tb" onclick="EP.cfgAll(false)">전체 해제</button>
           <button class="nz-tb blu" onclick="EP.cfgSave()">이 범위로 저장</button>
         </div>

@@ -44,6 +44,8 @@
   EP.renderCfgTree = function () {
     const units = EP.subjectUnits();
     S.cfgOpen = S.cfgOpen || new Set();
+    // 단원은 접어 두고 펼쳐 본다. 체크박스는 접혀 있어도 DOM 에 남겨야
+    // 저장할 때 접힌 단원의 선택이 사라지지 않는다 (CSS 로만 감춘다).
     $("cfgTree").innerHTML = units.map((u) => {
       const unitOn = !S.scope.length || S.scope.includes(u.unit_no);
       const open = S.cfgOpen.has(u.unit_no);
@@ -55,30 +57,45 @@
           (st.explain ? '<button class="nz-why" title="성취기준 해설" onclick="EP.cfgWhy(event, \'' +
             esc(st.code) + '\')">해설</button>' : "") + "</label>";
       }).join("");
-      // 단원 유의사항 — 출제 전에 확인해야 할 것들. 접어 두고 필요할 때만 편다.
+      // 단원 유의사항 — 펼쳤을 때 성취기준 아래에 같이 보인다
       const notes = (u.consider || []).map((c) => "<li>" + esc(c) + "</li>").join("");
       const inq = (u.inquiry || []).map((c) => "<li>" + esc(c) + "</li>").join("");
-      const noteBox = open && (notes || inq)
+      const noteBox = (notes || inq)
         ? '<div class="nz-cfgnote">' +
           (inq ? "<b>탐구 활동</b><ul>" + inq + "</ul>" : "") +
           (notes ? "<b>성취기준 적용 시 고려 사항</b><ul>" + notes + "</ul>" : "") + "</div>"
         : "";
-      return '<div class="nz-cfgunit"><label class="nz-cfghead"><input type="checkbox" data-unit="' +
-        u.unit_no + '"' + (unitOn ? " checked" : "") +
+      const picked = u.standards.filter((st) => !S.stdScope.length || S.stdScope.includes(st.code)).length;
+      return '<div class="nz-cfgunit' + (open ? " open" : "") + '">' +
+        '<div class="nz-cfghead" onclick="EP.cfgToggleOpen(' + u.unit_no + ')">' +
+        '<input type="checkbox" data-unit="' + u.unit_no + '"' + (unitOn ? " checked" : "") +
+        ' onclick="event.stopPropagation()"' +
         ' onchange="EP.cfgToggleUnit(' + u.unit_no + ', this.checked)" />' +
-        "<b>" + esc(EP.unitLabel(u)) + '</b><span class="nz-sub" style="margin:0">' +
-        u.standards.length + "개</span>" +
-        '<button class="nz-tb mini" style="margin-left:auto" onclick="EP.cfgToggleNote(event,' +
-        u.unit_no + ')">' + (open ? "유의사항 접기" : "유의사항") + "</button></label>" +
-        '<div class="nz-cfgstds">' + stds + "</div>" + noteBox + "</div>";
+        '<span class="caret">' + (open ? "▾" : "▸") + "</span>" +
+        "<b>" + esc(EP.unitLabel(u)) + '</b>' +
+        '<span class="nz-sub" style="margin:0 0 0 auto">성취기준 ' +
+        (unitOn ? picked + " / " : "") + u.standards.length + "개</span></div>" +
+        '<div class="nz-cfgbody"><div class="nz-cfgstds">' + stds + "</div>" + noteBox + "</div></div>";
     }).join("") || '<p class="nz-sub">이 과목에 단원이 없습니다.</p>';
   };
 
-  EP.cfgToggleNote = function (ev, unitNo) {
-    ev.preventDefault(); ev.stopPropagation();
+  EP.cfgToggleOpen = function (unitNo) {
     S.cfgOpen = S.cfgOpen || new Set();
     if (S.cfgOpen.has(unitNo)) S.cfgOpen.delete(unitNo); else S.cfgOpen.add(unitNo);
-    EP.renderCfgTree();
+    // 다시 그리면 접힌 단원의 체크 상태가 저장 전 값으로 되돌아가므로 클래스만 바꾼다
+    const head = document.querySelector('#cfgTree input[data-unit="' + unitNo + '"]');
+    if (!head) return;
+    const box = head.closest(".nz-cfgunit");
+    box.classList.toggle("open", S.cfgOpen.has(unitNo));
+    box.querySelector(".caret").textContent = S.cfgOpen.has(unitNo) ? "▾" : "▸";
+  };
+
+  EP.cfgOpenAll = function (on) {
+    S.cfgOpen = new Set(on ? EP.subjectUnits().map((u) => u.unit_no) : []);
+    document.querySelectorAll("#cfgTree .nz-cfgunit").forEach((box) => {
+      box.classList.toggle("open", on);
+      box.querySelector(".caret").textContent = on ? "▾" : "▸";
+    });
   };
 
   /** 성취기준 해설 — "여기까지만 다룬다"가 적혀 있어 출제 범위 판단에 바로 쓴다 */
