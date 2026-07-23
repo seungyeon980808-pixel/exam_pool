@@ -150,7 +150,9 @@
       return;
     }
     S.evViewer.q = q;
-    const r = await api("/api/evidence/search?q=" + encodeURIComponent(q) + "&limit=60");
+    const params = new URLSearchParams({ q: q, limit: 60 });
+    if (S.onlyDocId) params.set("doc_id", S.onlyDocId);   // 환경설정에서 '이 문서만' 을 켠 경우
+    const r = await api("/api/evidence/search?" + params);
     let items = r.items;
     if (S.evSrc === "수업") {
       items = items.filter((it) => it.kind === "수업");
@@ -171,11 +173,14 @@
               <div class="nz-res-top">
                 <span class="nz-pct ${h.match_pct < 60 ? "low" : ""}">${h.match_pct}%</span>
                 <span class="nz-res-page">${h.kind === "수업" ? h.page_no + "번째 조각" : h.page_no + "페이지"}</span>
+                ${S.curPropId ? `<button class="nz-tb mini blu" style="margin-left:auto"
+                   onclick='event.stopPropagation();EP.attachEvidence(${S.curPropId}, ${JSON.stringify(h).replace(/'/g, "&#39;")})'
+                   >근거로 저장</button>` : ""}
               </div>
               <div class="nz-res-snip">${EP.markTerms(h.snippet, terms)}</div>
             </div>`).join("")}
         </div>`).join("")
-      : '<p class="nz-sub" style="padding:12px">결과 없음 — 근거·기출 탭에서 문서를 인덱싱하거나 수업 기록을 등록하세요.</p>';
+      : '<p class="nz-sub" style="padding:12px">결과 없음 — 환경설정 &gt; 근거 문서에서 PDF 를 인덱싱하거나 수업 기록을 등록하세요.</p>';
 
     // 단어별 적중 수를 칩에 표시
     const counts = {};

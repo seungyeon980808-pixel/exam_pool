@@ -53,12 +53,15 @@
     if (!confirm("이 명제를 삭제할까요? (변형·근거도 함께 삭제됩니다)")) return;
     await del(`/api/propositions/${id}`);
     $("propDetail").classList.add("hidden");
+    EP.S.curPropId = null;
     EP.loadProps();
   };
 
   /* ---------- 명제 상세: 변형·근거 ---------- */
   EP.openProp = async function (id) {
     const d = await api(`/api/propositions/${id}`);
+    // 오른쪽 근거 검색 패널이 "어느 명제에 붙일지" 를 알아야 '근거로 저장' 이 뜬다
+    EP.S.curPropId = id;
     const dists = await api("/api/distortions");
     const box = $("propDetail");
     box.classList.remove("hidden");
@@ -87,14 +90,25 @@
           || '<tr class="nz-empty"><td colspan="4">아직 없습니다. 아래에서 교과서·수업 기록을 검색해 붙이세요.</td></tr>'}</tbody></table>
 
         <div class="nz-fr" style="margin-top:6px">
-          <input id="pev-q" placeholder="교과서·교육과정·수업 기록 검색 (예: 빛 굴절)"
-            onkeydown="if(event.key==='Enter')EP.searchEvidenceFor(${id})" />
-          <button class="nz-tb" onclick="EP.searchEvidenceFor(${id})">근거 검색</button>
+          <input id="pev-q" placeholder="교과서·교육과정·기출·수업 기록 검색 (예: 빛 굴절)"
+            onkeydown="if(event.key==='Enter')EP.findEvidenceFor()" />
+          <button class="nz-tb blu" onclick="EP.findEvidenceFor()">오른쪽에서 근거 찾기</button>
           <button class="nz-tb" onclick="EP.markVerified(${id})">수업에서 다룸 표시</button>
         </div>
-        <div id="pevList" class="nz-picker"></div>
+        <p class="nz-sub">찾은 결과에서 <b>근거로 저장</b>을 누르면 이 명제에 붙습니다.</p>
       </div>`;
     box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    EP.searchEvidence();          // 이미 검색어가 있으면 '근거로 저장' 버튼이 바로 붙게 다시 그린다
+  };
+
+  /** 명제 상세의 검색어를 오른쪽 근거 검색 패널로 넘긴다 (검색은 한 곳에서만 한다) */
+  EP.findEvidenceFor = function () {
+    const q = $("pev-q").value.trim();
+    if (!q) return;
+    const side = $("qside");
+    if (side && side.classList.contains("folded")) EP.toggleSide();
+    $("evSearch").value = q;
+    EP.searchEvidence();
   };
 
   EP.addVariant = async function (pid) {
@@ -108,24 +122,6 @@
   EP.markVerified = async function (pid) {
     await api(`/api/propositions/${pid}/class-verified?value=true`, { method: "PATCH" });
     EP.openProp(pid); EP.loadProps();
-  };
-
-  EP.searchEvidenceFor = async function (pid) {
-    const q = $("pev-q").value.trim();
-    if (!q) return;
-    const r = await api("/api/evidence/search?q=" + encodeURIComponent(q) + "&limit=12");
-    $("pevList").innerHTML = r.items.length ? r.items.map((h) => `
-      <div class="nz-hit">
-        <div class="nz-hit-src"><span class="nz-pct ${h.match_pct < 60 ? "low" : ""}">${h.match_pct}%</span>
-          ${h.kind === "수업" ? '<span class="nz-kind">수업</span>' : ""}${esc(h.source_label)}</div>
-        <div class="nz-hit-snip">${EP.mark(h.snippet)}</div>
-        <div style="display:flex;gap:4px;margin-top:5px">
-          <button class="nz-tb mini" onclick='EP.attachEvidence(${pid}, ${JSON.stringify(h).replace(/'/g, "&#39;")})'>근거로 저장</button>
-          ${h.kind === "수업"
-            ? `<button class="nz-tb mini" onclick="EP.peekLesson(${-h.document_id}, ${h.page_no})">원문 보기</button>`
-            : `<button class="nz-tb mini" onclick="EP.peekPage(${h.document_id}, ${h.page_no}, '${esc(q)}')">원문 보기</button>`}
-        </div>
-      </div>`).join("") : '<p class="nz-sub">검색 결과가 없습니다. 근거 문서 탭에서 교과서를 인덱싱했는지 확인하세요.</p>';
   };
 
   /** 근거를 명제에 붙인다. 수업 기록이 근거면 '수업에서 다룸'이 자동으로 켜진다 —

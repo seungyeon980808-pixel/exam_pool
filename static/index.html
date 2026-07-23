@@ -20,7 +20,6 @@
     <button class="nz-navi" data-tab="question">문항 설계</button>
     <button class="nz-navi" data-tab="qbank">문항 Pool</button>
     <button class="nz-navi" data-tab="set">세트 관리</button>
-    <button class="nz-navi" data-tab="doc">근거·기출</button>
     <button class="nz-navi" data-tab="lesson">수업 기록</button>
     <button class="nz-navi" data-tab="config">환경설정</button>
   </div>
@@ -30,7 +29,6 @@
       <span class="on" title="명제 Pool"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg></span>
       <span title="문항 설계"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/></svg></span>
       <span title="세트 관리"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></svg></span>
-      <span title="근거 문서"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5a2 2 0 0 1 2-2h5v18H5a2 2 0 0 1-2-2z"/><path d="M14 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5z"/></svg></span>
     </div>
 
     <div class="nz-menu">
@@ -65,6 +63,8 @@
       <!-- ============ 명제 Pool ============ -->
       <section id="tab-bank">
         <div class="nz-scopebar"></div>
+        <div class="nz-qlayout">
+        <div class="nz-qmain">
         <div class="nz-h"><b>명제 Pool 조회</b></div>
         <div id="stdBanner" class="nz-banner hidden"></div>
 
@@ -106,6 +106,8 @@
 
         <!-- 명제 상세(변형·근거) -->
         <div id="propDetail" class="nz-detail hidden"></div>
+        </div><!-- /nz-qmain -->
+        </div><!-- /nz-qlayout : 근거 검색 패널이 탭에 따라 여기로 옮겨온다 -->
       </section>
 
       <!-- ============ 문항 설계 ============ -->
@@ -286,9 +288,32 @@
         </div>
         <p class="nz-sub">교육과정 구분 → 과목 → 단원 순으로 좁혀 들어갑니다.
           <b>단원과 성취기준</b>을 고르면 그것만 명제·문항·세트 화면에 나타납니다.</p>
-        <div id="cfgTrack" class="nz-cfgpick"></div>
-        <div id="cfgSubjects" class="nz-cfgpick sub"></div>
+        <div class="nz-flt">
+          <span class="nz-lb">교육과정 구분</span>
+          <select class="nz-sel" id="cfgTrack" style="min-width:140px" onchange="EP.cfgPickTrack(this.value)"></select>
+          <span class="nz-lb">과목</span>
+          <select class="nz-sel" id="cfgSubject2" style="min-width:170px" onchange="EP.cfgPickSubject(this.value)"></select>
+          <span class="nz-sub" id="cfgSubjInfo" style="margin:0"></span>
+        </div>
         <div id="cfgTree" class="nz-cfgtree"></div>
+
+        <!-- ===== 근거 문서 (근거·기출 탭에서 옮겨옴) ===== -->
+        <div class="nz-h" style="margin-top:20px"><b>근거 문서</b>
+          <span class="nz-path" id="docFolderLabel" style="margin-left:10px">폴더가 지정되지 않았습니다</span>
+          <span style="margin-left:auto;display:flex;gap:5px">
+            <select class="nz-sel" id="docType" style="min-width:92px"><option>교과서</option><option>교육과정</option><option>기출</option><option>기타</option></select>
+            <button class="nz-tb blu" onclick="EP.pickFolder()">폴더 선택</button>
+            <button class="nz-tb" onclick="EP.indexFolder()">재색인</button>
+          </span>
+        </div>
+        <p class="nz-sub">여기 등록한 PDF 가 명제 Pool·문항 설계 오른쪽의 <b>근거 검색</b> 대상이 됩니다.
+          <span id="docHits" class="nz-sub" style="margin:0"></span></p>
+        <p class="nz-cnt">등록 문서 &nbsp;Total <b id="docCnt">0</b></p>
+        <table class="nz-t">
+          <thead><tr><th style="width:34px">순번</th><th>문서명</th><th style="width:70px">종류</th>
+            <th style="width:56px">페이지</th><th style="width:110px">색인 시각</th><th style="width:70px">이 문서만</th><th style="width:44px">제거</th></tr></thead>
+          <tbody id="docRows"></tbody>
+        </table>
 
         <!-- ===== 백업 · 복구 ===== -->
         <div class="nz-h" style="margin-top:20px"><b>백업 · 복구</b>
@@ -398,57 +423,6 @@
         <div id="exportBox" class="hidden">
           <p class="nz-sub" style="margin-top:14px">hwppalette 출력 (한글에 붙여넣고 Ctrl+T)</p>
           <textarea id="exportText" class="nz-export" readonly></textarea>
-        </div>
-      </section>
-
-      <!-- ============ 근거 문서 (DocFinder 방식) ============ -->
-      <section id="tab-doc" hidden>
-        <div class="nz-h"><b>근거 문서 검색</b>
-          <span class="nz-path" id="docFolderLabel">폴더가 지정되지 않았습니다</span>
-          <span style="margin-left:auto;display:flex;gap:5px">
-            <select class="nz-sel" id="docType" style="min-width:92px"><option>교과서</option><option>교육과정</option><option>기출</option><option>기타</option></select>
-            <button class="nz-tb blu" onclick="EP.pickFolder()">폴더 선택</button>
-            <button class="nz-tb" onclick="EP.indexFolder()">재색인</button>
-            <button class="nz-tb" onclick="EP.toggleDocList()">문서 목록</button>
-          </span>
-        </div>
-
-        <!-- 해시태그 검색 -->
-        <div class="nz-tagbar">
-          <div class="nz-tags" id="searchTags"></div>
-          <input class="nz-taginput" id="docSearch" placeholder="띄어쓰기로 여러 단어 · 입력하면 바로 검색"
-                 onkeydown="EP.onTagKey(event)" oninput="EP.onDocInput()" />
-          <span class="nz-hits" id="docHits"></span>
-        </div>
-
-        <!-- 문서 목록 (접기) -->
-        <div id="docListBox" class="hidden">
-          <p class="nz-cnt">등록 문서 &nbsp;Total <b id="docCnt">0</b></p>
-          <table class="nz-t">
-            <thead><tr><th style="width:34px">순번</th><th>문서명</th><th style="width:70px">종류</th>
-              <th style="width:56px">페이지</th><th style="width:110px">색인 시각</th><th style="width:70px">이 문서만</th><th style="width:44px">제거</th></tr></thead>
-            <tbody id="docRows"></tbody>
-          </table>
-        </div>
-
-        <!-- 좌: 결과 / 우: 미리보기 -->
-        <div class="nz-finder">
-          <div class="nz-finder-list" id="docResults">
-            <p class="nz-sub" style="padding:14px">키워드를 입력해 검색하세요.</p>
-          </div>
-          <div class="nz-finder-view">
-            <div class="nz-viewer-head">
-              <span id="viewerTitle">미리보기</span>
-              <span style="margin-left:auto;display:flex;gap:5px">
-                <button class="nz-tb mini" onclick="EP.viewerPage(-1)">◀</button>
-                <button class="nz-tb mini" onclick="EP.viewerPage(1)">▶</button>
-                <button class="nz-tb mini" onclick="EP.openOriginal()">원본 열기</button>
-              </span>
-            </div>
-            <div class="nz-viewer-body" id="viewerBody">
-              <p class="nz-sub" style="padding:20px;text-align:center">왼쪽 결과를 클릭하면 그 페이지가 여기 표시됩니다.</p>
-            </div>
-          </div>
         </div>
       </section>
 

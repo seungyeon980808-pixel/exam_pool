@@ -15,26 +15,39 @@
     $("cfgSubject").textContent =
       subj.subject + " · 과목 " + subj.subject_count + "개 · 성취기준 " + subj.standard_count + "개";
     const cur = S.subjects.find((s) => s.name === S.subject);
-    if (!S.cfgTrack) S.cfgTrack = cur ? cur.track : TRACKS[0];
+    S.cfgTrack = cur ? cur.track : (S.cfgTrack || TRACKS[0]);
     EP.renderCfg();
+    EP.loadDocs();
     EP.loadBackups();
   };
 
   EP.renderCfg = function () {
     const tracks = TRACKS.filter((t) => S.subjects.some((s) => s.track === t));
     $("cfgTrack").innerHTML = tracks.map((t) =>
-      '<button class="nz-pick' + (t === S.cfgTrack ? " on" : "") + '" onclick="EP.cfgPickTrack(\'' + t + '\')">' +
-      esc(TRACK_LABEL[t] || t) + '<span class="n">' +
-      S.subjects.filter((s) => s.track === t).length + "</span></button>").join("");
+      '<option value="' + esc(t) + '"' + (t === S.cfgTrack ? " selected" : "") + ">" +
+      esc(TRACK_LABEL[t] || t) + " (" + S.subjects.filter((s) => s.track === t).length + ")</option>").join("");
 
-    $("cfgSubjects").innerHTML = S.subjects.filter((s) => s.track === S.cfgTrack).map((s) =>
-      '<button class="nz-pick' + (s.name === S.subject ? " on" : "") + '" onclick="EP.cfgPickSubject(\'' +
-      esc(s.name) + '\')">' + esc(s.name) + '<span class="n">' + s.standard_count + "</span></button>").join("");
+    const inTrack = S.subjects.filter((s) => s.track === S.cfgTrack);
+    $("cfgSubject2").innerHTML = inTrack.map((s) =>
+      '<option value="' + esc(s.name) + '"' + (s.name === S.subject ? " selected" : "") + ">" +
+      esc(s.name) + "</option>").join("");
 
+    const cur = S.subjects.find((s) => s.name === S.subject);
+    $("cfgSubjInfo").textContent = cur
+      ? `${cur.grade_band} · 단원 ${cur.unit_count}개 · 성취기준 ${cur.standard_count}개`
+      : "";
     EP.renderCfgTree();
   };
 
-  EP.cfgPickTrack = function (t) { S.cfgTrack = t; EP.renderCfg(); };
+  /** 구분을 바꾸면 그 구분의 첫 과목으로 따라 내려간다 (위계대로) */
+  EP.cfgPickTrack = function (t) {
+    S.cfgTrack = t;
+    const inTrack = S.subjects.filter((s) => s.track === t);
+    if (inTrack.length && !inTrack.some((s) => s.name === S.subject)) {
+      EP.setSubject(inTrack[0].name);
+    }
+    EP.renderCfg();
+  };
 
   EP.cfgPickSubject = function (name) {
     EP.setSubject(name);        // 과목을 바꾸면 다른 화면도 이 과목만 보게 된다

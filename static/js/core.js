@@ -7,7 +7,7 @@
  *   question.js  문항 설계
  *   qbank.js     문항 Pool
  *   set.js       세트 관리 · 제출 서류
- *   doc.js       근거 문서 검색
+ *   doc.js       근거 문서 등록·원문 미리보기 (환경설정 안)
  *   lesson.js    수업 기록
  *   config.js    환경설정 · 백업
  *
@@ -33,6 +33,7 @@ window.EP = window.EP || {};
     scope: JSON.parse(localStorage.getItem("ep_scope") || "[]"),
     stdScope: JSON.parse(localStorage.getItem("ep_std_scope") || "[]"),
     curStdCode: "",
+    curPropId: null,      // 명제 Pool: 상세를 연 명제 — 근거 검색 패널이 여기에 붙인다
     checkState: {},
     refs: [],
     curRefId: null,
@@ -463,7 +464,16 @@ window.EP = window.EP || {};
   };
 
   /* ---------- 탭 ---------- */
-  const TABS = ["bank", "question", "qbank", "set", "doc", "lesson", "config"];
+  const TABS = ["bank", "question", "qbank", "set", "lesson", "config"];
+
+  /** 근거 검색 패널은 하나뿐이다. 명제 Pool·문항 설계 중 지금 보는 탭으로 옮겨 붙인다.
+   *  (같은 화면을 두 벌 만들면 id 가 겹치고 검색 상태도 갈라진다) */
+  EP.moveSide = function (tab) {
+    const side = EP.$("qside");
+    if (!side) return;
+    const host = EP.$("tab-" + tab) && EP.$("tab-" + tab).querySelector(".nz-qlayout");
+    if (host && side.parentElement !== host) host.appendChild(side);
+  };
 
   EP.initTabs = function () {
     document.querySelectorAll(".nz-navi").forEach((btn) => {
@@ -474,6 +484,7 @@ window.EP = window.EP || {};
         TABS.forEach((t) => {
           const el = EP.$("tab-" + t); if (el) el.hidden = t !== tab;
         });
+        if (tab === "bank" || tab === "question") EP.moveSide(tab);
         if (tab === "question") {
           EP.loadPicker(); EP.renderPresets(); EP.renderChecklist();
           EP.onTypeChange(); EP.loadRefs(EP.S.editingQid);
@@ -481,7 +492,6 @@ window.EP = window.EP || {};
         if (tab === "qbank") EP.loadQuestions();
         if (tab === "config") EP.loadConfig();
         if (tab === "set") EP.loadSets();
-        if (tab === "doc") EP.loadDocs();
         if (tab === "lesson") EP.loadLessons();
       };
     });
@@ -491,7 +501,9 @@ window.EP = window.EP || {};
     document.addEventListener("keydown", (e) => {
       const t = e.target.tagName;
       if (t === "INPUT" || t === "TEXTAREA" || t === "SELECT") return;
-      if (EP.$("tab-question") && EP.$("tab-question").hidden) return;
+      // 방향키로 근거 검색 결과를 옮겨 다닌다 — 패널이 있는 두 탭에서만
+      const on = ["tab-question", "tab-bank"].some((id) => EP.$(id) && !EP.$(id).hidden);
+      if (!on) return;
       if (e.key === "ArrowDown") { e.preventDefault(); EP.moveResult(1); }
       if (e.key === "ArrowUp") { e.preventDefault(); EP.moveResult(-1); }
     });
@@ -500,6 +512,7 @@ window.EP = window.EP || {};
       if (!e.target.closest(".nz-routinewrap")) { const b = EP.$("routineList"); if (b) b.classList.add("hidden"); }
     });
     EP.initTabs();
+    EP.moveSide("bank");        // 첫 화면이 명제 Pool 이다
     if (localStorage.getItem("ep_side_folded")) {
       const el = EP.$("qside");
       if (el) { el.classList.add("folded"); EP.$("evFoldBtn").textContent = "◀"; }
