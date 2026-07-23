@@ -475,6 +475,65 @@ window.EP = window.EP || {};
     if (host && side.parentElement !== host) host.appendChild(side);
   };
 
+  /* ---------- 폭 조절 (드래그) ---------- */
+  // 손잡이 두 개: 패널 왼쪽 모서리(근거 검색 전체 폭) / 결과 목록과 원문 사이.
+  // 값은 % 로 저장한다 — 창 크기가 달라져도 비율이 유지된다.
+  const SIDE_W = "ep_side_w", EVLIST_W = "ep_evlist_w";
+
+  function dragWidth(handle, opts) {
+    if (!handle) return;
+    handle.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      const side = EP.$("qside");
+      side.classList.add("dragging");
+      handle.classList.add("on");
+      const move = (ev) => {
+        const box = opts.box();
+        if (!box || !box.width) return;
+        const pct = opts.pct(ev, box);
+        opts.apply(Math.max(opts.min, Math.min(opts.max, pct)));
+      };
+      const up = () => {
+        document.removeEventListener("mousemove", move);
+        document.removeEventListener("mouseup", up);
+        side.classList.remove("dragging");
+        handle.classList.remove("on");
+        localStorage.setItem(opts.key, opts.read());
+      };
+      document.addEventListener("mousemove", move);
+      document.addEventListener("mouseup", up);
+    });
+  }
+
+  /** 저장해둔 폭을 다시 입힌다. 패널이 탭 사이를 옮겨다녀도 인라인 스타일이라 살아남는다 */
+  EP.applyWidths = function () {
+    const side = EP.$("qside"), list = EP.$("evList");
+    const sw = localStorage.getItem(SIDE_W), lw = localStorage.getItem(EVLIST_W);
+    if (side && sw) side.style.width = sw + "%";
+    if (list && lw) list.style.width = lw + "%";
+  };
+
+  EP.initDrag = function () {
+    const side = EP.$("qside");
+    dragWidth(EP.$("qsideDrag"), {
+      key: SIDE_W, min: 20, max: 85,
+      box: () => side.parentElement.getBoundingClientRect(),
+      // 오른쪽에 붙어 있으므로 '오른쪽 끝 - 마우스' 가 패널 폭이다
+      pct: (ev, box) => ((box.right - ev.clientX) / box.width) * 100,
+      apply: (p) => { side.style.width = p + "%"; },
+      read: () => Math.round(parseFloat(side.style.width) * 10) / 10,
+    });
+    const list = EP.$("evList");
+    dragWidth(EP.$("evDrag"), {
+      key: EVLIST_W, min: 12, max: 80,
+      box: () => list.parentElement.getBoundingClientRect(),
+      pct: (ev, box) => ((ev.clientX - box.left) / box.width) * 100,
+      apply: (p) => { list.style.width = p + "%"; },
+      read: () => Math.round(parseFloat(list.style.width) * 10) / 10,
+    });
+    EP.applyWidths();
+  };
+
   EP.initTabs = function () {
     document.querySelectorAll(".nz-navi").forEach((btn) => {
       btn.onclick = () => {
@@ -513,9 +572,14 @@ window.EP = window.EP || {};
     });
     EP.initTabs();
     EP.moveSide("bank");        // 첫 화면이 명제 Pool 이다
+    EP.initDrag();
     if (localStorage.getItem("ep_side_folded")) {
       const el = EP.$("qside");
-      if (el) { el.classList.add("folded"); EP.$("evFoldBtn").textContent = "◀"; }
+      if (el) {
+        el.classList.add("folded");
+        el.style.width = "";     // 접힌 채로 시작하면 저장된 폭은 펼칠 때 다시 입힌다
+        EP.$("evFoldBtn").textContent = "◀";
+      }
     }
     await EP.loadStandards();
     await EP.loadProps();

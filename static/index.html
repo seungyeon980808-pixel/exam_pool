@@ -206,6 +206,9 @@
 
           <!-- 오른쪽: 근거 검색 (펼치면 화면 절반) -->
           <aside class="nz-qside" id="qside">
+            <!-- 패널 왼쪽 모서리를 잡아 끌면 근거 검색 폭이 바뀐다.
+                 패널은 탭에 따라 통째로 옮겨 다니므로 손잡이도 패널 안에 둔다 -->
+            <div class="nz-drag outer sidefull" id="qsideDrag" title="드래그해서 폭 조절"></div>
             <div class="nz-sidehead">
               <button class="foldbtn" id="evFoldBtn" onclick="EP.toggleSide()" title="접기/펴기">▶</button>
               <b>근거 검색</b>
@@ -225,6 +228,7 @@
               <div class="nz-evlist" id="evList">
                 <p class="nz-sub" style="padding:10px">키워드를 넣으면 교과서에서 근거를 찾습니다.</p>
               </div>
+              <div class="nz-drag" id="evDrag" title="드래그해서 결과 목록 폭 조절"></div>
               <div class="nz-evview">
                 <div class="nz-viewer-head">
                   <span id="evViewTitle">원문</span>

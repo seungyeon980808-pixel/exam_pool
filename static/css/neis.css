@@ -235,10 +235,17 @@ table.nz-t { width: 100%; border-collapse: collapse; font-size: 11.8px; }
 
 /* 넓어졌으니 결과 | 원문 을 좌우로 — 교과서를 크게 본다 */
 .nz-evsplit { flex: 1; display: flex; min-height: 0; border-top: 1px solid var(--nz-line); }
-.nz-evsplit .nz-evlist { width: 35%; min-width: 200px; overflow-y: auto;
-  border-right: 1px solid var(--nz-line); }
+.nz-evsplit .nz-evlist { width: 35%; min-width: 140px; flex-shrink: 0; overflow-y: auto; }
 .nz-evsplit .nz-evview { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .nz-qside .nz-viewer-body { flex: 1; min-height: 0; }
+
+/* 폭 조절 손잡이 — 얇은 구분선처럼 두고, 올리면 파랗게 */
+.nz-drag { flex: 0 0 5px; cursor: col-resize; background: var(--nz-line);
+  position: relative; z-index: 3; }
+.nz-drag:hover, .nz-drag.on { background: var(--nz-blue, #0969da); }
+.nz-drag.outer { position: absolute; left: 0; top: 0; bottom: 0; width: 5px;
+  background: transparent; }
+.nz-qside.dragging, .nz-qside.dragging * { transition: none !important; user-select: none; }
 .nz-qside .nz-picker { display: none; }
 .nz-qside .nz-picker.hidden { display: none; }
 
@@ -457,6 +464,8 @@ table.nz-t { width: 100%; border-collapse: collapse; font-size: 11.8px; }
   background: #eef2f8; font-size: 11.5px; color: #1f4e96; }
 .nz-examhead b { font-size: 12.5px; }
 .nz-examitem img { display: block; width: 100%; height: auto; background: #fff; }
+/* 형광 상자는 이미지 크기 대비 %로 오므로(page_items.boxes) 이 래퍼가 기준이 된다 */
+.nz-itemwrap { position: relative; line-height: 0; }
 
 
 /* ===== 기출 스크랩 ===== */

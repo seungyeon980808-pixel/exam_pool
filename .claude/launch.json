@@ -12,6 +12,12 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8633"],
       "port": 8633
+    },
+    {
+      "name": "exam_pool_check2",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8634"],
+      "port": 8634
     }
   ]
 }
