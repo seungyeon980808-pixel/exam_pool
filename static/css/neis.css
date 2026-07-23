@@ -51,16 +51,6 @@ body {
 
 /* ===== 좌우 레이아웃 ===== */
 .nz-wrap { display: flex; background: #fff; min-height: calc(100vh - 78px); }
-.nz-rail {
-  width: 40px; background: #eef3fa; border-right: 1px solid #dbe3ee;
-  display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0; flex-shrink: 0;
-}
-.nz-rail i {
-  width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
-  color: #4a6ea8; font-size: 17px; border-radius: 5px;
-}
-.nz-rail i.on { background: var(--nz-blue); color: #fff; }
-
 .nz-menu { width: 150px; border-right: 1px solid var(--nz-line); flex-shrink: 0; overflow-y: auto; }
 .nz-mh {
   background: #eef2f8; font-size: 11.5px; color: #3a4a63; font-weight: 600;

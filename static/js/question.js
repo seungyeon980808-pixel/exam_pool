@@ -145,22 +145,23 @@
     const q = $("evSearch").value.trim();
     const terms = EP.splitTerms(q);
     if (!terms.length) {
-      $("evList").innerHTML = '<p class="nz-sub" style="padding:10px">키워드를 넣으면 교과서·수업 기록에서 근거를 찾습니다.</p>';
+      // 검색어를 지우면 결과·원문·색상칩까지 같이 지운다. 남겨두면 방금 지운 검색의
+      // 결과를 지금 결과로 착각한다.
+      $("evList").innerHTML = '<p class="nz-sub" style="padding:10px">키워드를 넣으면 교과서·기출·수업 기록에서 근거를 찾습니다.</p>';
+      EP.evSeq++;                 // 불러오는 중이던 원문이 뒤늦게 덮어쓰지 못하게
+      $("evViewTitle").textContent = "원문";
+      $("evViewBody").innerHTML =
+        '<p class="nz-sub" style="padding:14px;text-align:center">결과를 클릭하면 원문이 뜹니다.</p>';
+      S.evViewer = { docId: null, page: 1, lastPage: 1, q: "" };
       EP.renderTermBar([]);
       return;
     }
     S.evViewer.q = q;
     const params = new URLSearchParams({ q: q, limit: 60 });
     if (S.onlyDocId) params.set("doc_id", S.onlyDocId);   // 환경설정에서 '이 문서만' 을 켠 경우
+    if (S.evSrc) params.set("doc_type", S.evSrc);         // 걸러내기는 서버에서 (상위 60건 잘림 방지)
     const r = await api("/api/evidence/search?" + params);
-    let items = r.items;
-    if (S.evSrc === "수업") {
-      items = items.filter((it) => it.kind === "수업");
-    } else if (S.evSrc) {
-      const docs = await api("/api/documents");
-      const ids = new Set(docs.filter((d) => d.doc_type === S.evSrc).map((d) => d.id));
-      items = items.filter((it) => ids.has(it.document_id));
-    }
+    const items = r.items;
     const groups = {};
     items.forEach((it) => { (groups[it.doc_title] ||= []).push(it); });
     $("evList").innerHTML = items.length
@@ -190,25 +191,34 @@
     EP.renderTermBar(terms, counts);
   };
 
+  /** 원문 표시 요청 일련번호. 페이지를 불러오는 사이 검색어를 지우거나 다른 결과를
+   *  누르면, 늦게 도착한 이전 응답이 화면을 덮어써 "지웠는데 그대로 남아있다"가 된다. */
+  EP.evSeq = 0;
+  EP.evStale = (seq) => seq !== EP.evSeq;
+
   /** 문항 설계 화면의 근거 뷰어 — 원문을 옆에 띄워두고 문항을 쓴다 */
   EP.evShow = async function (docId, pageNo, el) {
+    const seq = ++EP.evSeq;
     document.querySelectorAll("#evList .nz-res.on").forEach((n) => n.classList.remove("on"));
     if (el) el.classList.add("on");
     S.evViewer.docId = docId; S.evViewer.page = pageNo;
     S.evViewer.terms = EP.splitTerms(S.evViewer.q || "");
 
     // 수업 기록은 PDF 가 아니라 글이다 — 그대로 본문을 보여준다
-    if (docId < 0) return EP.evShowLesson(-docId, pageNo);
+    if (docId < 0) return EP.evShowLesson(-docId, pageNo, seq);
 
     const meta = await api(`/api/documents/${docId}/page/${pageNo}`);
+    if (EP.evStale(seq)) return;
     S.evViewer.lastPage = meta.last_page;
 
     // 기출은 페이지 전체가 아니라 문항 하나씩 보여준다
     const types = await EP.ensureDocTypes();
+    if (EP.evStale(seq)) return;
     if (types[docId] === "기출") {
       try {
-        if (await EP.showExamItems(docId, pageNo, meta.title)) return;
+        if (await EP.showExamItems(docId, pageNo, meta.title, seq)) return;
       } catch (e) { /* 문항 인식 실패 → 아래 페이지 전체로 */ }
+      if (EP.evStale(seq)) return;
     }
     $("evViewTitle").textContent = `${meta.title} — ${pageNo} / ${meta.last_page}p`;
     $("evViewBody").innerHTML =
@@ -217,12 +227,14 @@
     if (!S.evViewer.q) return;
     const hl = await api(`/api/documents/${docId}/page/${pageNo}/highlights?q=` +
       encodeURIComponent(S.evViewer.q));
+    if (EP.evStale(seq) || !$("evWrap")) return;
     EP.paintHighlights($("evWrap"), $("evImg"), hl, $("evViewBody"));
   };
 
   /** 수업 기록 조각을 오른쪽 패널에 — 검색어는 형광으로 칠한다 */
-  EP.evShowLesson = async function (lessonId, chunkNo) {
+  EP.evShowLesson = async function (lessonId, chunkNo, seq) {
     const d = await api(`/api/lesson-chunk/${lessonId}/${chunkNo}`);
+    if (seq !== undefined && EP.evStale(seq)) return;
     S.evViewer.lastPage = d.last_chunk;
     $("evViewTitle").textContent = `${d.title} — ${d.chunk_no} / ${d.last_chunk} 조각`;
     const terms = S.evViewer.terms || [];
@@ -494,9 +506,10 @@
   };
 
   /** 기출 페이지 → 검색어가 들어있는 문항만 하나씩 크게 */
-  EP.showExamItems = async function (docId, pageNo, title) {
+  EP.showExamItems = async function (docId, pageNo, title, seq) {
     const q = S.evViewer.q || "";
     const r = await api(`/api/documents/${docId}/page/${pageNo}/items?q=` + encodeURIComponent(q));
+    if (seq !== undefined && EP.evStale(seq)) return true;   // 늦게 온 응답은 그리지 않는다
     const hits = r.items.filter((x) => x.has_hit);
     const list = hits.length ? hits : r.items;      // 적중 없으면 그 페이지 문항 전부
     if (!list.length) return false;                 // 문항을 못 찾으면 페이지 전체로

@@ -37,7 +37,8 @@ app = FastAPI(title="ExamPool", lifespan=lifespan)
 @app.middleware("http")
 async def no_cache_static(request, call_next):
     resp = await call_next(request)
-    if request.url.path.startswith(("/static/", "/assets/")):
+    p = request.url.path
+    if p == "/" or p.startswith(("/static/", "/assets/")):
         resp.headers["Cache-Control"] = "no-store, must-revalidate"
     return resp
 

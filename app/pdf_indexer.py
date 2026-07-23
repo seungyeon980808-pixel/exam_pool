@@ -119,11 +119,16 @@ def terms_of(q: str) -> list[str]:
     return [t for t in "".join(c if c.isalnum() else " " for c in cleaned).split() if t]
 
 
-def search(q: str, limit: int = 60, doc_id: int | None = None) -> dict:
+def search(q: str, limit: int = 60, doc_id: int | None = None,
+           doc_type: str = "") -> dict:
     """근거 검색.
 
     반환: {"total": 전체 일치 수, "terms": [키워드], "items": [...]}
     각 item 에는 일치율(match_pct)이 붙는다 — 최고점을 100%로 한 상대 환산(DocFinder 방식).
+
+    doc_type 은 반드시 여기(SQL)에서 걸러야 한다. 상위 limit 건만 받아다 화면에서
+    추리면, 교육과정처럼 페이지가 많은 문서가 상위를 다 차지해 기출이 한 건도
+    안 남는다 ('에너지' 검색 시 기출 32쪽이 있는데도 0건으로 보이던 문제).
     """
     terms = terms_of(q)
     if not terms:
@@ -132,25 +137,24 @@ def search(q: str, limit: int = 60, doc_id: int | None = None) -> dict:
     try:
         ensure_fts(conn)
         match = " AND ".join(f'"{t}"*' for t in terms)
-        sql = (
+        where, args = "page_fts MATCH ?", [match]
+        if doc_id:
+            where += " AND document_id = ?"
+            args.append(doc_id)
+        if doc_type == "수업":
+            where += " AND document_id < 0"       # 수업 기록은 document_id 가 음수다
+        elif doc_type:
+            where += " AND document_id IN (SELECT id FROM document WHERE doc_type = ?)"
+            args.append(doc_type)
+
+        rows = conn.execute(
             "SELECT doc_title, page_no, document_id, "
             "  snippet(page_fts, 0, '[', ']', ' … ', 20) AS snippet, "
             "  bm25(page_fts) AS score "
-            "FROM page_fts WHERE page_fts MATCH ?"
-        )
-        args: list = [match]
-        if doc_id:
-            sql += " AND document_id = ?"
-            args.append(doc_id)
-        sql += " ORDER BY score LIMIT ?"
-        args.append(limit)
-        rows = conn.execute(sql, args).fetchall()
+            f"FROM page_fts WHERE {where} ORDER BY score LIMIT ?", args + [limit]).fetchall()
 
         total = conn.execute(
-            "SELECT COUNT(*) AS c FROM page_fts WHERE page_fts MATCH ?" +
-            (" AND document_id = ?" if doc_id else ""),
-            [match] + ([doc_id] if doc_id else []),
-        ).fetchone()["c"]
+            f"SELECT COUNT(*) AS c FROM page_fts WHERE {where}", args).fetchone()["c"]
 
         best = rows[0]["score"] if rows else -1
         items = []

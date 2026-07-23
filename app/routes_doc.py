@@ -62,9 +62,12 @@ def delete_document(doc_id: int):
 
 
 @router.get("/evidence/search")
-def search_evidence(q: str = "", limit: int = 60, doc_id: int = 0):
-    """근거 검색. q 는 공백 또는 #해시태그로 여러 키워드(AND)."""
-    return pdf_indexer.search(q, limit=limit, doc_id=doc_id or None)
+def search_evidence(q: str = "", limit: int = 60, doc_id: int = 0, doc_type: str = ""):
+    """근거 검색. q 는 공백 또는 #해시태그로 여러 키워드(AND).
+
+    doc_type(교과서·교육과정·기출·수업)은 서버에서 걸러야 한다 — 이유는 pdf_indexer.search 참고.
+    """
+    return pdf_indexer.search(q, limit=limit, doc_id=doc_id or None, doc_type=doc_type)
 
 
 @router.get("/documents/{doc_id}/page/{page_no}/image")
