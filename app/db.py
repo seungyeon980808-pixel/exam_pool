@@ -26,6 +26,18 @@ CREATE TABLE IF NOT EXISTS meta (
     value TEXT NOT NULL
 );
 
+-- 교육과정 안의 과목. 중학교 '과학' 하나가 아니라 고등학교 선택 과목까지 들어온다.
+--   track: 공통 / 공통과목 / 일반선택 / 진로선택 / 융합선택
+CREATE TABLE IF NOT EXISTS subject (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL UNIQUE,
+    track       TEXT NOT NULL,
+    grade_band  TEXT NOT NULL,
+    code_prefix TEXT NOT NULL,
+    unit_base   INTEGER NOT NULL,
+    ord         INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS standard (
     code        TEXT PRIMARY KEY,
     grade_band  TEXT NOT NULL,
@@ -34,6 +46,8 @@ CREATE TABLE IF NOT EXISTS standard (
     text        TEXT NOT NULL
 );
 
+-- unit_no 는 과목이 여럿이어도 전역 유일하다(과목별로 100 번대씩 띄움).
+-- 화면에는 local_no(그 과목 안에서의 (1),(2)...)를 보여준다.
 CREATE TABLE IF NOT EXISTS unit (
     unit_no INTEGER PRIMARY KEY,
     name    TEXT NOT NULL
@@ -186,6 +200,14 @@ def _add_column(conn: sqlite3.Connection, table: str, col: str, decl: str) -> No
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
+    # 교육과정 확장 — 과목·단원 유의사항·성취기준 해설
+    _add_column(conn, "unit", "subject_id", "INTEGER")
+    _add_column(conn, "unit", "local_no", "INTEGER")
+    _add_column(conn, "unit", "inquiry", "TEXT NOT NULL DEFAULT '[]'")    # <탐구 활동>
+    _add_column(conn, "unit", "consider", "TEXT NOT NULL DEFAULT '[]'")   # 성취기준 적용 시 고려 사항
+    _add_column(conn, "standard", "subject_id", "INTEGER")
+    _add_column(conn, "standard", "explain", "TEXT NOT NULL DEFAULT ''")  # 성취기준 해설
+
     _add_column(conn, "question", "title", "TEXT NOT NULL DEFAULT ''")
     _add_column(conn, "question", "image_choices", "INTEGER NOT NULL DEFAULT 0")
     # 이원목적분류표의 행동영역 (2022 개정: 지식·이해 / 과정·기능 / 가치·태도)
@@ -194,25 +216,43 @@ def _migrate(conn: sqlite3.Connection) -> None:
     _add_column(conn, "lesson", "indexed_at", "TEXT NOT NULL DEFAULT ''")
 
 
-# ===== 성취기준 seed 적재 (첫 실행 시 1회) =====
+# ===== 성취기준 seed 적재 =====
+# 교육과정은 참고 자료라 seed 파일이 원본이다. 첫 실행뿐 아니라 seed 가 늘어났을 때도
+# (중학교만 있다가 고등학교 과목이 추가되는 식) 맞춰 넣는다. 선생님이 만든 명제·문항은
+# 건드리지 않으므로, 없어진 성취기준을 지우지는 않는다.
 def _seed_standards(conn: sqlite3.Connection) -> None:
-    already = conn.execute("SELECT COUNT(*) AS c FROM standard").fetchone()["c"]
-    if already:
-        return
     seed_file = SEED_DIR / "standards.json"
     data = json.loads(Path(seed_file).read_text(encoding="utf-8"))
 
-    conn.executemany(
-        "INSERT INTO unit (unit_no, name) VALUES (?, ?)",
-        [(u["unit_no"], u["name"]) for u in data["units"]],
-    )
-    conn.executemany(
-        "INSERT INTO standard (code, grade_band, unit_no, seq, text) VALUES (?, ?, ?, ?, ?)",
-        [
-            (s["code"], s["grade_band"], s["unit_no"], s["seq"], s["text"])
-            for s in data["standards"]
-        ],
-    )
+    sid = {}   # 과목명 → subject.id
+    for i, s in enumerate(data.get("subjects", [])):
+        conn.execute(
+            "INSERT INTO subject (name, track, grade_band, code_prefix, unit_base, ord) "
+            "VALUES (?,?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET "
+            "track=excluded.track, grade_band=excluded.grade_band, "
+            "code_prefix=excluded.code_prefix, unit_base=excluded.unit_base, ord=excluded.ord",
+            (s["name"], s["track"], s["grade_band"], s["code_prefix"], s["unit_base"], i))
+    for r in conn.execute("SELECT id, name FROM subject"):
+        sid[r["name"]] = r["id"]
+
+    for u in data["units"]:
+        conn.execute(
+            "INSERT INTO unit (unit_no, name, subject_id, local_no, inquiry, consider) "
+            "VALUES (?,?,?,?,?,?) ON CONFLICT(unit_no) DO UPDATE SET "
+            "name=excluded.name, subject_id=excluded.subject_id, local_no=excluded.local_no, "
+            "inquiry=excluded.inquiry, consider=excluded.consider",
+            (u["unit_no"], u["name"], sid.get(u.get("subject")), u.get("local_no", u["unit_no"]),
+             json.dumps(u.get("inquiry", []), ensure_ascii=False),
+             json.dumps(u.get("consider", []), ensure_ascii=False)))
+
+    for s in data["standards"]:
+        conn.execute(
+            "INSERT INTO standard (code, grade_band, unit_no, seq, text, subject_id, explain) "
+            "VALUES (?,?,?,?,?,?,?) ON CONFLICT(code) DO UPDATE SET "
+            "grade_band=excluded.grade_band, unit_no=excluded.unit_no, seq=excluded.seq, "
+            "text=excluded.text, subject_id=excluded.subject_id, explain=excluded.explain",
+            (s["code"], s["grade_band"], s["unit_no"], s["seq"], s["text"],
+             sid.get(s.get("subject")), s.get("explain", "")))
     # 과목 메타 — 다른 과목 seed 로 교체하면 이 값이 따라 바뀐다 (확장성)
     conn.executemany(
         "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",

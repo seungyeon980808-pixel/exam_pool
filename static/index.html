@@ -16,9 +16,9 @@
   </div>
 
   <div class="nz-nav">
-    <button class="nz-navi on" data-tab="bank">명제 은행</button>
+    <button class="nz-navi on" data-tab="bank">명제 Pool</button>
     <button class="nz-navi" data-tab="question">문항 설계</button>
-    <button class="nz-navi" data-tab="qbank">문항 은행</button>
+    <button class="nz-navi" data-tab="qbank">문항 Pool</button>
     <button class="nz-navi" data-tab="set">세트 관리</button>
     <button class="nz-navi" data-tab="doc">근거·기출</button>
     <button class="nz-navi" data-tab="lesson">수업 기록</button>
@@ -27,7 +27,7 @@
 
   <div class="nz-wrap">
     <div class="nz-rail">
-      <span class="on" title="명제 은행"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg></span>
+      <span class="on" title="명제 Pool"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg></span>
       <span title="문항 설계"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/></svg></span>
       <span title="세트 관리"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></svg></span>
       <span title="근거 문서"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5a2 2 0 0 1 2-2h5v18H5a2 2 0 0 1-2-2z"/><path d="M14 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5z"/></svg></span>
@@ -62,10 +62,10 @@
         </div>
       </div>
 
-      <!-- ============ 명제 은행 ============ -->
+      <!-- ============ 명제 Pool ============ -->
       <section id="tab-bank">
         <div class="nz-scopebar"></div>
-        <div class="nz-h"><b>명제 은행 조회</b></div>
+        <div class="nz-h"><b>명제 Pool 조회</b></div>
         <div id="stdBanner" class="nz-banner hidden"></div>
 
         <div class="nz-form hidden" id="propForm">
@@ -248,10 +248,10 @@
         </div>
       </section>
 
-      <!-- ============ 문항 은행 ============ -->
+      <!-- ============ 문항 Pool ============ -->
       <section id="tab-qbank" hidden>
         <div class="nz-scopebar"></div>
-        <div class="nz-h"><b>문항 은행</b>
+        <div class="nz-h"><b>문항 Pool</b>
           <select class="nz-sel" id="qbUnit" style="min-width:140px" onchange="EP.loadQuestions()"></select>
           <select class="nz-sel" id="qbStd" style="min-width:170px" onchange="EP.loadQuestions()"></select>
           <select class="nz-sel" id="qbStatus" style="min-width:90px" onchange="EP.loadQuestions()">
@@ -282,7 +282,10 @@
           <button class="nz-tb" onclick="EP.cfgAll(false)">전체 해제</button>
           <button class="nz-tb blu" onclick="EP.cfgSave()">이 범위로 저장</button>
         </div>
-        <p class="nz-sub">이번에 다룰 <b>단원과 성취기준</b>만 고르세요. 고른 것만 명제·문항·세트 화면에 나타납니다.</p>
+        <p class="nz-sub">교육과정 구분 → 과목 → 단원 순으로 좁혀 들어갑니다.
+          <b>단원과 성취기준</b>을 고르면 그것만 명제·문항·세트 화면에 나타납니다.</p>
+        <div id="cfgTrack" class="nz-cfgpick"></div>
+        <div id="cfgSubjects" class="nz-cfgpick sub"></div>
         <div id="cfgTree" class="nz-cfgtree"></div>
 
         <!-- ===== 백업 · 복구 ===== -->
@@ -384,7 +387,7 @@
         </table>
         <div class="nz-foot"><span id="setFootL">문항 0개</span><span id="setFootR">배점 합 0점</span></div>
 
-        <p class="nz-sub" style="margin-top:14px">문항 은행에서 담기</p>
+        <p class="nz-sub" style="margin-top:14px">문항 Pool에서 담기</p>
         <table class="nz-t">
           <thead><tr><th style="width:34px">순번</th><th>발문</th><th style="width:80px">성취기준</th><th style="width:44px">배점</th><th style="width:60px">담기</th></tr></thead>
           <tbody id="setPickRows"></tbody>

@@ -1,4 +1,4 @@
-/* ===== 명제 은행 — 명제 목록 · 거짓 변형 · 근거 ===== */
+/* ===== 명제 Pool — 명제 목록 · 거짓 변형 · 근거 ===== */
 (function (EP) {
   "use strict";
   const $ = EP.$, esc = EP.esc, api = EP.api, post = EP.post, del = EP.del;
@@ -172,7 +172,7 @@
           '<button class="nz-tb mini" onclick=\'EP.applyPick("' + target + '",' + idx + "," + JSON.stringify(v.text) + ",null," + v.id + ")'>오답으로</button></div>";
       });
       return html + "</div>";
-    }).join("") : '<p class="nz-sub">이 성취기준에 등록된 명제가 없습니다. 명제 은행에서 먼저 등록하세요.</p>';
+    }).join("") : '<p class="nz-sub">이 성취기준에 등록된 명제가 없습니다. 명제 Pool에서 먼저 등록하세요.</p>';
 
     m.innerHTML = '<div class="nz-modal-box" style="width:min(880px,94vw)">' +
       '<div class="nz-modal-head"><b>명제에서 고르기</b><span class="nz-sub" style="margin:0 0 0 10px">' +

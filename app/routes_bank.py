@@ -1,4 +1,4 @@
-"""명제 은행 API — 명제·거짓변형·근거."""
+"""명제 Pool API — 명제·거짓변형·근거."""
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 

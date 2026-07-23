@@ -1,4 +1,4 @@
-/* ===== 문항 은행 — 만든 문항 목록·상태·검토 ===== */
+/* ===== 문항 Pool — 만든 문항 목록·상태·검토 ===== */
 (function (EP) {
   "use strict";
   const $ = EP.$, esc = EP.esc, api = EP.api, del = EP.del;
@@ -47,7 +47,7 @@
   };
 
   EP.editQuestion = async function (qid, jump) {
-    if (jump) {   // 문항 은행에서 눌렀으면 설계 탭으로 이동
+    if (jump) {   // 문항 Pool에서 눌렀으면 설계 탭으로 이동
       document.querySelector('.nz-navi[data-tab="question"]').click();
     }
     const d = await api(`/api/questions/${qid}`);

@@ -3,9 +3,9 @@
  * (index.html 의 onclick="EP.xxx()" 가 그대로 동작해야 하므로 전역 이름은 EP 로 고정)
  *
  *   core.js      ← 이 파일. 통신·공용 도구·성취기준·출제 범위·탭
- *   bank.js      명제 은행
+ *   bank.js      명제 Pool
  *   question.js  문항 설계
- *   qbank.js     문항 은행
+ *   qbank.js     문항 Pool
  *   set.js       세트 관리 · 제출 서류
  *   doc.js       근거 문서 검색
  *   lesson.js    수업 기록
@@ -22,12 +22,14 @@ window.EP = window.EP || {};
   /* ---------- 공유 상태 ---------- */
   EP.S = {
     standards: [],        // 성취기준 트리
-    curProps: [],         // 명제 은행: 현재 조회 결과
+    curProps: [],         // 명제 Pool: 현재 조회 결과
     bogi: [],             // 문항 설계: 보기
     choices: [],          // 문항 설계: 선지
     editingQid: null,
     curSetId: null,
     openUnits: new Set(),
+    subjects: [],         // 교육과정 과목 목록 (중학교 과학 + 고등학교 선택 과목)
+    subject: localStorage.getItem("ep_subject") || "과학",   // 지금 가르치는 과목 하나
     scope: JSON.parse(localStorage.getItem("ep_scope") || "[]"),
     stdScope: JSON.parse(localStorage.getItem("ep_std_scope") || "[]"),
     curStdCode: "",
@@ -169,11 +171,42 @@ window.EP = window.EP || {};
   /* ---------- 성취기준 ---------- */
   EP.loadStandards = async function () {
     EP.S.standards = await EP.api("/api/standards");
+    EP.S.subjects = await EP.api("/api/subjects");
+    // 저장된 과목이 없어졌으면(다른 교육과정 seed 로 교체) 첫 과목으로 되돌린다
+    if (EP.S.subjects.length && !EP.S.subjects.some((s) => s.name === EP.S.subject)) {
+      EP.setSubject(EP.S.subjects[0].name, true);
+    }
     EP.renderTree();
     EP.renderScopeBar();
     EP.refillStdSelects();
     const subj = await EP.api("/api/subject");
-    EP.$("subjectLabel").textContent = `${subj.subject} · 성취기준 ${subj.standard_count}개`;
+    EP.$("subjectLabel").textContent =
+      `${EP.S.subject} · 성취기준 ${EP.curSubjectStdCount()}개 / 전체 ${subj.standard_count}개`;
+  };
+
+  /** 지금 과목의 성취기준 개수 */
+  EP.curSubjectStdCount = function () {
+    return EP.S.standards.filter((u) => u.subject === EP.S.subject)
+      .reduce((n, u) => n + u.standards.length, 0);
+  };
+
+  /** 화면에 보이는 단원 번호는 과목 안에서의 번호((1),(2)…). unit_no 는 전역 고유값이라 감춘다. */
+  EP.unitLabel = function (u) { return `${u.local_no || u.unit_no}. ${u.name}`; };
+
+  /** 과목 전환 — 출제 범위는 과목마다 따로 기억한다 */
+  EP.setSubject = function (name, quiet) {
+    EP.S.subject = name;
+    localStorage.setItem("ep_subject", name);
+    EP.S.scope = JSON.parse(localStorage.getItem("ep_scope:" + name) || "[]");
+    EP.S.stdScope = JSON.parse(localStorage.getItem("ep_std_scope:" + name) || "[]");
+    localStorage.setItem("ep_scope", JSON.stringify(EP.S.scope));
+    localStorage.setItem("ep_std_scope", JSON.stringify(EP.S.stdScope));
+    EP.S.openUnits = new Set();
+    if (quiet) return;
+    EP.$("subjectLabel").textContent =
+      `${name} · 성취기준 ${EP.curSubjectStdCount()}개`;
+    EP.renderTree(); EP.renderScopeBar(); EP.refillStdSelects();
+    if (EP.loadProps) EP.loadProps();
   };
 
   /** 성취기준 선택 — 목록 필터 + 전문 배너 */
@@ -194,13 +227,13 @@ window.EP = window.EP || {};
     tree.innerHTML = "";
     if (!q) { EP.renderTree(); return; }
     EP.scopedStandards().forEach((u) => {
-      const unitHit = `${u.unit_no}. ${u.name}`.toLowerCase().includes(q);
+      const unitHit = EP.unitLabel(u).toLowerCase().includes(q);
       const hits = u.standards.filter((s) =>
         s.code.toLowerCase().includes(q) || s.text.toLowerCase().includes(q));
       if (!unitHit && !hits.length) return;
       const uEl = document.createElement("div");
       uEl.className = "nz-mi";
-      uEl.textContent = `${u.unit_no}. ${u.name}`;
+      uEl.textContent = EP.unitLabel(u);
       tree.appendChild(uEl);
       (hits.length ? hits : u.standards).forEach((s) => {
         const e = document.createElement("div");
@@ -217,10 +250,17 @@ window.EP = window.EP || {};
   // 시험 한 번에 23개 단원을 다 쓰지 않는다. 필요한 단원만 골라 그 안에서 작업한다.
   EP.inScope = function (unitNo) { return !EP.S.scope.length || EP.S.scope.includes(unitNo); };
 
+  /** 지금 과목의 단원만 (전 과목 371개를 한 화면에 뿌리지 않는다) */
+  EP.subjectUnits = function () {
+    const cur = EP.S.subject;
+    return EP.S.standards.filter((u) => !u.subject || u.subject === cur);
+  };
+
   EP.scopedStandards = function () {
     const ss = EP.S.stdScope;
-    return EP.S.standards.filter((u) => EP.inScope(u.unit_no)).map((u) => ({
-      unit_no: u.unit_no, name: u.name,
+    return EP.subjectUnits().filter((u) => EP.inScope(u.unit_no)).map((u) => ({
+      unit_no: u.unit_no, local_no: u.local_no, name: u.name, subject: u.subject,
+      inquiry: u.inquiry || [], consider: u.consider || [],
       standards: ss.length ? u.standards.filter((s) => ss.includes(s.code)) : u.standards,
     })).filter((u) => u.standards.length);
   };
@@ -228,6 +268,7 @@ window.EP = window.EP || {};
   EP.saveScope = function (list) {
     EP.S.scope = list;
     localStorage.setItem("ep_scope", JSON.stringify(EP.S.scope));
+    localStorage.setItem("ep_scope:" + EP.S.subject, JSON.stringify(EP.S.scope));
     EP.renderTree(); EP.renderScopeBar(); EP.refillStdSelects();
     EP.loadProps();
   };
@@ -235,8 +276,8 @@ window.EP = window.EP || {};
   EP.renderScopeBar = function () {
     const bars = document.querySelectorAll(".nz-scopebar");
     const label = EP.S.scope.length
-      ? `출제 범위: <b>${EP.S.scope.map((n) => EP.S.standards.find((u) => u.unit_no === n)?.name || n).join(" · ")}</b>`
-      : "출제 범위: <b>전체 단원</b> (범위를 좁히면 화면이 단순해집니다)";
+      ? `<b>${EP.esc(EP.S.subject)}</b> 출제 범위: <b>${EP.S.scope.map((n) => EP.S.standards.find((u) => u.unit_no === n)?.name || n).join(" · ")}</b>`
+      : `<b>${EP.esc(EP.S.subject)}</b> 출제 범위: <b>전체 단원</b> (범위를 좁히면 화면이 단순해집니다)`;
     bars.forEach((b) => {
       b.innerHTML = `${label}<button class="nz-tb mini" style="margin-left:auto" onclick="EP.openScope()">범위 설정</button>`;
     });
@@ -251,11 +292,11 @@ window.EP = window.EP || {};
       </div>
       <div class="nz-modal-body">
         <div class="nz-scope" id="scopeList">
-          ${EP.S.standards.map((u) => `
+          ${EP.subjectUnits().map((u) => `
             <label class="${EP.S.scope.includes(u.unit_no) ? "on" : ""}" data-u="${u.unit_no}">
               <input type="checkbox" ${EP.S.scope.includes(u.unit_no) ? "checked" : ""}
                      onchange="this.parentElement.classList.toggle('on', this.checked)" />
-              ${u.unit_no}. ${EP.esc(u.name)}
+              ${EP.esc(EP.unitLabel(u))}
             </label>`).join("")}
         </div>
         <div class="nz-fbtn" style="margin-top:12px">
@@ -277,13 +318,13 @@ window.EP = window.EP || {};
 
   EP.showStdFull = function () {};   // 전문은 select 안에 그대로 들어간다 (별도 공간 없음)
 
-  /** 문항 은행 단원·성취기준 필터 채우기 */
+  /** 문항 Pool 단원·성취기준 필터 채우기 */
   EP.refillBankFilters = function () {
     const uSel = EP.$("qbUnit"), sSel = EP.$("qbStd");
     if (!uSel) return;
     const cur = uSel.value;
     uSel.innerHTML = '<option value="">전체 단원</option>';
-    EP.scopedStandards().forEach((u) => uSel.appendChild(new Option(`${u.unit_no}. ${u.name}`, u.unit_no)));
+    EP.scopedStandards().forEach((u) => uSel.appendChild(new Option(EP.unitLabel(u), u.unit_no)));
     uSel.value = cur;
     const unit = +uSel.value || 0;
     const list = unit ? EP.scopedStandards().filter((u) => u.unit_no === unit) : EP.scopedStandards();
@@ -302,13 +343,13 @@ window.EP = window.EP || {};
     EP.refillBankFilters();
   };
 
-  /** 명제 은행: 단원 select — 단원을 먼저 고르고 성취기준을 좁힌다 */
+  /** 명제 Pool: 단원 select — 단원을 먼저 고르고 성취기준을 좁힌다 */
   EP.refillUnitSelect = function () {
     const sel = EP.$("q-unit");
     if (!sel) return;
     const cur = sel.value;
     sel.innerHTML = '<option value="">전체 단원</option>';
-    EP.scopedStandards().forEach((u) => sel.appendChild(new Option(`${u.unit_no}. ${u.name}`, u.unit_no)));
+    EP.scopedStandards().forEach((u) => sel.appendChild(new Option(EP.unitLabel(u), u.unit_no)));
     sel.value = cur;
   };
 
@@ -335,7 +376,7 @@ window.EP = window.EP || {};
       el.className = "nz-mi";
       const open = EP.S.openUnits.has(u.unit_no);
       el.innerHTML = `<span class="caret">${open ? "▾" : "▸"}</span>` +
-        `<span class="uname">${u.unit_no}. ${EP.esc(u.name)}</span>`;
+        `<span class="uname">${EP.esc(EP.unitLabel(u))}</span>`;
       el.onclick = () => {
         if (EP.S.openUnits.has(u.unit_no)) EP.S.openUnits.delete(u.unit_no);
         else EP.S.openUnits.add(u.unit_no);
@@ -370,7 +411,7 @@ window.EP = window.EP || {};
     const countBy = {};
     props.forEach((p) => { countBy[p.standard_code] = (countBy[p.standard_code] || 0) + 1; });
     const rows = [];
-    EP.S.standards.forEach((u) => u.standards.forEach((s) => {
+    EP.subjectUnits().forEach((u) => u.standards.forEach((s) => {
       if (q && !(s.code.toLowerCase().includes(q) || s.text.toLowerCase().includes(q)
         || u.name.toLowerCase().includes(q))) return;
       rows.push(`<tr>
@@ -396,7 +437,7 @@ window.EP = window.EP || {};
   EP.renderStdList = function () {
     const box = EP.$("stdList");
     box.innerHTML = EP.scopedStandards().map((u) =>
-      '<div class="nz-stdgrp">' + u.unit_no + ". " + EP.esc(u.name) + "</div>" +
+      '<div class="nz-stdgrp">' + EP.esc(EP.unitLabel(u)) + "</div>" +
       u.standards.map((st) =>
         '<div class="nz-stdopt' + (st.code === EP.S.curStdCode ? " on" : "") + '"' +
         " onclick=\"EP.pickStd('" + st.code + "')\"><span class=\"code\">" + EP.esc(st.code) + "</span>" +
