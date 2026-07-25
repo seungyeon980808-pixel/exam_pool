@@ -68,20 +68,32 @@ text      "0초" "1초" "2초" 각 안내선 아래, "(가)" 그림 하단 중�
 재편집·재샘플이 안 되고, 여러 번의 호출로 나뉘면 자동저장 스냅샷이 중간에 끼어
 새로고침 후 계열만 사라질 수 있다.
 
+**w/h를 직접 주지 않는다 — `cellMm`로 정한다.** 글자 크기가 칸 크기에 비례하기 때문(08의 7-A).
+`cellMm` 권장 5~7, 그리고 `tickLabelSize = cellMm×0.68−0.35`, `axisLabelSize = cellMm×0.8−0.35`를
+**계산해서 함께 넣는다**(안 넣으면 모달을 열었다 닫을 때 글자가 커진다).
+
 ```
 add_graph
   at: { x: <평면 중심>, y: <평면 중심> }
-  plane: { w, h, xMin:0, xMax:<데이터최대+padXPos>, yMin:0, yMax:<데이터최대+padYPos>,
+  plane: { cellMm:6,                             # ← w/h 대신 이것으로 (w=cell×(xMax-xMin))
+           xMin:0, xMax:3.6, yMin:0, yMax:5.8,   # 데이터 최대 + pad
            axisVariant:"quadrant",
            gridStepX:1, gridStepY:1.5,           # 눈금 간격
            gridCountXPos:2, gridCountYPos:3,     # 눈금 칸 수(데이터 범위까지만)
            padXPos:1.6, padYPos:1.3,             # 마지막 눈금 뒤 화살표 여백
+           gridOverXPos:0.5, gridOverYPos:0.5,
            richLabels:true, gridToData:true,     # 그래프 도구와 같은 글씨체·격자
            showGrid:false, showTicks:true, showTickLabels:true,
-           labelX:"시간(s)", labelY:"속도(m/s)", labelOrigin:"0" }
-  functions: [ { expr:"3",   domain:{min:0,max:1}, strokeWidth:0.5 },
-               { expr:"4.5", domain:{min:1,max:2}, strokeWidth:0.5 } ]
+           labelX:"시간(s)", labelY:"속도(m/s)", labelOrigin:"0",
+           axisLabelSize:4.5, tickLabelSize:3.7, # ← cellMm 6에 대한 앱 공식값
+           axisLabelScale:1, tickLabelScale:1, labelScale:1,
+           strokeWidth:0.3, lockAspect:false, labelType:"quantity" }
+  functions: [ { expr:"3",   domain:{min:0,max:1}, strokeWidth:0.45 },
+               { expr:"4.5", domain:{min:1,max:2}, strokeWidth:0.45 } ]
 ```
+
+그래프를 더 크게 하려면 cellMm을 키우지 말고(글자가 같이 커진다) **눈금 간격을 잘게 나눠
+칸 수를 늘린다**.
 
 - **계단형은 상수함수 여러 개**(구간별 domain)로 만든다 — step 함수가 없어도 이걸로 된다.
 - 눈금 숫자는 `showTickLabels:true`로 앱이 찍게 둔다(수동 text 금지 — 위치가 어긋난다).

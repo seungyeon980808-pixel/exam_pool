@@ -76,6 +76,16 @@
    같은 렌더러 필드를 직접 넣을 수 있다. 단 로드 경로는 관대해서 틀린 필드는 조용히 무시된다.
 6. funcgraph에 `guideSegs`(파선 안내선)·`markers`(●점)·`arrowMarks`(곡선 위 화살촉)·
    `endLabel`(곡선 끝 라벨)을 직접 실을 수 있다 — 전부 세계 좌표.
+7-A. **글자 크기는 칸(cell) 크기에 비례한다 — w/h를 임의로 키우면 숫자가 거대해진다.**
+   `cell = plane.w / (xMax - xMin)`, 앱 공식(graph-modal.js `setLabelSizes`):
+   - `axisLabelSize = cell × 0.8 − 0.35`
+   - `tickLabelSize = cell × 0.68 − 0.35`
+   그래서 **w/h를 직접 주지 말고 `cellMm`로 크기를 정한다**(기본 4.8, 모달 상한 9, 권장 5~7).
+   그리고 위 공식으로 계산한 `axisLabelSize`·`tickLabelSize`를 **명시적으로 함께 넣는다** —
+   넣지 않으면 초기 렌더와 "그래프 편집 모달을 열었다 닫은 뒤"의 크기가 달라진다
+   (모달이 열릴 때 setLabelSizes가 다시 돌기 때문. 2026-07-25 숫자 거대화 사건의 원인).
+   그래프를 크게 만들고 싶으면 cell을 키우지 말고 **칸 수를 늘린다**(tickStep을 잘게).
+
 7. **그래프는 "그래프 도구(모달) 평면"과 동일 설정으로 만들어야 한다.** UI 그래프 도구가
    평면에 거는 필드 세트 (graph-modal.js `applyCfg`):
    - `richLabels: true`, `gridToData: true`
