@@ -48,6 +48,29 @@
 - **read_app / clear_app / remove_from_app**: 그린 뒤 자가 검증·수정용.
 - add_objects는 **필드가 틀리면 전체 거부**(부분 삽입 없음) — 오류 메시지로 필드명을 교정할 수 것.
 
+## 소스 코드로 확정한 렌더 특성 (2026-07-25, 51_5E/5E_main 소스 분석)
+
+**이 절은 시행착오로 배운 것 — 어기면 그림이 깨진다.**
+
+1. **funcgraph의 `points`는 세계 좌표(mm)다.** 평면 좌표(초·m/s)가 아니다. 수동 계열은
+   `sourceKind: "points"` + `curveStyle: "straight"`(직선) 지정, planeId는 편집 연결용.
+   평면 좌표 → 세계 좌표 변환: `x_mm = box.x + (t - xMin)/(xMax - xMin) * w`,
+   `y_mm = box.y + h - (v - yMin)/(yMax - yMin) * h`.
+2. **coordplane 축 라벨 글씨체는 `richLabels: true`일 때만** 혼합 라벨러(한글 정자 + 영문
+   이탤릭 + 수식 + halo)를 탄다. 없으면 구식 세리프 이탤릭으로 렌더. UI 그래프 모달은 이걸
+   자동으로 켜지만 **MCP add_graph는 안 켠다** → coordplane을 add_objects로 직접 만들며
+   `richLabels: true`를 넣는다. 라벨은 LaTeX 문법(v_0) 지원, `\text{}`는 미지원(글자 그대로 나옴).
+3. **lengthArrow 치수 라벨 필드는 `dimensionLabel`** (`label` 아님 — 없으면 기본 "d").
+   끝 종단선은 `dimensionVariant`: basic(없음) | leftBar | rightBar | bothBars.
+   라벨 크기는 `dimensionLabelSize`(mm).
+4. **svgAsset(cart 등)은 내장 SVG 이미지 방식 — dashLength가 안 먹는다** (파선 불가).
+   여러 시점 위치는 전부 실선으로 반복(다중섬광 방식). cart는 박스 하단에 ~2mm 여백이
+   있어 접지시키려면 박스 하단을 바닥선보다 2mm 아래로 내린다.
+5. add_objects는 스키마에 없는 필드도 **통과**시킨다(passthrough) — richLabels·dimensionLabel
+   같은 렌더러 필드를 직접 넣을 수 있다. 단 로드 경로는 관대해서 틀린 필드는 조용히 무시된다.
+6. funcgraph에 `guideSegs`(파선 안내선)·`markers`(●점)·`arrowMarks`(곡선 위 화살촉)·
+   `endLabel`(곡선 끝 라벨)을 직접 실을 수 있다 — 전부 세계 좌표.
+
 ## 갭 목록 (평가원 문법 중 5E에 없는 것 → 우회 or 5E 기능 추가 후보)
 
 | 필요 기능 | 상태 | 우회 레시피 | 5E 추가 제안 |

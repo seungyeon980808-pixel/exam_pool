@@ -46,29 +46,37 @@
 구성 요소와 좌표 잡기(아트보드 150×60 기준, 좌측 절반 사용 예):
 
 ```
-svgAsset  cart (x=-60, y=-2, w=14, h=8)           ← 자동차(수레로 대체)
-line      수평면: p1(-68,6) p2(-8,6), strokeWidth 0.5
-text      "수평면" (x=-12, y=9, fontSize 3.2)
-line      속도 화살표: cart 위, lineMode "arrow", strokeWidth 0.35
-rect      이전(1초·2초) 위치: cart와 같은 크기, fillNone true, dash 1.2/0.8
-line      치수: lineMode "lengthArrow", p1~p2 구간 아래, label "3 m"
-text      "0초" "1초" "2초" 각 위치 아래
-text      "(가)" 그림 하단 중앙
+line      수평면: 가는 굵기보다 굵게(0.5), 오른쪽 끝 아래 text "수평면"
+svgAsset  cart ×3 (시점별 위치) — 파선 불가하므로 전부 실선(다중섬광 방식).
+          접지: cart 박스 하단을 바닥선보다 2mm 아래로 (하단 여백 보정)
+line      속도/진행 화살표: lineMode "arrow", strokeWidth 0.35, 첫 cart 위
+line      시점 안내선: 각 cart 중심에서 아래로 가는 파선 (0.2, dash 1.2/0.8)
+line      치수: lineMode "lengthArrow", strokeWidth 0.25,
+          **dimensionLabel** "3 m" (label 필드 아님!), labelType "label"(정체)
+text      "0초" "1초" "2초" 각 안내선 아래, "(가)" 그림 하단 중앙
 ```
 
 - 자동차를 명시적으로 요구하면 cart 사용을 먼저 제안하고, 실루엣이 꼭 필요하면 rect+ellipse 바퀴 2개로 조립.
 
-### 2-2. v-t 그래프 (계단형) (초안)
+### 2-2. v-t 그래프 (계단형)
+
+**주의: 기능 명세(08)의 "소스 코드로 확정한 렌더 특성"을 먼저 읽을 것.**
 
 ```
-add_graph at(우측 중심), plane: { axisVariant: "quadrant", xMin 0, xMax 3, yMin 0, yMax 5,
-  labelX: "시간(s)", labelY: "속도(m/s)", labelOrigin: "0",
-  showGrid: false, showTicks: true, showTickLabels: true }
-functions: 없음 (빈 평면)
-funcgraph 또는 polyline으로 계단 데이터: (0,3)→(1,3), (1,4.5)→(2,4.5), strokeWidth 0.5
-불연속 연결(1초 지점): line 가는 파선 세로선
-값 안내선: line 파선 (3, 4.5 위치 → y축), 축 옆 formula "3", "4.5"
+1) coordplane을 add_objects로 직접 생성 (add_graph는 richLabels를 못 켠다):
+   { type:"coordplane", x,y,w,h, axisVariant:"quadrant", xMin:0, xMax:3, yMin:0, yMax:6,
+     tickStepX:1, tickStepY:1.5, labelX:"시간(s)", labelY:"속도(m/s)", labelOrigin:"0",
+     showGrid:false, showTicks:true, showTickLabels:false, richLabels:true }
+2) read_app으로 평면 id 확보
+3) 계단·안내선을 funcgraph로 — points는 세계 좌표(mm)로 변환해 넣는다:
+   { type:"funcgraph", planeId:<id>, sourceKind:"points", curveStyle:"straight",
+     points:[세계좌표], strokeWidth:0.5 }          ← 데이터 계단(굵은 실선)
+   안내선(가는 파선)은 strokeWidth 0.2 + dashLength 1.2 + dashGap 0.8
+4) 눈금 값(3, 4.5 등)은 text로 축 바깥에 (필요한 값만)
 ```
+
+곡선형 그래프(포물선·사인 등)는 add_graph의 expr+domain을 쓰되, 평면은 위처럼
+richLabels 평면을 먼저 만들고 add_graph 대신 funcgraph 수동 배치를 검토한다.
 
 ### 2-3. 광선도: 굴절 (초안)
 
