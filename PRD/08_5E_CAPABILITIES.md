@@ -70,6 +70,17 @@
    같은 렌더러 필드를 직접 넣을 수 있다. 단 로드 경로는 관대해서 틀린 필드는 조용히 무시된다.
 6. funcgraph에 `guideSegs`(파선 안내선)·`markers`(●점)·`arrowMarks`(곡선 위 화살촉)·
    `endLabel`(곡선 끝 라벨)을 직접 실을 수 있다 — 전부 세계 좌표.
+7. **그래프는 "그래프 도구(모달) 평면"과 동일 설정으로 만들어야 한다.** UI 그래프 도구가
+   평면에 거는 필드 세트 (graph-modal.js `applyCfg`):
+   - `richLabels: true`, `gridToData: true`
+   - **화살표 여백**: `xMax = 데이터최댓값 + padXPos(기본 1.6)`, `yMax = 최댓값 + padYPos(기본 1.3)`
+     (pad 값도 `padXPos`/`padYPos`로 함께 저장 — 재편집 복원용)
+   - **눈금 캡**: `gridStepX/Y`(간격) + `gridCountXPos/YPos`(양의 칸 수) → 눈금은 데이터
+     범위까지만 찍히고 pad 구간은 순수 화살표 여백이 된다
+   - 수동 계열(sourceKind "points")은 평면 이동 시 안 따라가는 baked 좌표 — **데이터 곡선은
+     expr 기반 funcgraph**(expr·domainMin/Max·planeId + 좌표 변환한 points)로 만들어야
+     재샘플·모달 재편집이 된다. (2026-07-25 MCP 서버 패치로 add_graph의 plane에 위 필드
+     전달 가능 — 단 서버 재시작 후부터)
 
 ## 갭 목록 (평가원 문법 중 5E에 없는 것 → 우회 or 5E 기능 추가 후보)
 
