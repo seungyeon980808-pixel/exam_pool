@@ -88,11 +88,21 @@ add_graph
            axisLabelSize:4.5, tickLabelSize:3.7, # ← cellMm 6에 대한 앱 공식값
            axisLabelScale:1, tickLabelScale:1, labelScale:1,
            strokeWidth:0.3, lockAspect:false, labelType:"quantity" }
-  functions: [ { expr:"3",   domain:{min:0,max:1}, strokeWidth:0.45 },
-               { expr:"4.5", domain:{min:1,max:2}, strokeWidth:0.45 } ]
+  functions: [ { expr:"3",   domain:{min:0,max:1}, strokeWidth:0.45,
+                 guides:[{x:1,y:3}] },                    # 수선의 발 = 내장 기능
+               { expr:"4.5", domain:{min:1,max:2}, strokeWidth:0.45,
+                 guides:[{x:1,y:4.5},{x:2,y:4.5}] } ]
 ```
 
-그래프를 더 크게 하려면 cellMm을 키우지 말고(글자가 같이 커진다) **눈금 간격을 잘게 나눠
+**수선의 발·표시점은 반드시 `guides`/`markers`로 만든다** — 직선 도구(`line`)로 따로 긋지
+않는다. guides는 그 점에서 x축·y축으로 가는 파선을 내리고, 평면에 종속되어 함께 움직이며,
+그래프 편집 모달에서 재편집된다. (2026-07-25 MCP 확장)
+
+**비율**: 값 범위가 좁은 축(예: 시간 0~2)을 그대로 두면 세로로 길쭉해 읽기 어렵다.
+`cellMmX`/`cellMmY`로 축별 칸 크기를 달리해 **가로·세로 물리 길이를 비슷하게** 맞춘다.
+글자 크기는 x축 칸 기준(`cellX`)이므로 라벨 크기도 그에 맞춰 계산한다.
+
+그래프를 더 크게 하려면 칸을 키우지 말고(글자가 같이 커진다) **눈금 간격을 잘게 나눠
 칸 수를 늘린다**.
 
 - **계단형은 상수함수 여러 개**(구간별 domain)로 만든다 — step 함수가 없어도 이걸로 된다.
