@@ -12,9 +12,18 @@
 
 4. **실물 예시 참조**: `assets/kice_figures/figures.json`에서 `type`으로 필터해 같은 유형 기출 PNG를 열어 구도를 따른다.
 5. **그린 뒤 자가 검증**: `read_app`으로 결과를 읽어 좌표 겹침·이탈을 확인하고, 사용자 화면 확인을 받기 전에는 완성 선언하지 않는다.
-6. 물리량 기호는 `formula`(수식체), 치수는 `line lineMode:lengthArrow`, 광선은 `middleArrow`, 회색은 `fillLevel` — text·기본 line으로 때우지 않는다.
-7. 중학교 문항이므로 가이드 9장(적용 노트)을 따른다: 문법은 그대로, 정보량·수식 수준은 낮춘다.
-8. 레시피가 실패하면 개별 그림에서 임기응변하지 말고 `PRD/09_5E_RECIPES.md`를 고친다.
+6. **앱에 기능이 있으면 무조건 그 기능을 쓴다.** 원시 도형(line·text)으로 흉내 내지 않는다.
+   - 물리량 기호 → `formula` / 치수 → `lineMode:"lengthArrow"` + `dimensionLabel`
+   - 광선 → `middleArrow` / 회색 → `fillLevel`
+   - **그래프 곡선 → `add_graph`의 `functions[].expr`** (수동 좌표 계산 금지)
+   - **수선의 발 → 평면 `annGuides`** / 임의 안내선 → 평면 `guideLines` / 눈금 숫자 → `showTickLabels`
+7. **렌더 결과가 이상하면 추측하지 말고 5E 소스를 읽는다** — `C:\Users\user\Desktop\project\51_5E\5E_main\js`.
+   5E는 사용자 본인 프로그램이라 앱 자체 버그일 수 있다. 버그면 5E 저장소에서 고친다.
+8. **캔버스 = 편집 모달 미리보기 = 적용 결과**가 항상 같아야 한다. 다르면 버그로 보고한다.
+9. 중학교 문항이므로 가이드 9장(적용 노트)을 따른다: 문법은 그대로, 정보량·수식 수준은 낮춘다.
+10. 레시피가 실패하면 개별 그림에서 임기응변하지 말고 `PRD/09_5E_RECIPES.md`를 고친다.
+11. 반영 시점: **앱 소스 수정 → 하드 리프레시(Ctrl+F5)**, **MCP 서버 수정 → Claude Code 재시작**.
+    헷갈리면 파일 모드로 결과 JSON을 열어 서버 버전을 먼저 확인한다.
 
 ## ExamPool MCP 규칙
 
