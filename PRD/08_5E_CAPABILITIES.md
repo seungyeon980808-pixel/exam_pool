@@ -76,6 +76,11 @@
    같은 렌더러 필드를 직접 넣을 수 있다. 단 로드 경로는 관대해서 틀린 필드는 조용히 무시된다.
 6. funcgraph에 `guideSegs`(파선 안내선)·`markers`(●점)·`arrowMarks`(곡선 위 화살촉)·
    `endLabel`(곡선 끝 라벨)을 직접 실을 수 있다 — 전부 세계 좌표.
+7-B. **평면에는 재편집 스펙 `graphCfg`가 함께 있어야 한다.** 그래프 편집 모달은 평면을 열 때
+   `plane.graphCfg`(xPos·yPos = 마지막 눈금 값, tickStepX/Y)를 1순위로 읽고, 없으면 평면
+   범위에서 역산한다 — 그 역산이 원래 설정과 달라져 "캔버스와 미리보기가 다른" 현상이 났다.
+   (2026-07-25 MCP 패치로 buildGraph가 자동 저장 — 서버 재시작 후 적용.)
+
 7-A. **글자 크기는 칸(cell) 크기에 비례한다 — w/h를 임의로 키우면 숫자가 거대해진다.**
    `cell = plane.w / (xMax - xMin)`, 앱 공식(graph-modal.js `setLabelSizes`):
    - `axisLabelSize = cell × 0.8 − 0.35`
