@@ -11,6 +11,9 @@ config.json
 docs_source/
 *.pdf
 
+# ===== 기출 PDF에서 추출한 그림 (평가원 저작물 파생 — 원본과 동일하게 제외) =====
+assets/kice_figures/
+
 # ===== Python =====
 __pycache__/
 *.pyc
