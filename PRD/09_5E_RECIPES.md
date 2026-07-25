@@ -48,7 +48,8 @@
 ```
 line      수평면: 가는 굵기보다 굵게(0.5), 오른쪽 끝 아래 text "수평면"
 svgAsset  cart ×3 (시점별 위치) — 파선 불가하므로 전부 실선(다중섬광 방식).
-          접지: cart 박스 하단을 바닥선보다 2mm 아래로 (하단 여백 보정)
+          **비율 필수**: h = w × 0.5151 (예 w 12 → h 6.18). 어기면 레터박싱으로 뜬다.
+          접지: y = 바닥선 - h + 0.1
 line      속도/진행 화살표: lineMode "arrow", strokeWidth 0.35, 첫 cart 위
 line      시점 안내선: 각 cart 중심에서 아래로 가는 파선 (0.2, dash 1.2/0.8)
 line      치수: lineMode "lengthArrow", strokeWidth 0.25,
@@ -62,21 +63,31 @@ text      "0초" "1초" "2초" 각 안내선 아래, "(가)" 그림 하단 중�
 
 **주의: 기능 명세(08)의 "소스 코드로 확정한 렌더 특성"을 먼저 읽을 것.**
 
+**데이터 곡선은 반드시 `add_graph` 한 번으로 만든다** (앱 자체 샘플러 사용 = 내장 함수
+기능). 손으로 좌표를 계산해 funcgraph를 add_objects 하지 않는다 — 좌표가 맞더라도
+재편집·재샘플이 안 되고, 여러 번의 호출로 나뉘면 자동저장 스냅샷이 중간에 끼어
+새로고침 후 계열만 사라질 수 있다.
+
 ```
-1) coordplane을 add_objects로 직접 생성 (add_graph는 richLabels를 못 켠다):
-   { type:"coordplane", x,y,w,h, axisVariant:"quadrant", xMin:0, xMax:3, yMin:0, yMax:6,
-     tickStepX:1, tickStepY:1.5, labelX:"시간(s)", labelY:"속도(m/s)", labelOrigin:"0",
-     showGrid:false, showTicks:true, showTickLabels:false, richLabels:true }
-2) read_app으로 평면 id 확보
-3) 계단·안내선을 funcgraph로 — points는 세계 좌표(mm)로 변환해 넣는다:
-   { type:"funcgraph", planeId:<id>, sourceKind:"points", curveStyle:"straight",
-     points:[세계좌표], strokeWidth:0.5 }          ← 데이터 계단(굵은 실선)
-   안내선(가는 파선)은 strokeWidth 0.2 + dashLength 1.2 + dashGap 0.8
-4) 눈금 값(3, 4.5 등)은 text로 축 바깥에 (필요한 값만)
+add_graph
+  at: { x: <평면 중심>, y: <평면 중심> }
+  plane: { w, h, xMin:0, xMax:<데이터최대+padXPos>, yMin:0, yMax:<데이터최대+padYPos>,
+           axisVariant:"quadrant",
+           gridStepX:1, gridStepY:1.5,           # 눈금 간격
+           gridCountXPos:2, gridCountYPos:3,     # 눈금 칸 수(데이터 범위까지만)
+           padXPos:1.6, padYPos:1.3,             # 마지막 눈금 뒤 화살표 여백
+           richLabels:true, gridToData:true,     # 그래프 도구와 같은 글씨체·격자
+           showGrid:false, showTicks:true, showTickLabels:true,
+           labelX:"시간(s)", labelY:"속도(m/s)", labelOrigin:"0" }
+  functions: [ { expr:"3",   domain:{min:0,max:1}, strokeWidth:0.5 },
+               { expr:"4.5", domain:{min:1,max:2}, strokeWidth:0.5 } ]
 ```
 
-곡선형 그래프(포물선·사인 등)는 add_graph의 expr+domain을 쓰되, 평면은 위처럼
-richLabels 평면을 먼저 만들고 add_graph 대신 funcgraph 수동 배치를 검토한다.
+- **계단형은 상수함수 여러 개**(구간별 domain)로 만든다 — step 함수가 없어도 이걸로 된다.
+- 눈금 숫자는 `showTickLabels:true`로 앱이 찍게 둔다(수동 text 금지 — 위치가 어긋난다).
+- 불연속 연결선·값 안내선만 별도 `line`(파선 0.2 / dash 1.2·0.8)으로 얹는다.
+  세계 좌표 변환: `x_mm = box.x + (t-xMin)/(xMax-xMin)*w`, `y_mm = box.y + (yMax-v)/(yMax-yMin)*h`
+  (add_graph 결과 메시지가 평면 id와 크기를 알려주고, 박스 원점은 `at ∓ w/2, h/2`)
 
 ### 2-3. 광선도: 굴절 (초안)
 

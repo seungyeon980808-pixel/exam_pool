@@ -64,8 +64,14 @@
    끝 종단선은 `dimensionVariant`: basic(없음) | leftBar | rightBar | bothBars.
    라벨 크기는 `dimensionLabelSize`(mm).
 4. **svgAsset(cart 등)은 내장 SVG 이미지 방식 — dashLength가 안 먹는다** (파선 불가).
-   여러 시점 위치는 전부 실선으로 반복(다중섬광 방식). cart는 박스 하단에 ~2mm 여백이
-   있어 접지시키려면 박스 하단을 바닥선보다 2mm 아래로 내린다.
+   여러 시점 위치는 전부 실선으로 반복(다중섬광 방식).
+   **접지(중요)**: renderSvgAsset이 `preserveAspectRatio="xMidYMid meet"`로 그린다 →
+   w:h가 원본 비율과 다르면 상자 안에서 레터박싱되어 위아래에 빈 여백이 생기고 물체가
+   떠 보인다. **반드시 원본 비율을 지킬 것**:
+   - cart: 362.25 × 186.57 (h = w × 0.5151). 예: w 12 → h 6.18
+   - pulley: `describe_schema`의 기본값(43×38) 비율 확인 후 사용
+   비율을 맞추면 상자 하단 ≈ 접지선. cart는 내부에 하단 여백 1.6%(h 6.18mm에서 0.1mm)가
+   더 있으므로 바닥선 y에 대해 `y = 바닥 - h + 0.1` 로 두면 바퀴가 정확히 닿는다.
 5. add_objects는 스키마에 없는 필드도 **통과**시킨다(passthrough) — richLabels·dimensionLabel
    같은 렌더러 필드를 직접 넣을 수 있다. 단 로드 경로는 관대해서 틀린 필드는 조용히 무시된다.
 6. funcgraph에 `guideSegs`(파선 안내선)·`markers`(●점)·`arrowMarks`(곡선 위 화살촉)·
