@@ -80,6 +80,8 @@
    `plane.graphCfg`(xPos·yPos = 마지막 눈금 값, tickStepX/Y)를 1순위로 읽고, 없으면 평면
    범위에서 역산한다 — 그 역산이 원래 설정과 달라져 "캔버스와 미리보기가 다른" 현상이 났다.
    (2026-07-25 MCP 패치로 buildGraph가 자동 저장 — 서버 재시작 후 적용.)
+   같은 날 앱 패치: 편집 모달 미리보기가 실제 평면 박스(w/h)로 그리도록 수정 —
+   축별 칸 크기(cellMmX≠cellMmY) 평면도 '미리보기 = 캔버스 = 적용 결과'가 성립한다.
 
 7-A. **글자 크기는 칸(cell) 크기에 비례한다 — w/h를 임의로 키우면 숫자가 거대해진다.**
    `cell = plane.w / (xMax - xMin)`, 앱 공식(graph-modal.js `setLabelSizes`):
