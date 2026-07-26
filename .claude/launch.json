@@ -18,6 +18,18 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8634"],
       "port": 8634
+    },
+    {
+      "name": "5e-render-check",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8321", "--directory", "C:\\Users\\user\\Desktop\\project\\51_5E\\5E_main"],
+      "port": 8321
+    },
+    {
+      "name": "5e-app",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8190", "--directory", "C:\\Users\\user\\Desktop\\project\\51_5E\\5E_main"],
+      "port": 8190
     }
   ]
 }
