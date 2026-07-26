@@ -7,6 +7,8 @@
 1. `PRD/07_KICE_FIGURE_STYLE.md` — 평가원 도해 스타일 가이드 (무엇을 그릴지)
 2. `PRD/08_5E_CAPABILITIES.md` — 5E 기능 명세 (무엇으로 그릴 수 있는지: lineMode·labelType·fillLevel 등)
 3. `PRD/09_5E_RECIPES.md` — 문법→기능 레시피 (`[검증됨]` 레시피는 그대로 복제, 수치만 변경)
+   그리고 `PRD/10_5E_OBJECT_GAPS.md` — 5E에 아직 없는 부품 목록.
+   **없는 부품을 원시 도형으로 흉내 내지 말고, 5E에 도구를 추가한 뒤 그린다.**
 
 그리고:
 
