@@ -54,8 +54,9 @@ class TestTemplateOutput(unittest.TestCase):
         self.assertEqual(out[4], "그림나.png")
 
     def test_no_photo_template(self):
+        """사진 없는 합답형 — 실험 문구 없는 학교합답 템플릿으로 (2026-08-03 등록)."""
         out = ep.question_to_palette(hapdap(material=""), combos()).split("\n")
-        self.assertEqual(out[0], "\\합답형실험3선지\\")
+        self.assertEqual(out[0], "\\학교합답0사진5선지\\")
         self.assertEqual(len(out) - 1, 11)
         self.assertEqual(out[3], "3")                         # 사진 칸 없이 바로 점수
         self.assertEqual(out[4], "빛의 속력은 매질마다 다르다")   # 그다음이 ㄱ
@@ -103,8 +104,10 @@ class TestTemplateOutput(unittest.TestCase):
 
     def test_pick_template(self):
         self.assertEqual(ep.pick_template(hapdap()), "합답형1사진3선지")
-        self.assertEqual(ep.pick_template(hapdap(material="")), "합답형실험3선지")
-        self.assertEqual(ep.pick_template(hapdap(qtype="정답형")), "학교정답0사진1선지")
+        self.assertEqual(ep.pick_template(hapdap(material="")), "학교합답0사진5선지")
+        self.assertEqual(ep.pick_template(hapdap(qtype="정답형", material="")), "학교정답0사진1선지")
+        self.assertEqual(ep.pick_template(hapdap(qtype="정답형")), "정답형1사진")
+        self.assertEqual(ep.pick_template(hapdap(qtype="서술형", material="")), "서술형")
 
 
 # ===== 학교 지필용 정답형 =====
@@ -144,11 +147,23 @@ class TestCorrectAnswerTemplate(unittest.TestCase):
         self.assertIn("{그림은 검전기를 나타낸 것이다.", joined)
         self.assertIn("마찰에 대한 설명으로 옳은 것은?}", joined)
 
-    def test_photo_goes_into_block(self):
-        """정답형 템플릿엔 사진 칸이 없다 — 발문 블록 안에 라벨로 넣는다."""
+    def test_one_photo_uses_photo_template(self):
+        """사진 1장 정답형은 사진 칸이 있는 템플릿으로 (2026-08-03 등록)."""
         out = ep.question_to_palette(
-            jungdap(material="검전기01"), five("가", "나", "다", "라", "마"))
+            jungdap(material="검전기01"), five("가", "나", "다", "라", "마")).split("\n")
+        self.assertEqual(out[0], "\\정답형1사진\\")
+        self.assertEqual(len(out) - 1, 9)
+        self.assertEqual(out[3], "3")             # 점수
+        self.assertEqual(out[4], "검전기01")       # 사진 칸
+        self.assertEqual(out[5], "가")             # ①
+
+    def test_two_photos_go_into_block(self):
+        """사진 2장 정답형 템플릿은 없다 — 발문 블록 안에 라벨로 넣는다."""
+        out = ep.question_to_palette(
+            jungdap(material="검전기01, 검전기02"), five("가", "나", "다", "라", "마"))
+        self.assertIn("\\학교정답0사진1선지\\", out)
         self.assertIn("\\검전기01\\", out)
+        self.assertIn("\\검전기02\\", out)
 
     def test_missing_choices_use_dash(self):
         out = ep.question_to_palette(jungdap(), five("가", "나")).split("\n")
@@ -158,17 +173,27 @@ class TestCorrectAnswerTemplate(unittest.TestCase):
 
 # ===== 서술형 =====
 class TestEssay(unittest.TestCase):
-    def test_answer_box_and_points(self):
+    """2026-08-03 '서술형' 템플릿 등록 — 번호·발문·점수 3칸 + 답란 상자는 조각에 내장."""
+
+    def test_template_slots(self):
         q = jungdap(qtype="서술형", ask="까닭을 서술하시오.", default_points=5)
         out = ep.question_to_palette(q, [], num=12).split("\n")
-        self.assertIn("12. 까닭을 서술하시오. (5점)", out)
-        self.assertIn("\\표1*1\\", out)
-        self.assertEqual(out[-1], "-", "표 다음 줄의 '-' 가 빈 답란이 된다")
+        self.assertEqual(out[0], "\\서술형\\")
+        self.assertEqual(len(out) - 1, 3)
+        self.assertEqual(out[1], "12")                        # 번호
+        self.assertEqual(out[2], "까닭을 서술하시오.")           # 발문
+        self.assertEqual(out[3], "5")                         # 점수
 
     def test_passage_kept(self):
         q = jungdap(qtype="서술형", passage="그림은 전동기이다.", ask="원리를 쓰시오.")
         out = ep.question_to_palette(q, [])
         self.assertIn("그림은 전동기이다.", out)
+
+    def test_photo_goes_into_ask_block(self):
+        """서술형 템플릿엔 사진 칸이 없다 — 발문 블록 안에 라벨로 넣는다."""
+        q = jungdap(qtype="서술형", material="전동기01", ask="원리를 쓰시오.")
+        out = ep.question_to_palette(q, [])
+        self.assertIn("\\전동기01\\", out)
 
 
 # ===== 레거시 문법 충돌 방지 =====
