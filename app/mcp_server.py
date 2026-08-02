@@ -21,8 +21,10 @@ from . import db
 from .routes_bank import (EvidenceIn, PropIn, VariantIn, create_evidence,
                           create_proposition, create_variant, get_proposition,
                           list_propositions)
-from .routes_question import (check_question_api, get_question, get_set,
-                              list_questions, list_sets)
+from .routes_question import (ChoiceIn, QuestionIn, check_question_api,
+                              create_question as create_question_route,
+                              get_question, get_set, list_questions, list_sets,
+                              update_question as update_question_route)
 from . import pdf_indexer
 
 # 클라이언트가 처음 붙을 때 DB 가 없을 수 있다(앱을 한 번도 안 띄웠을 때).
@@ -182,6 +184,131 @@ def get_question_detail(question_id: int) -> dict:
 def check_question_rules(question_id: int) -> dict:
     """규칙 기반 자동 검토 결과. AI 의미 검토와 나란히 참고한다."""
     return _clean(check_question_api, question_id)
+
+
+# ===== 문항 조립 (ExamMaker — 청사진 슬롯을 채운다) =====
+# 쓰기 툴이지만 원칙은 읽기 툴과 같다: 근거 없는 내용을 지어내지 않는다.
+# 선지는 가급적 proposition_id/variant_id 로 Pool 의 명제·변형을 연결해,
+# 교사가 검토 화면에서 근거를 따라갈 수 있게 한다.
+
+@mcp.tool()
+def create_question(qtype: str, ask: str, passage: str = "", material: str = "",
+                    bogi_items: list[dict] | None = None, is_negative: bool = False,
+                    answer: str = "", default_points: float = 3.0, difficulty: str = "중",
+                    standard_code: str = "", intent: str = "", behavior: str = "",
+                    choices: list[dict] | None = None, origin_note: str = "") -> dict:
+    """문항을 만든다. origin 은 'AI초안'으로 고정 저장된다(첫 줄을 쓴 주체가 AI라는 사실).
+
+    qtype: "정답형" | "합답형" | "서술형".
+    material: 그림 파일명 (규약 {세트약칭}_{번호2자리}, 예 "26-1기말_03"). 그림 없으면 "".
+    bogi_items: 합답형 <보기> — [{"label":"ㄱ","text":"..."}] 형식.
+    choices: [{"ord":1,"text":"...","proposition_id":?, "variant_id":?, "combo":["ㄱ","ㄴ"],
+              "is_answer":false}] — Pool 명제와 연결하면 검토 화면에서 근거 추적이 된다.
+    standard_code: 대괄호 없이 저장돼 있으면 그대로, 화면 표기는 대괄호 포함.
+    반환: {id}
+    """
+    return _clean(create_question_route, QuestionIn(
+        qtype=qtype, ask=ask, passage=passage, material=material,
+        bogi_items=bogi_items or [], is_negative=is_negative, answer=answer,
+        default_points=default_points, difficulty=difficulty,
+        standard_code=standard_code or None, intent=intent, behavior=behavior,
+        origin="AI초안", origin_note=origin_note,
+        choices=[ChoiceIn(**c) for c in (choices or [])]))
+
+
+@mcp.tool()
+def update_question(question_id: int, ask: str = "", passage: str = "",
+                    material: str = "", answer: str = "", intent: str = "",
+                    bogi_items: list[dict] | None = None,
+                    choices: list[dict] | None = None) -> dict:
+    """문항을 부분 수정한다. 넘긴 필드만 바뀌고 나머지는 유지된다(빈 문자열/None = 유지).
+
+    material 을 지우려면 "-" 를 넘긴다. status 가 '완성'인 문항은 수정하지 않는다.
+    반환: {ok}
+    """
+    cur = _clean(get_question, question_id)
+    q, ch = cur["question"], cur["choices"]
+    if q["status"] == "완성":
+        raise ValueError("status 가 '완성'인 문항은 MCP 로 수정하지 않는다 — 화면에서 직접.")
+    merged = QuestionIn(
+        title=q["title"], qtype=q["qtype"], image_choices=bool(q["image_choices"]),
+        status=q["status"], review_note=q["review_note"],
+        is_negative=bool(q["is_negative"]),
+        passage=passage or q["passage"],
+        material=("" if material == "-" else (material or q["material"])),
+        ask=ask or q["ask"],
+        bogi_items=bogi_items if bogi_items is not None else q["bogi_items"],
+        answer=answer or q["answer"], default_points=q["default_points"],
+        difficulty=q["difficulty"], standard_code=q["standard_code"],
+        intent=intent or q["intent"], behavior=q["behavior"],
+        origin=q["origin"], origin_note=q["origin_note"],
+        choices=[ChoiceIn(**c) for c in choices] if choices is not None else [
+            ChoiceIn(ord=c["ord"], text=c["text"], proposition_id=c["proposition_id"],
+                     variant_id=c["variant_id"], combo=c["combo"],
+                     custom_evidence=c["custom_evidence"], is_answer=bool(c["is_answer"]))
+            for c in ch])
+    return _clean(update_question_route, question_id, merged)
+
+
+@mcp.tool()
+def get_blueprint(set_id: int) -> dict:
+    """세트의 청사진 — 슬롯별 계획(plan_*)과 채워진 문항 id 를 함께 본다.
+
+    출제 지시문과 대조하며 작업 순서를 잡을 때 먼저 호출한다.
+    반환: {set: {id, name, short_code, status, total_points},
+           slots: [{item_id, ord, points, plan_qtype, plan_standard_code, plan_topic,
+                    plan_is_negative, plan_needs_figure, plan_figure_hint,
+                    plan_situation, slot_status, question_id, figure_name}]}
+    figure_name 은 파일명 규약({short_code}_{ord 2자리})으로 계산된 값 — 그림을
+    그릴 때 5E 페이지 이름과 저장 파일명을 이 값으로 맞춘다.
+    """
+    conn = db.connect()
+    try:
+        s = conn.execute("SELECT * FROM exam_set WHERE id = ?", (set_id,)).fetchone()
+        if not s:
+            raise ValueError(f"세트를 찾을 수 없습니다: {set_id}")
+        rows = conn.execute(
+            "SELECT id AS item_id, ord, points, plan_qtype, plan_standard_code, "
+            " plan_topic, plan_is_negative, plan_needs_figure, plan_figure_hint, "
+            " plan_situation, slot_status, question_id "
+            "FROM set_item WHERE set_id = ? ORDER BY ord", (set_id,)).fetchall()
+    finally:
+        conn.close()
+    short = s["short_code"] or s["name"]
+    slots = []
+    for r in rows:
+        d = dict(r)
+        d["figure_name"] = f"{short}_{d['ord']:02d}" if d["plan_needs_figure"] else ""
+        slots.append(d)
+    return {"set": {"id": s["id"], "name": s["name"], "short_code": s["short_code"],
+                    "status": s["status"], "total_points": s["total_points"]},
+            "slots": slots}
+
+
+@mcp.tool()
+def attach_to_set(set_id: int, item_id: int, question_id: int) -> dict:
+    """생성한 문항을 청사진 슬롯에 끼운다. slot_status 는 'generated' 가 된다.
+
+    item_id: get_blueprint 가 준 슬롯 id. 이미 문항이 있는 슬롯이면 거부한다
+    (교사가 검토한 문항을 덮어쓰지 않기 위해 — 바꾸려면 화면에서).
+    반환: {ok}
+    """
+    conn = db.connect()
+    try:
+        r = conn.execute("SELECT set_id, question_id FROM set_item WHERE id = ?",
+                         (item_id,)).fetchone()
+        if not r or r["set_id"] != set_id:
+            raise ValueError(f"세트 {set_id} 에 슬롯 {item_id} 이 없습니다.")
+        if r["question_id"]:
+            raise ValueError("슬롯에 이미 문항이 있습니다. 교체는 화면에서 직접.")
+        if not conn.execute("SELECT 1 FROM question WHERE id = ?", (question_id,)).fetchone():
+            raise ValueError(f"문항을 찾을 수 없습니다: {question_id}")
+        conn.execute("UPDATE set_item SET question_id = ?, slot_status = 'generated' "
+                     "WHERE id = ?", (question_id, item_id))
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True}
 
 
 @mcp.tool()
