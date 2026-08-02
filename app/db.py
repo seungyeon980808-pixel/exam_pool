@@ -130,12 +130,24 @@ CREATE TABLE IF NOT EXISTS exam_set (
     created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
+-- 세트 안의 문항 자리. 청사진(ExamMaker) 도입 후에는 "아직 문항이 없는 슬롯"도
+-- 이 테이블의 행이다 — question_id 가 NULL 이면 계획만 있는 슬롯, 채워지면 완성.
+-- 계획→생성→확정이 별도 테이블 이동 없이 한 행의 생애주기로 흐른다.
 CREATE TABLE IF NOT EXISTS set_item (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     set_id      INTEGER NOT NULL REFERENCES exam_set(id) ON DELETE CASCADE,
-    question_id INTEGER NOT NULL REFERENCES question(id),
+    question_id INTEGER REFERENCES question(id),
     ord         INTEGER NOT NULL,
-    points      REAL
+    points      REAL,
+    -- 청사진 슬롯 필드 (plan_*) — 문항 생성 전의 '주문서'
+    plan_qtype         TEXT NOT NULL DEFAULT '',
+    plan_standard_code TEXT NOT NULL DEFAULT '',
+    plan_topic         TEXT NOT NULL DEFAULT '',
+    plan_is_negative   INTEGER NOT NULL DEFAULT 0,
+    plan_needs_figure  INTEGER NOT NULL DEFAULT 0,
+    plan_figure_hint   TEXT NOT NULL DEFAULT '',
+    plan_situation     TEXT NOT NULL DEFAULT '',
+    slot_status        TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS document (
@@ -222,6 +234,51 @@ def _migrate(conn: sqlite3.Connection) -> None:
     _add_column(conn, "question", "origin_note", "TEXT NOT NULL DEFAULT ''")
     _add_column(conn, "exam_set", "total_points", "REAL NOT NULL DEFAULT 100.0")
     _add_column(conn, "lesson", "indexed_at", "TEXT NOT NULL DEFAULT ''")
+
+    # ExamMaker 청사진 — 세트 약칭(그림 파일명 규약 {short_code}_{번호2자리}의 앞부분)
+    _add_column(conn, "exam_set", "short_code", "TEXT NOT NULL DEFAULT ''")
+    # 슬롯 계획 필드. question_id 를 NULL 허용으로 바꿔야 해서(SQLite 는 제약 변경 불가)
+    # 한 번은 테이블 재구성이 필요하다 — 데이터는 그대로 복사한다.
+    _migrate_set_item_slots(conn)
+
+
+def _migrate_set_item_slots(conn: sqlite3.Connection) -> None:
+    info = {r["name"]: r for r in conn.execute("PRAGMA table_info(set_item)")}
+    plan_cols = [
+        ("plan_qtype", "TEXT NOT NULL DEFAULT ''"),
+        ("plan_standard_code", "TEXT NOT NULL DEFAULT ''"),
+        ("plan_topic", "TEXT NOT NULL DEFAULT ''"),
+        ("plan_is_negative", "INTEGER NOT NULL DEFAULT 0"),
+        ("plan_needs_figure", "INTEGER NOT NULL DEFAULT 0"),
+        ("plan_figure_hint", "TEXT NOT NULL DEFAULT ''"),
+        ("plan_situation", "TEXT NOT NULL DEFAULT ''"),
+        ("slot_status", "TEXT NOT NULL DEFAULT ''"),
+    ]
+    for col, decl in plan_cols:
+        _add_column(conn, "set_item", col, decl)
+
+    # question_id NOT NULL 이면 재구성 (구버전 DB 한정, 한 번만 실행됨)
+    if info.get("question_id") is not None and info["question_id"]["notnull"]:
+        old_cols = "id, set_id, question_id, ord, points, " + ", ".join(c for c, _ in plan_cols)
+        conn.execute("ALTER TABLE set_item RENAME TO set_item_old")
+        conn.execute("""
+            CREATE TABLE set_item (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                set_id      INTEGER NOT NULL REFERENCES exam_set(id) ON DELETE CASCADE,
+                question_id INTEGER REFERENCES question(id),
+                ord         INTEGER NOT NULL,
+                points      REAL,
+                plan_qtype         TEXT NOT NULL DEFAULT '',
+                plan_standard_code TEXT NOT NULL DEFAULT '',
+                plan_topic         TEXT NOT NULL DEFAULT '',
+                plan_is_negative   INTEGER NOT NULL DEFAULT 0,
+                plan_needs_figure  INTEGER NOT NULL DEFAULT 0,
+                plan_figure_hint   TEXT NOT NULL DEFAULT '',
+                plan_situation     TEXT NOT NULL DEFAULT '',
+                slot_status        TEXT NOT NULL DEFAULT ''
+            )""")
+        conn.execute(f"INSERT INTO set_item ({old_cols}) SELECT {old_cols} FROM set_item_old")
+        conn.execute("DROP TABLE set_item_old")
 
 
 # ===== 성취기준 seed 적재 =====
