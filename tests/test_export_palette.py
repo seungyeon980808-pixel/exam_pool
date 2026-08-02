@@ -33,25 +33,44 @@ def combos():
 
 class TestTemplateOutput(unittest.TestCase):
     def test_photo1_template_and_slot_order(self):
+        """학교합답1사진5선지 — 번호·지문·사진·발문(점수 포함)·보기·선지."""
         out = ep.question_to_palette(hapdap(), combos(), num=7).split("\n")
-        self.assertEqual(out[0], "\\합답형1사진3선지\\")
+        self.assertEqual(out[0], "\\학교합답1사진5선지\\")
         self.assertEqual(len(out) - 1, 12, "빈칸이 12개여야 한다")
         self.assertEqual(out[1], "7")                         # 번호
-        self.assertIn("빛의 굴절", out[2])                     # 발문(지문+질문)
-        self.assertEqual(out[3], "굴절_그림01")                # 사진
-        self.assertEqual(out[4], "3")                         # 점수 — 〈보기〉 바로 앞
+        self.assertIn("빛의 굴절", out[2])                     # 지문
+        self.assertEqual(out[3], "\\굴절_그림01\\")            # 사진 — \라벨\ 이라야 그림이 된다
+        self.assertIn("고른 것은?", out[4])                    # 발문
+        self.assertIn("(3점)", out[4], "점수 칸이 없는 템플릿은 발문에 붙인다")
         self.assertEqual(out[5], "빛의 속력은 매질마다 다르다")   # ㄱ
         self.assertEqual(out[7], "평면거울 상은 좌우가 바뀐다")   # ㄷ
         self.assertEqual(out[8], "ㄱ")                        # ①
         self.assertEqual(out[10], "ㄱ, ㄷ")                    # ③
         self.assertEqual(out[12], "ㄱ, ㄴ, ㄷ")                 # ⑤
 
+    def test_passage_and_ask_do_not_repeat(self):
+        """지문 칸·발문 칸이 따로 있으면 서로의 내용을 겹쳐 넣지 않는다."""
+        out = ep.question_to_palette(hapdap(), combos()).split("\n")
+        self.assertIn("빛의 굴절", out[2])
+        self.assertNotIn("고른 것은?", out[2], "발문이 지문 칸에 또 들어가면 안 된다")
+        self.assertIn("고른 것은?", out[4])
+        self.assertNotIn("빛의 굴절", out[4], "지문이 발문 칸에 또 들어가면 안 된다")
+
+    def test_ask_slot_used_when_no_passage(self):
+        """지문이 없으면 지문 칸은 비우고(-) 발문은 발문 칸에 그대로 간다."""
+        out = ep.question_to_palette(hapdap(passage=""), combos()).split("\n")
+        self.assertEqual(out[2], "-")
+        self.assertIn("고른 것은?", out[4])
+
     def test_two_photos_template(self):
+        """학교합답2사진5선지 — 그림 2개 칸 + 발문·점수 칸이 따로 있다."""
         out = ep.question_to_palette(hapdap(material="그림가.png, 그림나.png"), combos()).split("\n")
-        self.assertEqual(out[0], "\\합답형2사진3선지\\")
-        self.assertEqual(len(out) - 1, 13)
-        self.assertEqual(out[3], "그림가.png")
-        self.assertEqual(out[4], "그림나.png")
+        self.assertEqual(out[0], "\\학교합답2사진5선지\\")
+        self.assertEqual(len(out) - 1, 14)
+        self.assertEqual(out[3], "\\그림가.png\\")
+        self.assertEqual(out[4], "\\그림나.png\\")
+        self.assertIn("고른 것은?", out[5])                    # 발문
+        self.assertEqual(out[6], "3")                         # 점수
 
     def test_no_photo_template(self):
         """사진 없는 합답형 — 실험 문구 없는 학교합답 템플릿으로 (2026-08-03 등록)."""
@@ -103,7 +122,7 @@ class TestTemplateOutput(unittest.TestCase):
         self.assertEqual(blocks[1].split("\n")[1], "2")
 
     def test_pick_template(self):
-        self.assertEqual(ep.pick_template(hapdap()), "합답형1사진3선지")
+        self.assertEqual(ep.pick_template(hapdap()), "학교합답1사진5선지")
         self.assertEqual(ep.pick_template(hapdap(material="")), "학교합답0사진5선지")
         self.assertEqual(ep.pick_template(hapdap(qtype="정답형", material="")), "학교정답0사진1선지")
         self.assertEqual(ep.pick_template(hapdap(qtype="정답형")), "정답형1사진")
@@ -154,7 +173,7 @@ class TestCorrectAnswerTemplate(unittest.TestCase):
         self.assertEqual(out[0], "\\정답형1사진\\")
         self.assertEqual(len(out) - 1, 9)
         self.assertEqual(out[3], "3")             # 점수
-        self.assertEqual(out[4], "검전기01")       # 사진 칸
+        self.assertEqual(out[4], "\\검전기01\\")    # 사진 칸 — \라벨\ 이라야 그림이 된다
         self.assertEqual(out[5], "가")             # ①
 
     def test_two_photos_go_into_block(self):

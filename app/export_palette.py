@@ -32,20 +32,22 @@ SKIP = "-"          # 이 빈칸은 비운다 (hwppalette parser.SKIP_MARK)
 #   따라서 points 는 bogi 보다 먼저다. (2026-07-22 메모는 순서가 반대로 적혀 있었다)
 TEMPLATES = {
     # 54c6380dd2d545efb68214a5bfa5a5c7.hwp
+    #   ask_builtin: 조각 본문에 "이에 대한 설명으로 옳은 것을 <보기>에서 모두
+    #   고른 것은?" 이 이미 박혀 있다 → 발문을 지문 칸에 또 넣으면 두 번 나온다.
     "합답형1사진3선지": {
-        "slot_count": 12,
+        "slot_count": 12, "ask_builtin": True,
         "slots": ["num", "passage", "photo1", "points",
                   "bogi1", "bogi2", "bogi3", "c1", "c2", "c3", "c4", "c5"],
     },
     # 1d64d6825a3742f7ac62946b980d9205.hwp
     "합답형2사진3선지": {
-        "slot_count": 13,
+        "slot_count": 13, "ask_builtin": True,
         "slots": ["num", "passage", "photo1", "photo2", "points",
                   "bogi1", "bogi2", "bogi3", "c1", "c2", "c3", "c4", "c5"],
     },
     # 7e0d6662e63340089369f353124761bd.hwp
     "합답형실험3선지": {
-        "slot_count": 11,
+        "slot_count": 11, "ask_builtin": True,
         "slots": ["num", "passage", "points",
                   "bogi1", "bogi2", "bogi3", "c1", "c2", "c3", "c4", "c5"],
     },
@@ -56,6 +58,24 @@ TEMPLATES = {
     "학교정답0사진1선지": {
         "slot_count": 8,
         "slots": ["num", "ask", "points", "c1", "c2", "c3", "c4", "c5"],
+    },
+    # ── 학교 지필 양식 (조각에 발문이 박혀 있지 않아 부정발문을 쓸 수 있고,
+    #    선지가 5칸 가로 배치다). 칸 순서는 2026-08-03 에 S1..Sn 을 채워 PDF 로
+    #    떠서 눈으로 확인했다(tools/slot_dump 방식). ──
+    #   \.  \        ← 번호, 지문
+    #   ┌ 자료 상자 ┐ ← 사진
+    #   \            ← 발문 (점수는 발문 문장에 붙인다)
+    #   〈보 기〉 ㄱㄴㄷ / ① ~ ⑤
+    "학교합답1사진5선지": {
+        "slot_count": 12,
+        "slots": ["num", "passage", "photo1", "ask_points",
+                  "bogi1", "bogi2", "bogi3", "c1", "c2", "c3", "c4", "c5"],
+    },
+    #   \.  \ / 그림 \ , \ + (가)(나) 캡션 내장 / \ (\점) / 보기 / 선지
+    "학교합답2사진5선지": {
+        "slot_count": 14,
+        "slots": ["num", "passage", "photo1", "photo2", "ask", "points",
+                  "bogi1", "bogi2", "bogi3", "c1", "c2", "c3", "c4", "c5"],
     },
     # ── 2026-08-03 tools/make_exam_fragments.py 로 생성·등록한 3종 ──
     # 순서는 등록 직후 insert_template_filled 에 S1..Sn 을 채워 실측 확인했다.
@@ -80,9 +100,12 @@ TEMPLATES = {
 # 문항 → 템플릿 고르기. (유형, 사진 개수) 로 찾는다.
 # 값이 빈 문자열이면 hwppalette 에 아직 등록되지 않은 조합이라 평문으로 떨어진다.
 TEMPLATE_FOR = {
-    ("합답형", 1): "합답형1사진3선지",
-    ("합답형", 2): "합답형2사진3선지",
+    # 합답형은 전부 '학교합답*' 계열을 쓴다. 옛 '합답형*3선지' 는 조각에 발문이
+    # 박혀 있어 부정발문을 표현할 수 없다(지문 칸에 또 넣으면 발문이 두 번 찍히고,
+    # 안 넣으면 '옳지 않은'이 통째로 사라진다) — 2026-08-03 실측.
     ("합답형", 0): "학교합답0사진5선지",
+    ("합답형", 1): "학교합답1사진5선지",
+    ("합답형", 2): "학교합답2사진5선지",
     ("정답형", 0): "학교정답0사진1선지",
     ("정답형", 1): "정답형1사진",
     # 사진 2장 정답형 템플릿은 없다 — 0사진 템플릿을 쓰고 사진은 발문 블록 안에
@@ -174,17 +197,19 @@ def _bogi_text(b) -> str:
     return (b.get("text") if isinstance(b, dict) else str(b)) or ""
 
 
-def _ask_cell(q: dict, photos: list[str], with_bogi: bool) -> str:
-    """발문 칸 하나에 들어갈 내용. 지문·사진·〈보기〉를 한 블록으로 합친다.
+def _ask_cell(q: dict, photos: list[str], with_bogi: bool,
+              with_passage: bool = True, suffix: str = "") -> str:
+    """발문 칸 하나에 들어갈 내용. 템플릿에 없는 요소만 여기에 합친다.
 
-    학교 정답형 템플릿에는 지문·사진 칸이 따로 없어서 이렇게 묶는다.
+    학교 정답형 템플릿에는 지문·사진 칸이 따로 없어서 묶어 넣지만, 지문 칸이
+    따로 있는 템플릿에서는 지문을 빼야 한다 — 안 그러면 지문이 두 번 나온다.
     """
     parts = []
-    if q.get("passage", "").strip():
+    if with_passage and q.get("passage", "").strip():
         parts.append(_esc(q["passage"].strip()))
     for p in photos:                    # 사진 라벨은 블록 안에서도 그림으로 들어간다
         parts.append("\\%s\\" % p)
-    parts.append(_negatize(_esc(q.get("ask", "").strip()), q.get("is_negative")))
+    parts.append(_negatize(_esc(q.get("ask", "").strip()), q.get("is_negative")) + suffix)
 
     if with_bogi:
         bogi = _bogi_list(q)
@@ -223,26 +248,42 @@ def question_to_palette(q: dict, choices: list[dict], num=1) -> str:
     def value(slot: str) -> str:
         if slot == "num":
             return str(num)
-        if slot == "ask":
-            # 지문·사진·(보기 칸이 없으면)보기까지 한 칸에 묶는다
+        if slot in ("ask", "ask_points"):
+            # 템플릿이 안 주는 것만 이 칸에 묶는다. ask_points 는 점수 칸이 따로
+            # 없는 템플릿용 — 발문 문장 끝에 "(N점)"을 붙인다.
+            pts = _points_text(q)
+            suffix = (" (%s점)" % pts) if (slot == "ask_points" and pts != SKIP) else ""
             return _ask_cell(q, photos if not _has_photo_slot(spec) else [],
-                             with_bogi=not has_bogi_slot)
+                             with_bogi=not has_bogi_slot,
+                             with_passage="passage" not in spec["slots"],
+                             suffix=suffix)
         if slot == "passage":
             # 지문과 발문을 한 칸에 넣는다 (템플릿은 '\. \' 한 칸만 준다).
             # 지문이 여러 줄이면 { } 블록으로 묶어야 한다 — 안 그러면 줄 수만큼
             # 빈칸을 잡아먹어 뒤의 점수·보기·선지가 통째로 한 칸씩 밀린다.
+            #
+            # 단, 발문이 따로 갈 곳이 있으면(발문 칸이 있거나 조각에 이미 박혀
+            # 있으면) 지문만 넣는다 — 안 그러면 같은 발문이 두 번 찍힌다
+            # (2026-08-03 실측). 지문이 없으면 그 칸이 비므로 발문이라도 넣는다.
             psg = _esc(q.get("passage", "").strip())
             ak = _negatize(_esc(q.get("ask", "").strip()), q.get("is_negative"))
+            if any(s in ("ask", "ask_points") for s in spec["slots"]):
+                ak = ""                 # 발문은 제 칸으로 간다
+            elif spec.get("ask_builtin"):
+                ak = "" if psg else ak  # 조각에 박혀 있다 — 지문이 없을 때만 채운다
             parts = [p for p in (psg, ak) if p]
             if not parts:
                 return SKIP
             if "\n" in psg:
                 return _block("\n".join(parts))
             return _guard(" ".join(parts)) or SKIP
+        # 사진 칸도 \파일이름\ 으로 감싼다. hwppalette 는 `\라벨\` 토큰만 그림으로
+        # 바꾸므로(parser._slot_value → build_segments), 맨 파일명을 넣으면 글자
+        # "EM26_01" 이 그대로 시험지에 박힌다 — 2026-08-03 실측으로 확인.
         if slot == "photo1":
-            return photos[0] if len(photos) >= 1 else SKIP
+            return "\\%s\\" % photos[0] if len(photos) >= 1 else SKIP
         if slot == "photo2":
-            return photos[1] if len(photos) >= 2 else SKIP
+            return "\\%s\\" % photos[1] if len(photos) >= 2 else SKIP
         if slot.startswith("bogi"):
             i = int(slot[-1]) - 1
             return _guard(_esc(_bogi_text(bogi[i]))) or SKIP if i < len(bogi) else SKIP
