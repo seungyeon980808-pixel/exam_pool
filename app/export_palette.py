@@ -18,37 +18,73 @@ import json
 
 SKIP = "-"          # 이 빈칸은 비운다 (hwppalette parser.SKIP_MARK)
 
-# 등록된 템플릿과 빈칸 순서 (2026-07-22 사용자 확인)
+# 등록된 템플릿과 빈칸 순서.
 #   slots 는 채울 값의 종류를 순서대로 적은 것이다.
 #   photo1/photo2 = 사진 칸, bogi = ㄱㄴㄷ, points = 점수, choice = 선지
+#
+# **빈칸 순서는 추측하지 말고 31_hwp_palette/fragments/*.hwp 를 직접 열어 확인한다.**
+# hwppalette 는 조각 파일 안의 역슬래시를 문서 순서대로 세어 채우므로, 표 안의
+# 셀 순서가 곧 빈칸 순서다. 아래는 2026-07-27 에 조각 파일을 열어 확인한 것이다.
+#
+#   합답형* 세 템플릿은 모두 본문에 아래 줄이 박혀 있고, 여기의 (\점) 이
+#   〈보 기〉 상자보다 **앞**에 온다:
+#       이에 대한 설명으로 옳은 것을 <보기>에서 모두 고른 것은? (\점)
+#   따라서 points 는 bogi 보다 먼저다. (2026-07-22 메모는 순서가 반대로 적혀 있었다)
 TEMPLATES = {
+    # 54c6380dd2d545efb68214a5bfa5a5c7.hwp
     "합답형1사진3선지": {
         "slot_count": 12,
-        "slots": ["num", "passage", "photo1", "bogi1", "bogi2", "bogi3",
-                  "points", "c1", "c2", "c3", "c4", "c5"],
+        "slots": ["num", "passage", "photo1", "points",
+                  "bogi1", "bogi2", "bogi3", "c1", "c2", "c3", "c4", "c5"],
     },
+    # 1d64d6825a3742f7ac62946b980d9205.hwp
     "합답형2사진3선지": {
         "slot_count": 13,
-        "slots": ["num", "passage", "photo1", "photo2", "bogi1", "bogi2", "bogi3",
-                  "points", "c1", "c2", "c3", "c4", "c5"],
+        "slots": ["num", "passage", "photo1", "photo2", "points",
+                  "bogi1", "bogi2", "bogi3", "c1", "c2", "c3", "c4", "c5"],
     },
+    # 7e0d6662e63340089369f353124761bd.hwp
     "합답형실험3선지": {
         "slot_count": 11,
-        "slots": ["num", "passage", "bogi1", "bogi2", "bogi3",
-                  "points", "c1", "c2", "c3", "c4", "c5"],
+        "slots": ["num", "passage", "points",
+                  "bogi1", "bogi2", "bogi3", "c1", "c2", "c3", "c4", "c5"],
+    },
+    # 학교 지필용 정답형(5지선다). 사진 칸이 없고 지문 칸도 따로 없다 —
+    # 지문이 있으면 발문 칸에 { } 블록으로 함께 넣는다.
+    #   fragments/f7fbdd7ad2684f14b3e4a4618fdc4547.hwp 를 열어 확인 (2026-07-27)
+    #   \.  /  \ (\점)  /  ① \  ② \  ③ \  ④ \  ⑤ \
+    "학교정답0사진1선지": {
+        "slot_count": 8,
+        "slots": ["num", "ask", "points", "c1", "c2", "c3", "c4", "c5"],
     },
 }
 
-# 문항 → 템플릿 고르기. 정답형 템플릿은 아직 등록 전이라 비어 있다
-# (hwppalette 에 만들고 여기 라벨을 적으면 그대로 출력된다).
+# 문항 → 템플릿 고르기. (유형, 사진 개수) 로 찾는다.
+# 값이 빈 문자열이면 hwppalette 에 아직 등록되지 않은 조합이라 평문으로 떨어진다.
 TEMPLATE_FOR = {
     ("합답형", 1): "합답형1사진3선지",
     ("합답형", 2): "합답형2사진3선지",
     ("합답형", 0): "합답형실험3선지",
-    ("정답형", 0): "",      # 미등록
-    ("정답형", 1): "",
-    ("정답형", 2): "",
+    # 정답형은 사진 칸이 있는 템플릿이 아직 없다. 사진이 있어도 0사진 템플릿을 쓰고
+    # 사진은 발문 블록 안에 \파일이름\ 으로 넣는다(사진 라벨은 슬롯을 끊지 않는다).
+    ("정답형", 0): "학교정답0사진1선지",
+    ("정답형", 1): "학교정답0사진1선지",
+    ("정답형", 2): "학교정답0사진1선지",
+    # 서술형은 템플릿 없이 평문 + 답란 표로 만든다 (question_to_palette 에서 분기).
+    ("서술형", 0): "",
+    ("서술형", 1): "",
+    ("서술형", 2): "",
 }
+
+# ※ 남은 빈칸: 사진 없는 합답형은 '합답형실험3선지' 로 나가는데, 이 템플릿에는
+#   [실험 과정]/[실험 결과] 가 본문에 박혀 있어 실험 문항이 아니면 어색하다.
+#   hwppalette 에 '학교합답0사진5선지' 를 등록하고 ("합답형", 0) 값을 바꾸면 해결된다.
+
+# hwppalette 는 줄 첫머리의 이 낱말들을 '시험문제 문법'으로 먼저 알아채고
+# \라벨\ 템플릿 경로를 건너뛴다. 지문에 우연히 들어가면 출력이 통째로 깨지므로
+# 콜론 앞에 공백을 넣어 무력화한다 (parser.parse 의 키 목록과 같다).
+LEGACY_KEYS = ("번호:", "발문:", "문:", "자료:", "사진자료:", "실험자료:",
+               "질문:", "보기:", "선지:", "선지1:", "선지3:", "선지5:")
 
 
 def _photos(material: str) -> list[str]:
@@ -77,6 +113,79 @@ def _negatize(ask: str, is_negative: bool) -> str:
     return ask
 
 
+def _guard(text: str) -> str:
+    """줄 첫머리가 hwppalette 의 '시험문제 문법' 키워드면 콜론 앞에 공백을 넣어 무력화한다.
+
+    이게 없으면 지문에 '자료:' 한 줄만 있어도 파서가 템플릿 경로 대신
+    레거시 경로로 빠져 시험지 전체가 엉뚱하게 조판된다.
+    """
+    out = []
+    for line in (text or "").split("\n"):
+        s = line.lstrip()
+        for k in LEGACY_KEYS:
+            if s.startswith(k):
+                line = line.replace(k, k[:-1] + " :", 1)
+                break
+        out.append(line)
+    return "\n".join(out)
+
+
+def _esc(text: str) -> str:
+    """원문에 들어 있는 '}' 를 escape 한다.
+
+    **반드시 _negatize 보다 먼저** 부를 것. 순서가 바뀌면 `\\굵게{...}` 의 닫는
+    괄호까지 escape 되어 굵게 서식이 통째로 깨진다.
+    """
+    return (text or "").replace("}", "\\}")
+
+
+def _block(text: str) -> str:
+    """여러 줄이면 { } 블록으로 감싼다 — hwppalette 는 한 칸에 한 줄이 원칙이라
+    지문처럼 줄이 여럿인 값은 블록으로 묶어야 한 칸에 들어간다."""
+    t = _guard((text or "").strip())
+    if not t:
+        return SKIP
+    if "\n" not in t:
+        return t
+    return "{" + t + "}"
+
+
+def _bogi_list(q: dict) -> list:
+    b = q.get("bogi_items")
+    if isinstance(b, str):
+        b = json.loads(b or "[]")
+    return b or []
+
+
+def _bogi_text(b) -> str:
+    return (b.get("text") if isinstance(b, dict) else str(b)) or ""
+
+
+def _ask_cell(q: dict, photos: list[str], with_bogi: bool) -> str:
+    """발문 칸 하나에 들어갈 내용. 지문·사진·〈보기〉를 한 블록으로 합친다.
+
+    학교 정답형 템플릿에는 지문·사진 칸이 따로 없어서 이렇게 묶는다.
+    """
+    parts = []
+    if q.get("passage", "").strip():
+        parts.append(_esc(q["passage"].strip()))
+    for p in photos:                    # 사진 라벨은 블록 안에서도 그림으로 들어간다
+        parts.append("\\%s\\" % p)
+    parts.append(_negatize(_esc(q.get("ask", "").strip()), q.get("is_negative")))
+
+    if with_bogi:
+        bogi = _bogi_list(q)
+        if bogi:
+            parts.append("〈보 기〉")
+            labels = ["ㄱ", "ㄴ", "ㄷ", "ㄹ", "ㅁ"]
+            for i, b in enumerate(bogi):
+                lab = (b.get("label") if isinstance(b, dict) else "") or \
+                      (labels[i] if i < len(labels) else str(i + 1))
+                parts.append(f"{lab}. {_esc(_bogi_text(b))}")
+
+    return _block("\n".join([p for p in parts if p]))
+
+
 def pick_template(q: dict) -> str:
     """이 문항에 쓸 템플릿 라벨. 없으면 빈 문자열."""
     photos = _photos(q.get("material", ""))
@@ -85,39 +194,48 @@ def pick_template(q: dict) -> str:
 
 def question_to_palette(q: dict, choices: list[dict], num=1) -> str:
     """문항 1개 → hwppalette 템플릿 호출 + 빈칸 값들."""
+    if q.get("qtype") == "서술형":
+        return _essay_to_palette(q, num)
+
     label = pick_template(q)
     if not label:
         return _fallback_text(q, choices, num)
 
     spec = TEMPLATES[label]
     photos = _photos(q.get("material", ""))
-    bogi = q.get("bogi_items")
-    if isinstance(bogi, str):
-        bogi = json.loads(bogi or "[]")
-    bogi = bogi or []
+    bogi = _bogi_list(q)
     ordered = sorted(choices, key=lambda c: c.get("ord", 0))
+    # 이 템플릿에 보기 칸이 따로 있는지 — 없으면 발문 블록 안에 〈보기〉를 넣는다.
+    has_bogi_slot = any(s.startswith("bogi") for s in spec["slots"])
 
     def value(slot: str) -> str:
         if slot == "num":
             return str(num)
+        if slot == "ask":
+            # 지문·사진·(보기 칸이 없으면)보기까지 한 칸에 묶는다
+            return _ask_cell(q, photos if not _has_photo_slot(spec) else [],
+                             with_bogi=not has_bogi_slot)
         if slot == "passage":
-            # 지문과 발문을 한 칸에 넣는다 (템플릿은 '\. \' 한 칸만 준다)
-            parts = [p for p in (q.get("passage", "").strip(),
-                                 _negatize(q.get("ask", "").strip(), q.get("is_negative"))) if p]
-            return " ".join(parts) or SKIP
+            # 지문과 발문을 한 칸에 넣는다 (템플릿은 '\. \' 한 칸만 준다).
+            # 지문이 여러 줄이면 { } 블록으로 묶어야 한다 — 안 그러면 줄 수만큼
+            # 빈칸을 잡아먹어 뒤의 점수·보기·선지가 통째로 한 칸씩 밀린다.
+            psg = _esc(q.get("passage", "").strip())
+            ak = _negatize(_esc(q.get("ask", "").strip()), q.get("is_negative"))
+            parts = [p for p in (psg, ak) if p]
+            if not parts:
+                return SKIP
+            if "\n" in psg:
+                return _block("\n".join(parts))
+            return _guard(" ".join(parts)) or SKIP
         if slot == "photo1":
             return photos[0] if len(photos) >= 1 else SKIP
         if slot == "photo2":
             return photos[1] if len(photos) >= 2 else SKIP
         if slot.startswith("bogi"):
             i = int(slot[-1]) - 1
-            if i < len(bogi):
-                b = bogi[i]
-                return (b.get("text") if isinstance(b, dict) else str(b)) or SKIP
-            return SKIP
+            return _guard(_esc(_bogi_text(bogi[i]))) or SKIP if i < len(bogi) else SKIP
         if slot == "points":
-            pt = q.get("default_points")
-            return str(int(pt)) if pt and float(pt).is_integer() else (str(pt) if pt else SKIP)
+            return _points_text(q)
         if slot.startswith("c"):
             i = int(slot[1:]) - 1
             return _choice_text(ordered[i]) if i < len(ordered) else SKIP
@@ -125,6 +243,40 @@ def question_to_palette(q: dict, choices: list[dict], num=1) -> str:
 
     lines = ["\\%s\\" % label]
     lines += [value(s) for s in spec["slots"]]
+    return "\n".join(lines)
+
+
+def _has_photo_slot(spec: dict) -> bool:
+    return any(s.startswith("photo") for s in spec["slots"])
+
+
+def _points_text(q: dict) -> str:
+    pt = q.get("default_points")
+    if not pt:
+        return SKIP
+    return str(int(pt)) if float(pt).is_integer() else str(pt)
+
+
+def _essay_to_palette(q: dict, num: int) -> str:
+    """서술형 — hwppalette 에 서술형 템플릿이 없어서 평문 + 답란 표로 만든다.
+
+    `\\표1*1\\` 다음 줄의 `-` 는 빈 칸 하나짜리 표가 되어 답란 역할을 한다.
+    (템플릿을 등록하면 TEMPLATE_FOR 의 ("서술형", 0) 에 라벨만 적으면 된다.)
+    """
+    photos = _photos(q.get("material", ""))
+    head = [f"{num}. " + _negatize(_esc(q.get("ask", "").strip()), q.get("is_negative")) +
+            (f" ({_points_text(q)}점)" if q.get("default_points") else "")]
+
+    body = []
+    if q.get("passage", "").strip():
+        body.append(_esc(q["passage"].strip()))
+    for p in photos:
+        body.append("\\%s\\" % p)
+
+    lines = []
+    if body:
+        lines.append(_guard("\n".join(body)))
+    lines += [_guard(head[0]), "\\표1*1\\", SKIP]
     return "\n".join(lines)
 
 

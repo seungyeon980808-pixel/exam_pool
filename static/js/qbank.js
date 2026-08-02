@@ -39,11 +39,12 @@
       <td class="cc">${esc(r.qtype)}${r.is_negative ? "·부정" : ""}</td>
       <td>${esc(r.ask)}</td><td class="cc code">${esc(r.standard_code || "-")}</td>
       <td class="cc">${esc(r.behavior || "-")}</td>
+      <td class="cc">${esc(r.origin || "-")}</td>
       <td class="cc">${esc(r.difficulty)}</td><td class="cc">${r.default_points}</td>
       <td class="cc"><button class="nz-tb mini" onclick="EP.editQuestion(${r.id}, true)">수정</button>
       <button class="nz-tb mini" onclick="EP.checkQuestion(${r.id})">검토</button>
       <button class="nz-tb mini" onclick="EP.delQuestion(${r.id})">×</button></td></tr>`).join("")
-      || '<tr class="nz-empty"><td colspan="10">문항이 없습니다.</td></tr>';
+      || '<tr class="nz-empty"><td colspan="11">문항이 없습니다.</td></tr>';
   };
 
   EP.editQuestion = async function (qid, jump) {
@@ -59,6 +60,10 @@
     $("qask").value = q.ask; $("qintent").value = q.intent;
     $("qpoints").value = q.default_points; $("qdiff").value = q.difficulty;
     if ($("qbehavior")) $("qbehavior").value = q.behavior || "";
+    if ($("qorigin")) $("qorigin").value = q.origin || "";
+    if ($("qoriginNote")) $("qoriginNote").value = q.origin_note || "";
+    // 서술형은 answer 칸에 모범답안 전문이 들어 있다 (선지형은 정답 번호)
+    if ($("qModelAnswer")) $("qModelAnswer").value = q.qtype === "서술형" ? (q.answer || "") : "";
     EP.setStdValue(q.standard_code || "");
     S.bogi = q.bogi_items || [];
     if ($("qstatus")) $("qstatus").value = q.status || "초안";

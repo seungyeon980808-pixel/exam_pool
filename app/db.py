@@ -212,6 +212,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
     _add_column(conn, "question", "image_choices", "INTEGER NOT NULL DEFAULT 0")
     # 이원목적분류표의 행동영역 (2022 개정: 지식·이해 / 과정·기능 / 가치·태도)
     _add_column(conn, "question", "behavior", "TEXT NOT NULL DEFAULT ''")
+
+    # 출처 — '누가 처음 썼나'라는 바뀌지 않는 사실. status(초안/검토중/완성)와는 다른 축이다.
+    #   status 에 'AI' 를 값으로 섞으면 AI 초안을 검토해 완성한 순간 출처가 지워진다.
+    #   경계는 '첫 줄을 누가 썼나'로 고정하고, 애매하면 AI초안 쪽으로 남긴다(보수적으로).
+    _add_column(conn, "question", "origin", "TEXT NOT NULL DEFAULT ''")
+    # 출처 메모 — 기출 출처, 적재 스크립트 이름 등. 제목과 달리 자주 고치지 않는 칸이라
+    # 스크립트가 자기가 넣은 문항을 다시 찾는 열쇠로도 쓴다 (seed:... 형식).
+    _add_column(conn, "question", "origin_note", "TEXT NOT NULL DEFAULT ''")
     _add_column(conn, "exam_set", "total_points", "REAL NOT NULL DEFAULT 100.0")
     _add_column(conn, "lesson", "indexed_at", "TEXT NOT NULL DEFAULT ''")
 

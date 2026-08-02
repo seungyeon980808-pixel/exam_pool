@@ -2,3 +2,4 @@ fastapi>=0.110
 uvicorn>=0.27
 pymupdf>=1.24
 pyperclip>=1.8
+mcp>=1.26          # 근거·명제·문항을 Claude Code 에서 다루는 MCP 서버 (app/mcp_server.py)

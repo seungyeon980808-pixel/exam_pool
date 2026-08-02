@@ -71,6 +71,8 @@ class QuestionIn(BaseModel):
     standard_code: str | None = None
     intent: str = ""
     behavior: str = ""          # 이원목적분류표의 행동영역
+    origin: str = ""            # 직접 / AI초안 / 기출변형 — 처음 쓴 주체(사실)
+    origin_note: str = ""       # 출처 메모 (기출 출처, 적재 스크립트 이름 등)
     choices: list[ChoiceIn] = []
 
 
@@ -126,12 +128,12 @@ def create_question(qin: QuestionIn):
         cur = conn.execute(
             "INSERT INTO question (title, qtype, image_choices, status, review_note, is_negative, "
             " passage, material, ask, bogi_items, answer, default_points, difficulty, standard_code, "
-            " intent, behavior) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " intent, behavior, origin, origin_note) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (qin.title.strip(), qin.qtype, int(qin.image_choices), qin.status, qin.review_note, int(qin.is_negative), qin.passage.strip(), qin.material.strip(),
              qin.ask.strip(), json.dumps(qin.bogi_items, ensure_ascii=False), qin.answer,
              qin.default_points, qin.difficulty, qin.standard_code, qin.intent.strip(),
-             qin.behavior.strip()))
+             qin.behavior.strip(), qin.origin.strip(), qin.origin_note.strip()))
         qid = cur.lastrowid
         _save_choices(conn, qid, qin.choices)
         conn.commit()
@@ -147,11 +149,11 @@ def update_question(qid: int, qin: QuestionIn):
         conn.execute(
             "UPDATE question SET title=?, qtype=?, image_choices=?, status=?, review_note=?, is_negative=?, "
             " passage=?, material=?, ask=?, bogi_items=?, answer=?, default_points=?, difficulty=?, "
-            " standard_code=?, intent=?, behavior=? WHERE id=?",
+            " standard_code=?, intent=?, behavior=?, origin=?, origin_note=? WHERE id=?",
             (qin.title.strip(), qin.qtype, int(qin.image_choices), qin.status, qin.review_note, int(qin.is_negative), qin.passage.strip(), qin.material.strip(),
              qin.ask.strip(), json.dumps(qin.bogi_items, ensure_ascii=False), qin.answer,
              qin.default_points, qin.difficulty, qin.standard_code, qin.intent.strip(),
-             qin.behavior.strip(), qid))
+             qin.behavior.strip(), qin.origin.strip(), qin.origin_note.strip(), qid))
         conn.execute("DELETE FROM choice WHERE question_id = ?", (qid,))
         _save_choices(conn, qid, qin.choices)
         conn.commit()
@@ -405,6 +407,7 @@ def set_reports(sid: int):
             "answer_key": {**key, "tsv": reports.to_tsv(key)},
             "blueprint": {**bp, "tsv": reports.to_tsv(bp)},
             "behaviors": reports.BEHAVIORS,
+            "origins": reports.ORIGINS,
         }
     finally:
         conn.close()

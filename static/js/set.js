@@ -139,6 +139,8 @@
            문항 ${sum.count}개 · 배점 합 ${sum.total_points}점 ·
            난이도 상 ${sum.difficulty["상"]} / 중 ${sum.difficulty["중"]} / 하 ${sum.difficulty["하"]} ·
            행동영역 ${Object.entries(sum.behavior).filter(([, n]) => n).map(([b, n]) => b + " " + n).join(" / ")}
+           ${sum.origin ? `<br><span class="nz-sub">출처(내부 관리용, 표에는 안 들어감) —
+             ${Object.entries(sum.origin).filter(([, n]) => n).map(([o, n]) => o + " " + n).join(" / ")}</span>` : ""}
          </div>`
       : `<div class="nz-repsum">문항 ${d.answer_key.rows.length}개 · 배점 합 ${d.answer_key.total_points}점</div>`;
 

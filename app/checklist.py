@@ -4,8 +4,13 @@
 각 검사는 (level, code, message) 를 낸다. level: 'error' | 'warn'.
 """
 
-VALID_QTYPES = ("정답형", "합답형")
+CHOICE_TYPES = ("정답형", "합답형")          # 선지를 갖는 유형
+VALID_QTYPES = CHOICE_TYPES + ("서술형",)   # 서술형은 선지·정답번호가 없다
 VALID_DIFF = ("상", "중", "하")
+
+# 출처 — 처음 쓴 주체. status(초안/검토중/완성)와 다른 축이다.
+VALID_ORIGINS = ("직접", "AI초안", "기출변형")
+AI_ORIGINS = ("AI초안",)          # 사람 확인 없이 시험에 내면 안 되는 출처
 
 # 발문이 부정형임을 알리는 말. '옳지 않은 것은?' 처럼 쓰인다.
 NEGATIVE_WORDS = ("않은", "아닌", "틀린", "옳지 않", "적절하지 않")
@@ -35,27 +40,39 @@ def check_question(q: dict, choices: list[dict]) -> list[dict]:
     if q.get("qtype") not in VALID_QTYPES:
         err("bad_qtype", f"문항 유형이 올바르지 않습니다: {q.get('qtype')}")
 
-    # 선지 수
-    if len(choices) < 2:
-        err("too_few_choices", f"선지가 {len(choices)}개뿐입니다. 최소 2개가 필요합니다.")
+    # 서술형은 선지·정답번호가 없다. 대신 모범답안(채점 기준)이 있어야 한다.
+    if q.get("qtype") == "서술형":
+        if not (q.get("answer") or "").strip():
+            err("no_model_answer", "모범답안이 비어 있습니다. 채점 기준을 적어 두세요.")
+    else:
+        # 선지 수
+        if len(choices) < 2:
+            err("too_few_choices", f"선지가 {len(choices)}개뿐입니다. 최소 2개가 필요합니다.")
 
-    # 정답 지정
-    answers = [c for c in choices if c.get("is_answer")]
-    if not answers:
-        err("no_answer", "정답이 지정되지 않았습니다.")
-    elif len(answers) > 1:
-        warn("multi_answer", f"정답이 {len(answers)}개 지정됐습니다. 복수정답이 의도한 것인지 확인하세요.")
+        # 정답 지정
+        answers = [c for c in choices if c.get("is_answer")]
+        if not answers:
+            err("no_answer", "정답이 지정되지 않았습니다.")
+        elif len(answers) > 1:
+            warn("multi_answer", f"정답이 {len(answers)}개 지정됐습니다. 복수정답이 의도한 것인지 확인하세요.")
 
-    # 근거 규칙: 모든 선지는 명제/변형/직접근거 중 하나를 가진다 (핵심 가치)
-    for c in choices:
-        has_evidence = (
-            c.get("proposition_id") or c.get("variant_id")
-            or (c.get("custom_evidence") or "").strip()
-            or (c.get("combo") or "").strip()  # 합답형은 보기가 근거를 가짐
-        )
-        if not has_evidence:
-            ord_ = c.get("ord", "?")
-            err("choice_no_evidence", f"{ord_}번 선지에 근거가 없습니다. (명제·변형·직접 입력 중 하나 필요)")
+        # 근거 규칙: 모든 선지는 명제/변형/직접근거 중 하나를 가진다 (핵심 가치)
+        for c in choices:
+            has_evidence = (
+                c.get("proposition_id") or c.get("variant_id")
+                or (c.get("custom_evidence") or "").strip()
+                or (c.get("combo") or "").strip()  # 합답형은 보기가 근거를 가짐
+            )
+            if not has_evidence:
+                ord_ = c.get("ord", "?")
+                err("choice_no_evidence", f"{ord_}번 선지에 근거가 없습니다. (명제·변형·직접 입력 중 하나 필요)")
+
+    # 출처
+    origin = (q.get("origin") or "").strip()
+    if not origin:
+        warn("no_origin", "출처가 지정되지 않았습니다. (직접 / AI초안 / 기출변형)")
+    elif origin not in VALID_ORIGINS:
+        warn("bad_origin", f"출처가 올바르지 않습니다: {origin}")
 
     # 난이도·배점
     if q.get("difficulty") not in VALID_DIFF:
@@ -221,6 +238,24 @@ def check_set(set_row: dict, items: list[dict], target_total=None) -> list[dict]
     covered = {it["question"].get("standard_code") for it in items if it["question"].get("standard_code")}
     if len(covered) < len(items) / 2:
         warn("low_coverage", f"성취기준 {len(covered)}종만 다룹니다. 편중되지 않았는지 확인하세요.")
+
+    # AI 초안인데 아직 검토가 끝나지 않은 문항 — 시험지로 나가기 전에 걸러야 한다.
+    # AI 문항은 사실 오류·정답 복수 성립 위험이 사람이 쓴 것보다 높다.
+    unchecked = [str(i) for i, it in enumerate(items, start=1)
+                 if (it["question"].get("origin") or "").strip() in AI_ORIGINS
+                 and it["question"].get("status") != "완성"]
+    if unchecked:
+        err("ai_draft_unreviewed",
+            f"AI 초안인데 아직 '완성'이 아닌 문항이 {len(unchecked)}개 있습니다 "
+            f"({', '.join(unchecked)}번). 검토 후 완성으로 바꾸세요.")
+
+    # 출처가 비어 있는 문항 — 나중에 되짚을 수 없다.
+    no_origin = [str(i) for i, it in enumerate(items, start=1)
+                 if not (it["question"].get("origin") or "").strip()]
+    if no_origin:
+        warn("set_no_origin",
+             f"출처가 비어 있는 문항이 {len(no_origin)}개 있습니다 ({', '.join(no_origin[:10])}"
+             f"{' 외' if len(no_origin) > 10 else ''}번).")
 
     # 세트로 묶여야만 보이는 것들 — 정답 번호 쏠림, 내용 중복
     issues += _check_answer_spread(items)

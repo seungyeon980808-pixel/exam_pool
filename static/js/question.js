@@ -6,10 +6,14 @@
 
   /* ---------- 유형 ---------- */
   EP.onTypeChange = function () {
-    const hap = $("qtype").value === "합답형";
+    const t = $("qtype").value;
+    const hap = t === "합답형";
+    const essay = t === "서술형";                        // 선지 없이 모범답안만 받는다
     $("bogiBox").classList.toggle("hidden", !hap);
     $("presetBox").classList.toggle("hidden", !hap);     // 정답형엔 프리셋 없음
-    $("imgChoiceBox").classList.toggle("hidden", hap);   // 그림 선지는 정답형만
+    $("imgChoiceBox").classList.toggle("hidden", hap || essay);  // 그림 선지는 정답형만
+    if ($("choiceArea")) $("choiceArea").classList.toggle("hidden", essay);
+    if ($("modelAnswerBox")) $("modelAnswerBox").classList.toggle("hidden", !essay);
     if (hap && !S.bogi.length) { EP.addBogi(); EP.addBogi(); EP.addBogi(); }
     EP.renderChoices();
   };
@@ -295,23 +299,33 @@
       material: $("qmaterial").value,
       ask: $("qask").value,
       bogi_items: $("qtype").value === "합답형" ? S.bogi : [],
-      answer: (() => { const i = S.choices.findIndex((c) => c.is_answer); return i >= 0 ? "①②③④⑤"[i] : ""; })(),
+      // 선지형은 정답 번호를, 서술형은 모범답안 전문을 answer 칸에 넣는다.
+      answer: $("qtype").value === "서술형"
+        ? ($("qModelAnswer") ? $("qModelAnswer").value : "")
+        : (() => { const i = S.choices.findIndex((c) => c.is_answer); return i >= 0 ? "①②③④⑤"[i] : ""; })(),
       default_points: parseFloat($("qpoints").value) || 3,
       difficulty: $("qdiff").value,
       standard_code: EP.stdValue() || null,
       intent: $("qintent").value,
       behavior: $("qbehavior") ? $("qbehavior").value : "",
+      origin: $("qorigin") ? $("qorigin").value : "",
+      origin_note: $("qoriginNote") ? $("qoriginNote").value : "",
       image_choices: $("imgChoices") ? $("imgChoices").checked : false,
       status: $("qstatus") ? $("qstatus").value : "초안",
       review_note: JSON.stringify(S.checkState),
-      choices: S.choices,
+      choices: $("qtype").value === "서술형" ? [] : S.choices,
     };
   };
 
   EP.saveQuestion = async function () {
     const q = EP.collectQuestion();
     if (!q.ask.trim()) return alert("발문을 입력하세요.");
-    if (!q.choices.length) return alert("선지를 추가하세요.");
+    // 서술형은 선지가 없다 — 대신 모범답안(채점 기준)이 있어야 한다.
+    if (q.qtype === "서술형") {
+      if (!(q.answer || "").trim()) return alert("서술형은 모범답안(채점 기준)을 적어야 합니다.");
+    } else if (!q.choices.length) {
+      return alert("선지를 추가하세요.");
+    }
     if (q.status === "완성") {
       const missing = CHECKS.filter((c) => !S.checkState[c.k]);
       if (missing.length) return alert("'완성'으로 저장하려면 확인 항목을 모두 체크해야 합니다.\n\n미확인: "
@@ -337,6 +351,9 @@
     EP.setStdValue("");
     $("isNeg").checked = false; $("qpoints").value = "3";
     if ($("qbehavior")) $("qbehavior").value = "";
+    if ($("qorigin")) $("qorigin").value = "";
+    if ($("qoriginNote")) $("qoriginNote").value = "";
+    if ($("qModelAnswer")) $("qModelAnswer").value = "";
     EP.renderBogi(); EP.renderChoices(); $("qCheckResult").innerHTML = "";
   };
 
@@ -345,12 +362,16 @@
     const q = EP.collectQuestion();
     const issues = [];
     if (!q.ask.trim()) issues.push("발문(질문)이 비어 있습니다.");
-    if (q.choices.length < 2) issues.push("선지가 2개 미만입니다.");
-    if (!q.choices.some((c) => c.is_answer)) issues.push("정답이 지정되지 않았습니다.");
-    q.choices.forEach((c, i) => {
-      const ok = c.proposition_id || c.variant_id || c.custom_evidence || (c.combo && c.combo.length);
-      if (!ok) issues.push(`${i + 1}번 선지에 근거가 없습니다.`);
-    });
+    if (q.qtype === "서술형") {
+      if (!(q.answer || "").trim()) issues.push("모범답안(채점 기준)이 비어 있습니다.");
+    } else {
+      if (q.choices.length < 2) issues.push("선지가 2개 미만입니다.");
+      if (!q.choices.some((c) => c.is_answer)) issues.push("정답이 지정되지 않았습니다.");
+      q.choices.forEach((c, i) => {
+        const ok = c.proposition_id || c.variant_id || c.custom_evidence || (c.combo && c.combo.length);
+        if (!ok) issues.push(`${i + 1}번 선지에 근거가 없습니다.`);
+      });
+    }
     if (!q.standard_code) issues.push("성취기준이 선택되지 않았습니다.");
 
     // 형식 너머 — 서버 checklist.py 와 같은 기준
@@ -359,6 +380,11 @@
     if (looksNeg && !q.is_negative) issues.push("발문이 부정형인데 '부정 문항' 표시가 꺼져 있습니다.");
     if (q.is_negative && !looksNeg) issues.push("'부정 문항'으로 표시했는데 발문에 부정어가 없습니다.");
     if (!q.behavior) issues.push("행동영역이 비어 있습니다 (이원목적분류표에 필요).");
+    if (!q.origin) issues.push("출처가 비어 있습니다 (직접 / AI초안 / 기출변형).");
+    if (q.origin === "AI초안" && q.status === "완성") {
+      // 막지는 않는다 — 검토를 마쳤다면 정당한 상태다. 다만 눈에 띄게 남긴다.
+      issues.push("AI 초안을 '완성'으로 표시했습니다. 사실 관계와 정답 성립을 직접 확인했는지 다시 보세요.");
+    }
 
     $("qCheckResult").innerHTML = issues.length
       ? `<div class="nz-issues err"><b>검토 결과 ${issues.length}건</b><ul>${issues.map((i) => `<li>${esc(i)}</li>`).join("")}</ul></div>`

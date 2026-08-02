@@ -129,7 +129,7 @@
               <div class="nz-secbody tight">
                 <div class="nz-fr">
                   <label>유형</label>
-                  <select id="qtype" style="max-width:96px" onchange="EP.onTypeChange()"><option>정답형</option><option>합답형</option></select>
+                  <select id="qtype" style="max-width:96px" onchange="EP.onTypeChange()"><option>정답형</option><option>합답형</option><option>서술형</option></select>
                   <label class="inline"><input type="checkbox" id="isNeg" /> 부정 발문</label>
                   <label class="inline hidden" id="imgChoiceBox"><input type="checkbox" id="imgChoices" onchange="EP.renderChoices()" /> 그림 선지</label>
                   <label class="inline">완성도</label>
@@ -144,6 +144,17 @@
                     <option value="">미지정</option>
                     <option>지식·이해</option><option>과정·기능</option><option>가치·태도</option>
                   </select>
+                </div>
+                <!-- 출처: '처음 누가 썼나'라는 바뀌지 않는 사실. 완성도(초안/검토중/완성)와 다른 축이다.
+                     경계는 '첫 줄을 누가 썼나'로 고정하고, 애매하면 AI초안으로 남긴다. -->
+                <div class="nz-fr">
+                  <label>출처</label>
+                  <select id="qorigin" style="max-width:104px">
+                    <option value="">미지정</option>
+                    <option>직접</option><option>AI초안</option><option>기출변형</option>
+                  </select>
+                  <label class="inline">출처 메모</label>
+                  <input id="qoriginNote" placeholder="기출 출처, 적재 스크립트 이름 등" style="flex:1" />
                 </div>
                 <div class="nz-fr" style="align-items:flex-start">
                   <label style="padding-top:5px">성취기준</label>
@@ -184,14 +195,23 @@
                   <button class="nz-tb mini" onclick="EP.addBogi()">＋ 보기</button>
                 </div>
 
-                <p class="nz-sub">선지</p>
-                <div id="choiceRows"></div>
-                <div id="lenHint" class="nz-lenhint"></div>
-                <div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap;align-items:center">
-                  <button class="nz-tb mini" onclick="EP.addChoice()">＋ 선지</button>
-                  <span id="presetBox" class="hidden" style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
-                    <span class="nz-lb" style="margin-left:4px">프리셋</span><span id="presetBtns"></span>
-                  </span>
+                <!-- 서술형 전용: 선지 대신 모범답안(채점 기준)을 받는다 -->
+                <div id="modelAnswerBox" class="hidden">
+                  <p class="nz-sub">모범답안 · 채점 기준</p>
+                  <textarea id="qModelAnswer" rows="5" style="width:100%"
+                    placeholder="배점별 채점 기준까지 적어 두면 채점할 때 그대로 씁니다."></textarea>
+                </div>
+
+                <div id="choiceArea">
+                  <p class="nz-sub">선지</p>
+                  <div id="choiceRows"></div>
+                  <div id="lenHint" class="nz-lenhint"></div>
+                  <div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap;align-items:center">
+                    <button class="nz-tb mini" onclick="EP.addChoice()">＋ 선지</button>
+                    <span id="presetBox" class="hidden" style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+                      <span class="nz-lb" style="margin-left:4px">프리셋</span><span id="presetBtns"></span>
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -267,6 +287,7 @@
             <th style="width:28px">#</th><th style="width:64px">완성도</th><th style="width:160px">문제 이름</th>
             <th style="width:54px">유형</th><th>발문</th>
             <th style="width:78px">성취기준</th><th style="width:70px">행동영역</th>
+            <th style="width:62px">출처</th>
             <th style="width:36px">난도</th><th style="width:34px">점</th>
             <th style="width:112px">관리</th>
           </tr></thead>

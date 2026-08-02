@@ -16,6 +16,7 @@ BLUEPRINT_COLS = ["문항", "단원", "성취기준", "평가 내용(출제 의�
 
 # 2022 개정 교육과정의 세 범주. 문항에 저장된 값이 없으면 빈칸으로 두고 교사가 채운다.
 BEHAVIORS = ["지식·이해", "과정·기능", "가치·태도"]
+ORIGINS = ["직접", "AI초안", "기출변형"]
 
 
 def _answer_of(question: dict, choices: list[dict]) -> str:
@@ -89,17 +90,25 @@ def blueprint(items: list[dict], unit_of_code: dict | None = None,
 
 
 def _summary(items: list[dict]) -> dict:
-    """표 아래 붙는 집계 — 난이도·행동영역 분포와 배점 합."""
+    """표 아래 붙는 집계 — 난이도·행동영역·출처 분포와 배점 합.
+
+    출처(origin)는 내부 관리용이다. 이원목적분류표는 학교에 내는 공식 서식이므로
+    대외 제출본에 넣을지는 학교 방침을 확인하고 정한다 — 기본은 화면에서만 본다.
+    """
     diff = {"상": 0, "중": 0, "하": 0}
     beh = {b: 0 for b in BEHAVIORS}
     beh["미지정"] = 0
+    org = {o: 0 for o in ORIGINS}
+    org["미지정"] = 0
     for it in items:
         q = it["question"]
         d = q.get("difficulty") or "중"
         diff[d] = diff.get(d, 0) + 1
         b = q.get("behavior") or ""
         beh[b if b in BEHAVIORS else "미지정"] += 1
-    return {"count": len(items), "difficulty": diff, "behavior": beh,
+        o = (q.get("origin") or "").strip()
+        org[o if o in ORIGINS else "미지정"] += 1
+    return {"count": len(items), "difficulty": diff, "behavior": beh, "origin": org,
             "total_points": _num(sum(_points_of(it) for it in items))}
 
 
