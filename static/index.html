@@ -416,6 +416,34 @@
 
         <div class="nz-metrics" id="setDash"></div>
 
+        <!-- ===== 청사진(계획) — AI 출제 주문서 ===== -->
+        <p class="nz-sub" style="margin-top:14px"><b>청사진(계획)</b> — 슬롯을 계획하고 지시문을 복사해
+          Claude Code 에 붙여넣으면, AI 가 문항과 그림을 채웁니다.</p>
+        <div class="nz-flt">
+          <span class="nz-lb">그림 약칭</span>
+          <input class="nz-inp" id="bpShort" placeholder="예: 26-1기말" style="max-width:130px" />
+          <button class="nz-tb" onclick="EP.saveShortCode()">약칭 저장</button>
+          <span class="nz-sub" style="margin:0">그림 파일명은 약칭_번호 (예: 26-1기말_03)로 정해집니다.</span>
+          <span style="flex:1"></span>
+          <button class="nz-tb" onclick="EP.addSlot()">＋ 슬롯 추가</button>
+          <button class="nz-tb blu" onclick="EP.copyPrompt()">출제 지시문 복사</button>
+        </div>
+        <table class="nz-t">
+          <thead><tr>
+            <th style="width:34px">번호</th><th style="width:76px">유형</th>
+            <th style="width:220px">성취기준</th><th>주제</th>
+            <th style="width:40px">부정</th><th style="width:40px">그림</th>
+            <th style="width:200px">그림 지시</th><th style="width:56px">배점</th>
+            <th style="width:56px">상태</th><th style="width:40px">제외</th>
+          </tr></thead>
+          <tbody id="bpRows"></tbody>
+        </table>
+        <div class="nz-foot"><span id="bpFoot">슬롯 0개</span><span></span></div>
+        <div id="bpPromptBox" class="hidden">
+          <p class="nz-sub" style="margin-top:10px">출제 지시문 (자동 복사가 막혀 있으면 아래를 복사)</p>
+          <textarea id="bpPromptText" class="nz-export" readonly></textarea>
+        </div>
+
         <div class="nz-tools">
           <button class="nz-tb" onclick="EP.checkSet()">세트 검토</button>
           <button class="nz-tb grn" onclick="EP.exportSet()">hwppalette 문법 복사</button>
@@ -456,6 +484,7 @@
   <script src="/static/js/question.js"></script>
   <script src="/static/js/qbank.js"></script>
   <script src="/static/js/set.js"></script>
+  <script src="/static/js/blueprint.js"></script>
   <script src="/static/js/doc.js"></script>
   <script src="/static/js/lesson.js"></script>
   <script src="/static/js/config.js"></script>

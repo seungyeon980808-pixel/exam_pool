@@ -23,6 +23,7 @@
     const sid = $("setSel").value;
     if (!sid) { $("setRows").innerHTML = ""; $("setDash").innerHTML = ""; return; }
     S.curSetId = sid;
+    EP.loadBlueprint();                       // 청사진(계획) 표 — 빈 슬롯은 여기서만 보인다
     const d = await api(`/api/sets/${sid}`);
     const dash = d.dashboard;
 

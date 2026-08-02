@@ -262,27 +262,12 @@ def get_blueprint(set_id: int) -> dict:
     figure_name 은 파일명 규약({short_code}_{ord 2자리})으로 계산된 값 — 그림을
     그릴 때 5E 페이지 이름과 저장 파일명을 이 값으로 맞춘다.
     """
+    from .routes_blueprint import blueprint
     conn = db.connect()
     try:
-        s = conn.execute("SELECT * FROM exam_set WHERE id = ?", (set_id,)).fetchone()
-        if not s:
-            raise ValueError(f"세트를 찾을 수 없습니다: {set_id}")
-        rows = conn.execute(
-            "SELECT id AS item_id, ord, points, plan_qtype, plan_standard_code, "
-            " plan_topic, plan_is_negative, plan_needs_figure, plan_figure_hint, "
-            " plan_situation, slot_status, question_id "
-            "FROM set_item WHERE set_id = ? ORDER BY ord", (set_id,)).fetchall()
+        return _clean(blueprint, conn, set_id)
     finally:
         conn.close()
-    short = s["short_code"] or s["name"]
-    slots = []
-    for r in rows:
-        d = dict(r)
-        d["figure_name"] = f"{short}_{d['ord']:02d}" if d["plan_needs_figure"] else ""
-        slots.append(d)
-    return {"set": {"id": s["id"], "name": s["name"], "short_code": s["short_code"],
-                    "status": s["status"], "total_points": s["total_points"]},
-            "slots": slots}
 
 
 @mcp.tool()

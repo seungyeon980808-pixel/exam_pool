@@ -543,3 +543,13 @@ table.nz-t { width: 100%; border-collapse: collapse; font-size: 11.8px; }
 .nz-lessonview mark { padding: 0 1px; border-radius: 2px; }
 .nz-kind { display: inline-block; margin-right: 5px; padding: 0 5px; border-radius: 2px;
   background: #e8f1e9; color: #2f7a46; font-size: 10.5px; }
+
+/* ===== 청사진(계획) — AI 출제 주문서 ===== */
+.nz-sel.mini, .nz-inp.mini { padding: 3px 6px; font-size: 11.5px; }
+.w100 { width: 100%; box-sizing: border-box; }
+.bp-chip { display: inline-block; padding: 1px 7px; font-size: 10.5px; border-radius: 9px;
+  border: 1px solid var(--nz-line); color: #57606a; background: #f6f8fa; white-space: nowrap; }
+.bp-chip.on { border-color: #0969da; color: #0969da; background: #eef4fc; }
+.bp-sub td { border-top: none; padding-top: 0; }
+.bp-sub .nz-inp { color: #57606a; }
+.bp-done td { color: #57606a; background: #fafbfc; }
