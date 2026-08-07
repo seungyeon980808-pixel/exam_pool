@@ -112,12 +112,70 @@
         <div class="nz-qlayout">
           <!-- 왼쪽: 문항 설계 -->
           <div class="nz-qmain">
+            <div class="au-grid">
+              <!-- ChatGPT 대화는 문항 데이터와 분리되어 별도 작성 세션에 저장된다. -->
+              <aside class="au-panel au-chat">
+                <div class="au-head">
+                  <b>ChatGPT 대화</b>
+                  <span id="auConnection" class="au-connection">확인 중</span>
+                </div>
+                <div id="auAccount" class="au-account">
+                  <span id="auAccountText">ChatGPT 계정 연결을 확인하고 있습니다.</span>
+                  <span class="au-account-actions">
+                    <button class="nz-tb mini blu hidden" id="auLogin" onclick="EP.authoringLogin()">ChatGPT 로그인</button>
+                    <button class="nz-tb mini" id="auDemo" onclick="EP.authoringUseProvider('mock')">로컬 시연</button>
+                    <button class="nz-tb mini hidden" id="auCodex" onclick="EP.authoringUseProvider('codex_local')">ChatGPT로 전환</button>
+                    <button class="nz-tb mini" onclick="EP.authoringRefreshConnection()">새로고침</button>
+                  </span>
+                </div>
+                <div class="au-settings">
+                  <label>작업 모드
+                    <select class="nz-sel mini" id="auMode" onchange="EP.authoringChangeMode(this.value)">
+                      <option value="quick">빠르게 작성</option>
+                      <option value="precise">정밀하게 수정</option>
+                      <option value="final">최종 검수</option>
+                    </select>
+                  </label>
+                  <label>모델
+                    <select class="nz-sel mini" id="auModel" onchange="EP.authoringChangeModel()"></select>
+                  </label>
+                  <label>추론
+                    <select class="nz-sel mini" id="auEffort" onchange="EP.authoringChangeModel()"></select>
+                  </label>
+                </div>
+                <div id="auMessages" class="au-messages">
+                  <div class="au-empty">문항 생성·수정 요청을 입력하세요. 답변은 제안으로만 표시되며 자동 반영되지 않습니다.</div>
+                </div>
+                <div class="au-compose">
+                  <textarea id="auPrompt" rows="4" placeholder="예: 이 성취기준에 맞는 정답형 문항 초안을 제안해줘"></textarea>
+                  <div class="au-compose-actions">
+                    <button class="nz-tb blu" id="auSend" onclick="EP.authoringSend()">보내기</button>
+                    <button class="nz-tb hidden" id="auCancel" onclick="EP.authoringCancel()">중단</button>
+                    <button class="nz-tb hidden" id="auRetry" onclick="EP.authoringRetry()">재시도</button>
+                  </div>
+                </div>
+              </aside>
+
+              <div class="au-current">
+                <div class="au-statebar">
+                  <span class="au-state-label">작성 상태</span>
+                  <span id="auStatus" class="au-status">텍스트 작성 중</span>
+                  <span id="auSaved" class="au-saved"></span>
+                  <span class="au-state-actions">
+                    <button class="nz-tb mini danger" onclick="EP.authoringDiscard()">작성 폐기</button>
+                    <button class="nz-tb mini" onclick="EP.authoringUndo()">반영 취소</button>
+                    <button class="nz-tb mini" id="auUnconfirm" onclick="EP.authoringUnconfirm()">확정 해제</button>
+                    <button class="nz-tb mini blu" id="auConfirm" onclick="EP.authoringConfirm()">텍스트 확정</button>
+                  </span>
+                </div>
+                <div id="auWarning" class="au-warning hidden"></div>
             <div class="nz-h"><b>문항 설계</b>
               <input class="nz-inp" id="qtitle" style="flex:1;min-width:180px;margin-left:10px"
                      placeholder="문제 이름 (인쇄되지 않음)" />
               <span style="display:flex;gap:4px">
                 <button class="nz-tb" onclick="EP.resetQuestionForm()">새 문항</button>
                 <button class="nz-tb" onclick="EP.checkQuestionDraft()">검토</button>
+                <button class="nz-tb grn" onclick="EP.previewQuestion()">출력 미리보기</button>
                 <button class="nz-tb blu" onclick="EP.saveQuestion()">저장</button>
               </span>
             </div>
@@ -213,6 +271,10 @@
                     </span>
                   </div>
                 </div>
+                <div class="nz-fr" style="align-items:flex-start;margin-top:9px">
+                  <label style="padding-top:5px">해설</label>
+                  <textarea id="qexplanation" rows="5" placeholder="정답이 성립하는 이유와 오답이 성립하지 않는 이유"></textarea>
+                </div>
               </div>
             </div>
 
@@ -221,7 +283,80 @@
               <div class="nz-secbar chk">저장 전 확인</div>
               <div class="nz-secbody tight" id="checkBox"></div>
             </div>
+              </div><!-- /au-current -->
 
+              <aside class="au-panel au-figure">
+                <div class="au-head">
+                  <b>문항 미리보기</b>
+                  <span id="auLivePreviewStatus" class="au-live-status">입력 대기</span>
+                </div>
+                <div class="au-live-preview" id="auLivePreview" aria-live="polite">
+                  <div class="au-live-preview-empty" id="auLivePreviewEmpty">
+                    발문을 입력하면 실제 시험지 양식으로 자동 조판됩니다.
+                  </div>
+                  <div class="au-live-preview-loading hidden" id="auLivePreviewLoading">
+                    <div><span class="nz-preview-spinner"></span><b id="auLivePreviewWork">조판 준비 중</b></div>
+                    <small id="auLivePreviewWorkHelp">입력 내용을 확인하고 있습니다.</small>
+                    <span class="au-live-progress"><i></i></span>
+                  </div>
+                  <img class="hidden" id="auLivePreviewImage" alt="현재 문항 자동 조판 미리보기" />
+                  <div class="au-live-preview-error hidden" id="auLivePreviewError"></div>
+                </div>
+                <div class="au-live-preview-actions">
+                  <span id="auLivePreviewMeta">입력이 멈추면 자동 갱신</span>
+                  <button class="nz-tb mini" onclick="EP.refreshQuestionPreview()">새로고침</button>
+                  <button class="nz-tb mini blu" onclick="EP.previewQuestion()">크게 보기</button>
+                </div>
+
+                <div class="au-head au-subhead"><b>문항 그림</b></div>
+                <div class="au-figure-options">
+                  <label>생성 방식
+                    <select id="auFigureProvider" onchange="EP.authoringFigureOptionsChanged()">
+                      <option value="fivee_assets">5E 자산 이용</option>
+                      <option value="raster_image">이미지로 그리기</option>
+                    </select>
+                  </label>
+                  <label>글자 및 수치
+                    <select id="auFigureText" onchange="EP.authoringFigureOptionsChanged()">
+                      <option value="off">넣지 않기</option>
+                      <option value="on">넣기</option>
+                    </select>
+                  </label>
+                  <label>장면 구성
+                    <select id="auFigureComposition" onchange="EP.authoringFigureOptionsChanged()">
+                      <option value="auto">문항에 맞게 자동 판단</option>
+                      <option value="combined">하나에 그리기</option>
+                      <option value="separate">각각 따로 그리기</option>
+                    </select>
+                  </label>
+                  <p id="auFigureOptionSummary"></p>
+                </div>
+                <div class="au-figure-preview" id="auFigurePreview">
+                  <span class="au-figure-icon">▧</span>
+                  <img id="auFigureImage" class="hidden" alt="확정된 문항 그림" />
+                  <div id="auFigureAssets" class="au-figure-assets hidden"></div>
+                  <b>연결된 그림 없음</b>
+                  <p id="auFigureHelp">5E는 별도 앱으로 열리며 문항별 프로젝트 파일을 사용합니다.</p>
+                </div>
+                <div class="au-figure-meta">
+                  <span>상태</span><b id="auFigureStatus">없음</b>
+                </div>
+                <div class="au-figure-path hidden" id="auFigurePath"></div>
+                <ol class="au-figure-steps">
+                  <li id="auFigureStepPlan">설계안 반영</li>
+                  <li id="auFigureStepEdit">그림 생성·선택적 5E 편집</li>
+                  <li id="auFigureStepConfirm">그림 확정·문항 연결</li>
+                </ol>
+                <button class="nz-tb blu w100" id="auFigureCreate" onclick="EP.authoringFigure('create')">1단계 · 그림 설계 요청</button>
+                <input class="hidden" type="file" id="auFigureImportFile" accept="image/png,image/jpeg,image/webp" onchange="EP.authoringImportImage(this.files[0])" />
+                <button class="nz-tb blu w100 hidden" id="auFigureImport" onclick="document.getElementById('auFigureImportFile').click()">생성 이미지 가져오기</button>
+                <button class="nz-tb w100 hidden" id="auFigureCopyPrompt" onclick="EP.authoringCopyImagePrompt()">이미지 생성 프롬프트 복사</button>
+                <button class="nz-tb blu w100 hidden" id="auFigureEdit" onclick="EP.authoringFigure('edit')">5E 다시 열어 편집</button>
+                <button class="nz-tb blu w100 hidden" id="auFigureSync" onclick="EP.authoringFigure('sync')">편집 내용 가져오기</button>
+                <button class="nz-tb w100 hidden" id="auFigureRevert" onclick="EP.authoringFigure('revert')">직전 반영으로 되돌리기</button>
+                <button class="nz-tb w100 hidden" id="auFigureConfirm" onclick="EP.authoringFigure('confirm')">3단계 · 그림 확정</button>
+              </aside>
+            </div><!-- /au-grid -->
           </div>
 
           <!-- 오른쪽: 근거 검색 (펼치면 화면 절반) -->
@@ -446,7 +581,10 @@
 
         <div class="nz-tools">
           <button class="nz-tb" onclick="EP.checkSet()">세트 검토</button>
+          <button class="nz-tb" onclick="EP.openIntegratedReview()">통합 검토</button>
           <button class="nz-tb grn" onclick="EP.exportSet()">hwppalette 문법 복사</button>
+          <button class="nz-tb grn" onclick="EP.previewSet()">출력 미리보기</button>
+          <button class="nz-tb grn" onclick="EP.typesetSet()">HWP로 조판</button>
           <button class="nz-tb blu" onclick="EP.openReports('answer')">정답표</button>
           <button class="nz-tb blu" onclick="EP.openReports('blueprint')">이원목적분류표</button>
         </div>
@@ -482,8 +620,10 @@
   <script src="/static/js/core.js"></script>
   <script src="/static/js/bank.js"></script>
   <script src="/static/js/question.js"></script>
+  <script src="/static/js/authoring.js"></script>
   <script src="/static/js/qbank.js"></script>
   <script src="/static/js/set.js"></script>
+  <script src="/static/js/preview.js"></script>
   <script src="/static/js/blueprint.js"></script>
   <script src="/static/js/doc.js"></script>
   <script src="/static/js/lesson.js"></script>

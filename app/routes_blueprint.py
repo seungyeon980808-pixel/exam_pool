@@ -80,14 +80,13 @@ def create_slot(sid: int, s: SlotIn):
     try:
         if not conn.execute("SELECT 1 FROM exam_set WHERE id = ?", (sid,)).fetchone():
             raise HTTPException(404, "세트를 찾을 수 없습니다.")
-        m = conn.execute("SELECT COALESCE(MAX(ord),0) AS m FROM set_item WHERE set_id = ?",
-                         (sid,)).fetchone()["m"]
         cur = conn.execute(
             "INSERT INTO set_item (set_id, question_id, ord, points, plan_qtype, "
             " plan_standard_code, plan_topic, plan_is_negative, plan_needs_figure, "
             " plan_figure_hint, plan_situation, slot_status) "
-            "VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'empty')",
-            (sid, m + 1, s.points, s.plan_qtype, s.plan_standard_code.strip(),
+            "VALUES (?, NULL, COALESCE((SELECT MAX(ord) FROM set_item WHERE set_id = ?), 0) + 1, "
+            " ?, ?, ?, ?, ?, ?, ?, 'empty')",
+            (sid, sid, s.points, s.plan_qtype, s.plan_standard_code.strip(),
              s.plan_topic.strip(), int(s.plan_is_negative), int(s.plan_needs_figure),
              s.plan_figure_hint.strip(), s.plan_situation.strip()))
         conn.commit()
@@ -129,6 +128,8 @@ def set_short_code(sid: int, body: ShortCodeIn):
         raise HTTPException(400, "약칭에는 공백과 \\ { } & / : * ? \" < > | 를 쓸 수 없습니다.")
     conn = db.connect()
     try:
+        if not conn.execute("SELECT 1 FROM exam_set WHERE id = ?", (sid,)).fetchone():
+            raise HTTPException(404, "세트를 찾을 수 없습니다.")
         conn.execute("UPDATE exam_set SET short_code = ? WHERE id = ?", (code, sid))
         conn.commit()
         return {"ok": True}

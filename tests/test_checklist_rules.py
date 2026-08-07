@@ -88,6 +88,15 @@ class TestAnswerSpread(unittest.TestCase):
         codes = [i["code"] for i in cl.check_set({}, items, target_total=16.0)]
         self.assertNotIn("answer_bias", codes)
 
+    def test_essay_does_not_make_four_choice_items_a_five_item_sample(self):
+        items = [item(o) for o in (1, 3, 4, 5)]
+        items.append({
+            "question": q_base(qtype="서술형", answer="모범 답안"),
+            "choices": [], "points": 4.0,
+        })
+        codes = [i["code"] for i in cl.check_set({}, items, target_total=20.0)]
+        self.assertNotIn("answer_unused", codes)
+
 
 class TestDuplicateProps(unittest.TestCase):
     def test_same_proposition_twice_warns(self):

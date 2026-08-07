@@ -17,7 +17,7 @@ class PropIn(BaseModel):
 
 
 @router.get("/propositions")
-def list_propositions(standard: str = "", unit: int = 0, q: str = ""):
+def list_propositions(standard: str = "", unit: int | None = None, q: str = ""):
     sql = """
         SELECT p.id, p.text, p.standard_code, p.unit_no, p.tags,
                p.class_verified, p.note, p.created_at, u.name AS unit_name,
@@ -63,6 +63,9 @@ def create_proposition(p: PropIn):
 def delete_proposition(prop_id: int):
     conn = db.connect()
     try:
+        exists = conn.execute("SELECT 1 FROM proposition WHERE id = ?", (prop_id,)).fetchone()
+        if not exists:
+            raise HTTPException(404, "명제를 찾을 수 없습니다.")
         conn.execute("DELETE FROM proposition WHERE id = ?", (prop_id,))
         conn.commit()
         return {"ok": True}
@@ -137,6 +140,9 @@ def create_variant(v: VariantIn):
 def delete_variant(vid: int):
     conn = db.connect()
     try:
+        exists = conn.execute("SELECT 1 FROM false_variant WHERE id = ?", (vid,)).fetchone()
+        if not exists:
+            raise HTTPException(404, "오답 변형을 찾을 수 없습니다.")
         conn.execute("DELETE FROM false_variant WHERE id = ?", (vid,))
         conn.commit()
         return {"ok": True}
@@ -172,6 +178,9 @@ def create_evidence(e: EvidenceIn):
 def delete_evidence(eid: int):
     conn = db.connect()
     try:
+        exists = conn.execute("SELECT 1 FROM evidence WHERE id = ?", (eid,)).fetchone()
+        if not exists:
+            raise HTTPException(404, "근거를 찾을 수 없습니다.")
         conn.execute("DELETE FROM evidence WHERE id = ?", (eid,))
         conn.commit()
         return {"ok": True}

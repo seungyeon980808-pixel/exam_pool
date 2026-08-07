@@ -53,6 +53,9 @@ def delete_document(doc_id: int):
     conn = db.connect()
     try:
         pdf_indexer.ensure_fts(conn)
+        exists = conn.execute("SELECT 1 FROM document WHERE id = ?", (doc_id,)).fetchone()
+        if not exists:
+            raise HTTPException(404, "문서를 찾을 수 없습니다.")
         conn.execute("DELETE FROM page_fts WHERE document_id = ?", (doc_id,))
         conn.execute("DELETE FROM document WHERE id = ?", (doc_id,))
         conn.commit()

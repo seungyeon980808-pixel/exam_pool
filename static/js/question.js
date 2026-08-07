@@ -113,16 +113,27 @@
 
   /* ---------- 명제 고르기 패널 ---------- */
   EP.loadPicker = async function () {
-    const q = $("pickSearch").value.trim();
+    const search = $("pickSearch");
+    const list = $("pickerList");
+    if (!search || !list) return;
+    const q = search.value.trim();
     let rows = await api("/api/propositions?" + new URLSearchParams(q ? { q } : {}));
     const allowPk = EP.allowedCodes();
     if (allowPk) rows = rows.filter((r) => allowPk.has(r.standard_code));
-    $("pickerList").innerHTML = rows.slice(0, 20).map((r) => `
+    list.innerHTML = rows.slice(0, 20).map((r, ri) => `
       <div class="nz-hit">
         <div class="nz-hit-snip">${esc(r.text)}</div>
         <div class="nz-hit-src">${esc(r.standard_code)} · 근거 ${r.ev_count} · 변형 ${r.var_count}</div>
-        <button class="nz-tb mini" onclick="EP.useProp(${r.id}, ${JSON.stringify(r.text).replace(/'/g, "&#39;")})">보기/선지로</button>
+        <button class="nz-tb mini" data-use-prop data-ri="${ri}">보기/선지로</button>
       </div>`).join("") || '<p class="nz-sub">명제가 없습니다.</p>';
+    // 데이터를 rows 변수에 보관하고 이벤트 위임으로 안전하게 처리
+    list._pickerRows = rows;
+    list.addEventListener("click", function (e) {
+      const btn = e.target.closest("[data-use-prop]");
+      if (!btn) return;
+      const r = list._pickerRows[parseInt(btn.dataset.ri)];
+      if (r) EP.useProp(r.id, r.text);
+    });
   };
 
   EP.useProp = function (id, text) {
@@ -307,6 +318,7 @@
       difficulty: $("qdiff").value,
       standard_code: EP.stdValue() || null,
       intent: $("qintent").value,
+      explanation: $("qexplanation") ? $("qexplanation").value : "",
       behavior: $("qbehavior") ? $("qbehavior").value : "",
       origin: $("qorigin") ? $("qorigin").value : "",
       origin_note: $("qoriginNote") ? $("qoriginNote").value : "",
@@ -339,6 +351,7 @@
     for (const rf of S.refs.filter((x) => !x.question_id)) {
       await EP.patch(`/api/exam-refs/${rf.id}`, { question_id: qid });
     }
+    if (EP.authoringBind) await EP.authoringBind(qid);
     EP.resetQuestionForm(); EP.loadQuestions();
     alert("문항을 저장했습니다.");
   };
@@ -347,7 +360,7 @@
     S.editingQid = null; S.bogi = []; S.choices = []; S.checkState = {};
     EP.renderChecklist();
     S.refs = []; S.curRefId = null; EP.renderRefs();
-    ["qtitle", "qpassage", "qmaterial", "qask", "qintent"].forEach((id) => { $(id).value = ""; });
+    ["qtitle", "qpassage", "qmaterial", "qask", "qintent", "qexplanation"].forEach((id) => { $(id).value = ""; });
     EP.setStdValue("");
     $("isNeg").checked = false; $("qpoints").value = "3";
     if ($("qbehavior")) $("qbehavior").value = "";
@@ -355,6 +368,7 @@
     if ($("qoriginNote")) $("qoriginNote").value = "";
     if ($("qModelAnswer")) $("qModelAnswer").value = "";
     EP.renderBogi(); EP.renderChoices(); $("qCheckResult").innerHTML = "";
+    if (EP.authoringNew) EP.authoringNew();
   };
 
   /** 저장 전 초안 검토: 서버 규칙과 같은 항목을 클라이언트에서 미리 본다 */

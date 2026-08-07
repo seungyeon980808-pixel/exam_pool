@@ -67,6 +67,9 @@ def create_lesson(body: LessonIn):
 def update_lesson(lid: int, body: LessonIn):
     conn = db.connect()
     try:
+        exists = conn.execute("SELECT 1 FROM lesson WHERE id = ?", (lid,)).fetchone()
+        if not exists:
+            raise HTTPException(404, "수업 기록을 찾을 수 없습니다.")
         pdf_indexer.ensure_fts(conn)
         conn.execute("UPDATE lesson SET date=?, class_name=?, transcript=?, summary=? WHERE id=?",
                      (body.date.strip(), body.class_name.strip(), body.transcript,
@@ -82,6 +85,9 @@ def update_lesson(lid: int, body: LessonIn):
 def delete_lesson(lid: int):
     conn = db.connect()
     try:
+        exists = conn.execute("SELECT 1 FROM lesson WHERE id = ?", (lid,)).fetchone()
+        if not exists:
+            raise HTTPException(404, "수업 기록을 찾을 수 없습니다.")
         pdf_indexer.ensure_fts(conn)
         lessons.unindex(conn, lid)
         conn.execute("DELETE FROM lesson WHERE id = ?", (lid,))

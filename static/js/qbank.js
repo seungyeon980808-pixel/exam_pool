@@ -58,6 +58,7 @@
     $("qtype").value = q.qtype; $("isNeg").checked = !!q.is_negative;
     $("qpassage").value = q.passage; $("qmaterial").value = q.material;
     $("qask").value = q.ask; $("qintent").value = q.intent;
+    if ($("qexplanation")) $("qexplanation").value = q.explanation || "";
     $("qpoints").value = q.default_points; $("qdiff").value = q.difficulty;
     if ($("qbehavior")) $("qbehavior").value = q.behavior || "";
     if ($("qorigin")) $("qorigin").value = q.origin || "";
@@ -73,6 +74,7 @@
     S.choices = d.choices.map((c) => ({ ...c, is_answer: !!c.is_answer }));
     EP.onTypeChange(); EP.renderBogi(); EP.renderChoices();
     EP.loadRefs(qid);
+    if (EP.authoringOpen) await EP.authoringOpen(qid, true);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 

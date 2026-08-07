@@ -73,11 +73,19 @@ def index_folder(root: str, doc_type: str = "교과서", progress=None) -> dict:
                 skipped.append({"path": path, "reason": "텍스트 없음(스캔본 추정)"})
                 continue
 
-            # 기존 문서 제거 후 재등록 (재인덱싱)
+            # 기존 문서 제거 후 재등록 (재인덱싱). SAVEPOINT 로 묶어
+            # 중간 크래시 시 이 문서만 원자적으로 롤백하고 나머지는 보존한다.
             old = conn.execute("SELECT id FROM document WHERE file_path = ?", (path,)).fetchone()
             if old:
-                conn.execute("DELETE FROM page_fts WHERE document_id = ?", (old["id"],))
-                conn.execute("DELETE FROM document WHERE id = ?", (old["id"],))
+                conn.execute("SAVEPOINT idx_doc")
+                try:
+                    conn.execute("DELETE FROM page_fts WHERE document_id = ?", (old["id"],))
+                    conn.execute("DELETE FROM document WHERE id = ?", (old["id"],))
+                except Exception:
+                    conn.execute("ROLLBACK TO idx_doc")
+                    raise
+                else:
+                    conn.execute("RELEASE idx_doc")
 
             cur = conn.execute(
                 "INSERT INTO document (title, doc_type, file_path, indexed_at) "

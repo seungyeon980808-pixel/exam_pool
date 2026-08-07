@@ -118,6 +118,49 @@
     if (!ok) alert("아래 상자의 내용을 복사해 한글에 붙여넣으세요.");
   };
 
+  EP.typesetSet = async function () {
+    if (!S.curSetId) return alert("세트를 먼저 고르세요.");
+    try {
+      const r = await post(`/api/sets/${S.curSetId}/typeset`, {});
+      let state = null;
+      for (let i = 0; i < 60; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        state = await api(`/api/integrations/hwppalette/process/${r.pid}`);
+        if (!state.running) break;
+      }
+      if (state && state.returncode !== null && !state.ok) {
+        const detail = (state.output || "CLI 실행 로그를 확인하세요.").slice(-1200);
+        throw new Error(`hwpPalette 조판이 실패했습니다.\n\n${detail}`);
+      }
+      if (!state || state.running) {
+        return alert(`${r.count}개 문항을 hwpPalette로 전달했습니다. 조판이 계속 진행 중입니다.\n\n${r.markdown_path}`);
+      }
+      alert(`${r.count}개 문항 조판을 완료했습니다.\n한글에서 결과를 확인하고 직접 저장하세요.\n\n${r.markdown_path}`);
+    } catch (e) { alert(e.message || "HWP 조판을 시작하지 못했습니다."); }
+  };
+
+  EP.openIntegratedReview = async function () {
+    if (!S.curSetId) return alert("세트를 먼저 고르세요.");
+    const r = await api(`/api/sets/${S.curSetId}/review-report`);
+    const setIssues = r.issues.length
+      ? `<div class="nz-review-card nz-review-set"><b>세트 전체 검토</b><ul>${r.issues.map((x) =>
+          `<li class="${x.level === "error" ? "err" : "warn"}">${esc(x.message)}</li>`).join("")}</ul></div>`
+      : `<div class="nz-review-card nz-review-set"><b>세트 전체 검토 통과</b></div>`;
+    const cards = r.items.map((it) => {
+      const issues = it.issues.length
+        ? it.issues.map((x) => `<li>${esc(x.message)}</li>`).join("")
+        : "<li>핵심 규칙 통과</li>";
+      const evidence = `${it.evidence_count}/${it.choice_count}`;
+      return `<div class="nz-review-card">
+        <div><b>${it.ord}번</b> <span class="bp-chip">${esc(it.standard_code || "미지정")}</span>
+          <span class="bp-chip ${it.has_figure ? "on" : ""}">그림 ${it.has_figure ? "확정" : it.figure_status}</span></div>
+        <p>${esc(it.ask)}</p><small>근거 연결 ${evidence} · 출처 ${esc(it.origin || "미지정")} · 상태 ${esc(it.status)}</small>
+        <ul>${issues}</ul></div>`;
+    }).join("");
+    $("setCheckResult").innerHTML = `<div class="nz-review-report">
+      <h3>통합 검토 · ${esc(r.set.name)}</h3>${setIssues}${cards || "문항이 없습니다."}</div>`;
+  };
+
   /* ---------- 제출 서류: 정답표 · 이원목적분류표 ---------- */
   // 문항을 다 만들고 나면 손으로 다시 만들던 두 장이다. 이미 있는 값으로 세운다.
   let reportCache = null;

@@ -45,6 +45,7 @@ window.EP = window.EP || {};
     viewer: { docId: null, page: 1, lastPage: 1 },
     dragQid: null,
     docTypes: {},
+    authoringSessionId: null,
   };
 
   EP.LABELS = ["ㄱ", "ㄴ", "ㄷ", "ㄹ", "ㅁ"];
@@ -53,7 +54,12 @@ window.EP = window.EP || {};
 
   /* ---------- 통신 ---------- */
   EP.api = async function (url, opts) {
-    const res = await fetch(url, opts);
+    let res;
+    try {
+      res = await fetch(url, opts);
+    } catch (e) {
+      throw new Error("서버 연결 실패 — ExamPool이 실행 중인지 확인하세요.");
+    }
     if (!res.ok) throw new Error((await res.text()).slice(0, 300));
     return res.json();
   };
@@ -71,6 +77,8 @@ window.EP = window.EP || {};
   /* ---------- 공용 도구 ---------- */
   EP.esc = (s) => String(s ?? "").replace(/[&<>"]/g,
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  EP.escAttr = (s) => String(s ?? "").replace(/[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   EP.$ = (id) => document.getElementById(id);
 
   EP.debounce = function (fn, ms) {
@@ -547,6 +555,7 @@ window.EP = window.EP || {};
         if (tab === "question") {
           EP.loadPicker(); EP.renderPresets(); EP.renderChecklist();
           EP.onTypeChange(); EP.loadRefs(EP.S.editingQid);
+          if (EP.authoringInit) EP.authoringInit();
         }
         if (tab === "qbank") EP.loadQuestions();
         if (tab === "config") EP.loadConfig();

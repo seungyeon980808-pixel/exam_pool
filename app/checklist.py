@@ -236,8 +236,12 @@ def check_set(set_row: dict, items: list[dict], target_total=None) -> list[dict]
     for idx, it in enumerate(items, start=1):
         q_issues = check_question(it["question"], it["choices"])
         for qi in q_issues:
+            code = qi["code"]
+            msg = f"{idx}번 문항: {qi['message']}"
             if qi["level"] == "error":
-                err(qi["code"], f"{idx}번 문항: {qi['message']}")
+                err(code, msg)
+            else:
+                warn(code, msg)
 
     # 성취기준 커버리지 (참고용)
     covered = {it["question"].get("standard_code") for it in items if it["question"].get("standard_code")}

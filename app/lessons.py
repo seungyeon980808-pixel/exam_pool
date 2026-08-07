@@ -58,28 +58,42 @@ def unindex(conn: sqlite3.Connection, lesson_id: int) -> None:
 
 
 def index_lesson(conn: sqlite3.Connection, lesson_id: int) -> int:
-    """수업 기록 하나를 색인한다(기존 색인은 지우고 다시). 조각 수를 낸다."""
+    """수업 기록 하나를 색인한다(기존 색인은 지우고 다시). 조각 수를 낸다.
+    
+    SAVEPOINT 로 감싸 중간 크래시 시 이 수업만 원자적으로 롤백한다.
+    호출자가 conn.commit() 으로 최종 확정한다."""
     row = conn.execute("SELECT * FROM lesson WHERE id = ?", (lesson_id,)).fetchone()
     if not row:
         return 0
-    unindex(conn, lesson_id)
-    chunks = split_chunks(row["transcript"])
-    if not chunks:
-        conn.execute("UPDATE lesson SET indexed_at = '' WHERE id = ?", (lesson_id,))
-        return 0
-    title = title_of(row)
-    conn.executemany(
-        "INSERT INTO page_fts (body, doc_title, page_no, document_id) VALUES (?,?,?,?)",
-        [(c, title, i + 1, doc_id_of(lesson_id)) for i, c in enumerate(chunks)],
-    )
-    conn.execute("UPDATE lesson SET indexed_at = datetime('now','localtime') WHERE id = ?",
-                 (lesson_id,))
+    conn.execute("SAVEPOINT lesson_idx")
+    try:
+        unindex(conn, lesson_id)
+        chunks = split_chunks(row["transcript"])
+        if not chunks:
+            conn.execute("UPDATE lesson SET indexed_at = '' WHERE id = ?", (lesson_id,))
+            conn.execute("RELEASE lesson_idx")
+            return 0
+        title = title_of(row)
+        conn.executemany(
+            "INSERT INTO page_fts (body, doc_title, page_no, document_id) VALUES (?,?,?,?)",
+            [(c, title, i + 1, doc_id_of(lesson_id)) for i, c in enumerate(chunks)],
+        )
+        conn.execute("UPDATE lesson SET indexed_at = datetime('now','localtime') WHERE id = ?",
+                     (lesson_id,))
+        conn.execute("RELEASE lesson_idx")
+    except Exception:
+        conn.execute("ROLLBACK TO lesson_idx")
+        raise
     return len(chunks)
 
 
 def reindex_all(conn: sqlite3.Connection) -> int:
+    """모든 수업 기록을 다시 색인한다. 개별 수업마다 SAVEPOINT 로 보호."""
     ids = [r["id"] for r in conn.execute("SELECT id FROM lesson").fetchall()]
-    return sum(index_lesson(conn, i) for i in ids)
+    total = 0
+    for i in ids:
+        total += index_lesson(conn, i)
+    return total
 
 
 def chunk_text(conn: sqlite3.Connection, lesson_id: int, chunk_no: int) -> dict | None:

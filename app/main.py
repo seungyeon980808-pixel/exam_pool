@@ -17,17 +17,20 @@ from .paths import BASE_DIR, STATIC_DIR
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    db.init_db()
-    conn = db.connect()
-    try:
-        from . import pdf_indexer
-        pdf_indexer.ensure_fts(conn)
-    finally:
-        conn.close()
-    # 스키마가 준비된 뒤에 백업한다. 하루 1회만 뜨므로 켤 때마다 느려지지 않는다.
-    backup.auto_backup_if_due()
-    yield
     from .config import logger
+    try:
+        db.init_db()
+        conn = db.connect()
+        try:
+            from . import pdf_indexer
+            pdf_indexer.ensure_fts(conn)
+        finally:
+            conn.close()
+        backup.auto_backup_if_due()
+    except Exception as e:
+        logger.error("ExamPool 시작 실패: %s", e)
+        raise
+    yield
     try:
         from .authoring.codex_app_server import codex_app_server
         codex_app_server.close()
