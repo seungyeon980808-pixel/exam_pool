@@ -3,19 +3,48 @@
 스키마는 02_DATA_MODEL.md 와 1:1. Phase 1 에서 화면이 없는 테이블(Lesson)도
 스키마는 미리 만들어 둔다 — 나중에 마이그레이션 없이 확장하기 위해.
 """
+import contextlib
 import json
 import sqlite3
 from pathlib import Path
 
 from .paths import DB_PATH, SEED_DIR
 
+_inited = False
 
 # ===== 연결 =====
 def connect() -> sqlite3.Connection:
+    global _inited
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 5000")
+    if not _inited:
+        _inited = True
+        try:
+            conn.executescript(SCHEMA)
+            _migrate(conn)
+            conn.commit()
+            _seed_standards(conn)
+        except Exception:
+            _inited = False
+            raise
     return conn
+
+
+@contextlib.contextmanager
+def transaction():
+    """트랜잭션 컨텍스트 매니저. 예외 발생 시 자동 롤백."""
+    conn = connect()
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 # ===== 스키마 =====
@@ -104,6 +133,7 @@ CREATE TABLE IF NOT EXISTS question (
     difficulty     TEXT NOT NULL DEFAULT '중',
     standard_code  TEXT REFERENCES standard(code),
     intent         TEXT NOT NULL DEFAULT '',
+    explanation    TEXT NOT NULL DEFAULT '',
     status         TEXT NOT NULL DEFAULT '초안',
     review_note    TEXT NOT NULL DEFAULT '{}',
     created_at     TEXT NOT NULL DEFAULT (datetime('now','localtime'))
@@ -188,6 +218,83 @@ CREATE TABLE IF NOT EXISTS exam_ref (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_ref_uniq ON exam_ref(document_id, page_no, item_num);
 
+-- 대화형 문항 제작 세션. 기존 question 은 확정·저장된 문항이고, 이 테이블은
+-- 저장 전 초안과 Codex 대화를 별도로 보관한다. Codex thread 가 사라져도 대화는 남는다.
+CREATE TABLE IF NOT EXISTS authoring_session (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    question_id        INTEGER UNIQUE REFERENCES question(id) ON DELETE SET NULL,
+    source_question_id INTEGER REFERENCES question(id) ON DELETE SET NULL,
+    provider           TEXT NOT NULL DEFAULT 'mock',
+    model              TEXT NOT NULL DEFAULT '',
+    reasoning_effort   TEXT NOT NULL DEFAULT '',
+    authoring_mode     TEXT NOT NULL DEFAULT 'quick',
+    provider_thread_id TEXT NOT NULL DEFAULT '',
+    provider_protocol  TEXT NOT NULL DEFAULT '',
+    status             TEXT NOT NULL DEFAULT 'text_drafting',
+    draft_json         TEXT NOT NULL DEFAULT '{}',
+    confirmed_json     TEXT NOT NULL DEFAULT '{}',
+    review_flags       TEXT NOT NULL DEFAULT '[]',
+    revision           INTEGER NOT NULL DEFAULT 0,
+    created_at         TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    updated_at         TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS authoring_message (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id     INTEGER NOT NULL REFERENCES authoring_session(id) ON DELETE CASCADE,
+    role           TEXT NOT NULL,
+    content        TEXT NOT NULL DEFAULT '',
+    proposals_json TEXT NOT NULL DEFAULT '[]',
+    created_at     TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS authoring_revision (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id  INTEGER NOT NULL REFERENCES authoring_session(id) ON DELETE CASCADE,
+    message_id  INTEGER REFERENCES authoring_message(id) ON DELETE SET NULL,
+    before_json TEXT NOT NULL,
+    after_json  TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS authoring_figure (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id          INTEGER NOT NULL UNIQUE REFERENCES authoring_session(id) ON DELETE CASCADE,
+    provider            TEXT NOT NULL DEFAULT 'stub',
+    status              TEXT NOT NULL DEFAULT 'none',
+    scene_spec_path     TEXT NOT NULL DEFAULT '',
+    fivee_project_path  TEXT NOT NULL DEFAULT '',
+    rendered_image_path TEXT NOT NULL DEFAULT '',
+    options_json        TEXT NOT NULL DEFAULT '{"provider":"fivee_assets","include_text":false,"composition":"combined"}',
+    revision            INTEGER NOT NULL DEFAULT 0,
+    previous_image_path TEXT NOT NULL DEFAULT '',
+    updated_at          TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS authoring_figure_asset (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id          INTEGER NOT NULL REFERENCES authoring_session(id) ON DELETE CASCADE,
+    panel_id            TEXT NOT NULL DEFAULT 'main',
+    ord                 INTEGER NOT NULL DEFAULT 1,
+    provider            TEXT NOT NULL DEFAULT 'fivee_assets',
+    prompt              TEXT NOT NULL DEFAULT '',
+    status              TEXT NOT NULL DEFAULT 'none',
+    scene_spec_path     TEXT NOT NULL DEFAULT '',
+    fivee_project_path  TEXT NOT NULL DEFAULT '',
+    source_image_path   TEXT NOT NULL DEFAULT '',
+    rendered_image_path TEXT NOT NULL DEFAULT '',
+    revision            INTEGER NOT NULL DEFAULT 0,
+    updated_at          TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    UNIQUE(session_id, panel_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_authoring_message_session
+    ON authoring_message(session_id, id);
+CREATE INDEX IF NOT EXISTS idx_authoring_revision_session
+    ON authoring_revision(session_id, id);
+CREATE INDEX IF NOT EXISTS idx_authoring_figure_asset_session
+    ON authoring_figure_asset(session_id, ord);
+
 CREATE INDEX IF NOT EXISTS idx_prop_std ON proposition(standard_code);
 CREATE INDEX IF NOT EXISTS idx_prop_unit ON proposition(unit_no);
 """
@@ -232,6 +339,19 @@ def _migrate(conn: sqlite3.Connection) -> None:
     # 출처 메모 — 기출 출처, 적재 스크립트 이름 등. 제목과 달리 자주 고치지 않는 칸이라
     # 스크립트가 자기가 넣은 문항을 다시 찾는 열쇠로도 쓴다 (seed:... 형식).
     _add_column(conn, "question", "origin_note", "TEXT NOT NULL DEFAULT ''")
+    # 대화형 제작 화면에서 사용하는 해설. 기존 문항은 빈 문자열로 안전하게 시작한다.
+    _add_column(conn, "question", "explanation", "TEXT NOT NULL DEFAULT ''")
+    # 대화 모델 설정은 문항별 작성 세션에만 보관한다. 인증 정보와 토큰은 저장하지 않는다.
+    _add_column(conn, "authoring_session", "model", "TEXT NOT NULL DEFAULT ''")
+    _add_column(conn, "authoring_session", "reasoning_effort", "TEXT NOT NULL DEFAULT ''")
+    _add_column(conn, "authoring_session", "authoring_mode", "TEXT NOT NULL DEFAULT 'quick'")
+    # 대화 기능 명세가 바뀌면 이전 Codex 스레드를 안전하게 교체하기 위한 버전 표식.
+    _add_column(conn, "authoring_session", "provider_protocol", "TEXT NOT NULL DEFAULT ''")
+    _add_column(conn, "authoring_session", "source_question_id", "INTEGER REFERENCES question(id) ON DELETE SET NULL")
+    _add_column(conn, "authoring_figure", "options_json", "TEXT NOT NULL DEFAULT '{\"provider\":\"fivee_assets\",\"include_text\":false,\"composition\":\"combined\"}'")
+    _add_column(conn, "authoring_figure", "revision", "INTEGER NOT NULL DEFAULT 0")
+    _add_column(conn, "authoring_figure", "previous_image_path", "TEXT NOT NULL DEFAULT ''")
+    _add_column(conn, "authoring_figure_asset", "prompt", "TEXT NOT NULL DEFAULT ''")
     _add_column(conn, "exam_set", "total_points", "REAL NOT NULL DEFAULT 100.0")
     _add_column(conn, "lesson", "indexed_at", "TEXT NOT NULL DEFAULT ''")
 
@@ -277,7 +397,12 @@ def _migrate_set_item_slots(conn: sqlite3.Connection) -> None:
                 plan_situation     TEXT NOT NULL DEFAULT '',
                 slot_status        TEXT NOT NULL DEFAULT ''
             )""")
-        conn.execute(f"INSERT INTO set_item ({old_cols}) SELECT {old_cols} FROM set_item_old")
+        try:
+            conn.execute(f"INSERT INTO set_item ({old_cols}) SELECT {old_cols} FROM set_item_old")
+        except Exception:
+            conn.execute("DROP TABLE set_item")
+            conn.execute("ALTER TABLE set_item_old RENAME TO set_item")
+            raise
         conn.execute("DROP TABLE set_item_old")
 
 
@@ -287,7 +412,11 @@ def _migrate_set_item_slots(conn: sqlite3.Connection) -> None:
 # 건드리지 않으므로, 없어진 성취기준을 지우지는 않는다.
 def _seed_standards(conn: sqlite3.Connection) -> None:
     seed_file = SEED_DIR / "standards.json"
-    data = json.loads(Path(seed_file).read_text(encoding="utf-8"))
+    try:
+        data = json.loads(Path(seed_file).read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, FileNotFoundError) as e:
+        print(f"[db] standards seed 파일 로드 실패: {e} — seed 적재를 건너뜁니다.")
+        return
 
     sid = {}   # 과목명 → subject.id
     for i, s in enumerate(data.get("subjects", [])):

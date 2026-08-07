@@ -3,6 +3,10 @@
     "exampool": {
       "command": "python",
       "args": ["-m", "app.mcp_server"]
+    },
+    "5e": {
+      "command": "node",
+      "args": ["../51_5E/5E_main/tools/mcp-5e/server.js"]
     }
   }
 }

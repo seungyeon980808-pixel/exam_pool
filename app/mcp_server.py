@@ -27,10 +27,6 @@ from .routes_question import (ChoiceIn, QuestionIn, check_question_api,
                               update_question as update_question_route)
 from . import pdf_indexer
 
-# 클라이언트가 처음 붙을 때 DB 가 없을 수 있다(앱을 한 번도 안 띄웠을 때).
-# 스키마·성취기준 seed 는 idempotent 하므로 여기서 보장해도 안전하다.
-db.init_db()
-
 mcp = FastMCP(
     "ExamPool",
     instructions=(
@@ -47,11 +43,13 @@ mcp = FastMCP(
 
 
 def _clean(fn, *a, **k):
-    """라우트 함수의 HTTPException 을 MCP 가 이해하는 오류로 바꾼다."""
+    """라우트 함수의 예외를 MCP 가 이해하는 오류로 바꾼다."""
     try:
         return fn(*a, **k)
     except HTTPException as e:
         raise ValueError(e.detail)
+    except Exception as e:
+        raise ValueError(f"{type(e).__name__}: {e}")
 
 
 # ===== 성취기준 =====
@@ -153,7 +151,7 @@ def add_evidence(proposition_id: int, source_label: str, quote: str,
     return _clean(create_evidence, EvidenceIn(
         proposition_id=proposition_id, source_type=source_type,
         source_label=source_label, quote=quote,
-        document_page_id=document_page_id or None))
+        document_page_id=document_page_id if document_page_id else None))
 
 
 @mcp.tool()
@@ -195,7 +193,7 @@ def check_question_rules(question_id: int) -> dict:
 def create_question(qtype: str, ask: str, passage: str = "", material: str = "",
                     bogi_items: list[dict] | None = None, is_negative: bool = False,
                     answer: str = "", default_points: float = 3.0, difficulty: str = "중",
-                    standard_code: str = "", intent: str = "", behavior: str = "",
+                    standard_code: str = "", intent: str = "", explanation: str = "", behavior: str = "",
                     choices: list[dict] | None = None, origin_note: str = "") -> dict:
     """문항을 만든다. origin 은 'AI초안'으로 고정 저장된다(첫 줄을 쓴 주체가 AI라는 사실).
 
@@ -207,18 +205,22 @@ def create_question(qtype: str, ask: str, passage: str = "", material: str = "",
     standard_code: 대괄호 없이 저장돼 있으면 그대로, 화면 표기는 대괄호 포함.
     반환: {id}
     """
+    try:
+        choice_models = [ChoiceIn(**c) for c in (choices or [])]
+    except Exception as e:
+        raise ValueError(f"선지(choices) 형식이 잘못되었습니다: {e}")
     return _clean(create_question_route, QuestionIn(
         qtype=qtype, ask=ask, passage=passage, material=material,
         bogi_items=bogi_items or [], is_negative=is_negative, answer=answer,
         default_points=default_points, difficulty=difficulty,
-        standard_code=standard_code or None, intent=intent, behavior=behavior,
+        standard_code=standard_code or None, intent=intent, explanation=explanation, behavior=behavior,
         origin="AI초안", origin_note=origin_note,
-        choices=[ChoiceIn(**c) for c in (choices or [])]))
+        choices=choice_models))
 
 
 @mcp.tool()
 def update_question(question_id: int, ask: str = "", passage: str = "",
-                    material: str = "", answer: str = "", intent: str = "",
+                    material: str = "", answer: str = "", intent: str = "", explanation: str = "",
                     bogi_items: list[dict] | None = None,
                     choices: list[dict] | None = None) -> dict:
     """문항을 부분 수정한다. 넘긴 필드만 바뀌고 나머지는 유지된다(빈 문자열/None = 유지).
@@ -230,6 +232,17 @@ def update_question(question_id: int, ask: str = "", passage: str = "",
     q, ch = cur["question"], cur["choices"]
     if q["status"] == "완성":
         raise ValueError("status 가 '완성'인 문항은 MCP 로 수정하지 않는다 — 화면에서 직접.")
+    try:
+        if choices is not None:
+            choice_models = [ChoiceIn(**c) for c in choices]
+        else:
+            choice_models = [
+                ChoiceIn(ord=c["ord"], text=c["text"], proposition_id=c["proposition_id"],
+                         variant_id=c["variant_id"], combo=c["combo"],
+                         custom_evidence=c["custom_evidence"], is_answer=bool(c["is_answer"]))
+                for c in ch]
+    except Exception as e:
+        raise ValueError(f"선지(choices) 형식이 잘못되었습니다: {e}")
     merged = QuestionIn(
         title=q["title"], qtype=q["qtype"], image_choices=bool(q["image_choices"]),
         status=q["status"], review_note=q["review_note"],
@@ -240,13 +253,9 @@ def update_question(question_id: int, ask: str = "", passage: str = "",
         bogi_items=bogi_items if bogi_items is not None else q["bogi_items"],
         answer=answer or q["answer"], default_points=q["default_points"],
         difficulty=q["difficulty"], standard_code=q["standard_code"],
-        intent=intent or q["intent"], behavior=q["behavior"],
+        intent=intent or q["intent"], explanation=explanation or q.get("explanation", ""), behavior=q["behavior"],
         origin=q["origin"], origin_note=q["origin_note"],
-        choices=[ChoiceIn(**c) for c in choices] if choices is not None else [
-            ChoiceIn(ord=c["ord"], text=c["text"], proposition_id=c["proposition_id"],
-                     variant_id=c["variant_id"], combo=c["combo"],
-                     custom_evidence=c["custom_evidence"], is_answer=bool(c["is_answer"]))
-            for c in ch])
+        choices=choice_models)
     return _clean(update_question_route, question_id, merged)
 
 

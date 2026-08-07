@@ -151,14 +151,19 @@ def _check_answer_spread(items: list[dict]) -> list[dict]:
     if not total or max_ord < 2:
         return []
 
+    # 객관식 문항 수가 선택지 수보다 적으면 모든 정답 번호를 한 번씩 쓰는 것 자체가
+    # 불가능하다. 서술형을 세트 문항 수에 포함해 "미사용 번호"를 경고하지 않는다.
+    if total < max_ord:
+        return []
+
     out = []
     label = "①②③④⑤"
     top_ord, top_n = max(counts.items(), key=lambda kv: kv[1])
     if top_n / total > ANSWER_BIAS_RATIO:
-        mark = label[top_ord - 1] if 1 <= top_ord <= 5 else str(top_ord)
+        mark = label[top_ord - 1] if 1 <= top_ord <= len(label) else str(top_ord)
         out.append({"level": "warn", "code": "answer_bias",
                     "message": f"정답이 {mark}번에 {top_n}/{total}문항 몰려 있습니다."})
-    missing = [label[i - 1] if i <= 5 else str(i)
+    missing = [label[i - 1] if 1 <= i <= len(label) else str(i)
                for i in range(1, max_ord + 1) if not counts.get(i)]
     if missing:
         out.append({"level": "warn", "code": "answer_unused",

@@ -134,9 +134,9 @@ def _photos(material: str) -> list[str]:
 
 def _looks_like_filename(s: str) -> bool:
     s = s.strip()
-    if not s or "\n" in s or len(s) > 60 or " " in s:
+    if not s or "\n" in s or len(s) > 60:
         return False
-    return "." in s or s.replace("_", "").replace("-", "").isalnum()
+    return "." in s or s.replace("_", "").replace("-", "").replace(" ", "").isalnum()
 
 
 def _negatize(ask: str, is_negative: bool) -> str:

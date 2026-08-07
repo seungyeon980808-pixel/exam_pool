@@ -15,6 +15,7 @@ import sqlite3
 from datetime import date, datetime
 from pathlib import Path
 
+from .config import logger
 from .paths import DB_PATH, data_dir
 
 SLOTS = 3
@@ -90,7 +91,8 @@ def auto_backup_if_due() -> dict | None:
         return None
     try:
         return make_backup("자동(하루 1회)")
-    except (OSError, sqlite3.Error):
+    except (OSError, sqlite3.Error) as e:
+        logger.warning("자동 백업 실패: %s", e)
         return None      # 백업 실패로 앱이 안 뜨면 더 손해다
 
 
@@ -135,13 +137,15 @@ def restore(slot: int) -> dict:
     """백업 슬롯으로 되돌린다. 되돌리기 직전 상태는 bak1 로 먼저 남긴다.
 
     되돌린 뒤 되돌리기 전으로 다시 갈 수 있어야 한다 — 그래서 복구도 백업으로 시작한다.
+    백업 파일을 sqlite3 온라인 백업 API로 현재 DB에 되쓴다(shutil.copy 보다 안전).
     """
     src = slot_path(slot)
     if not src.exists():
         raise FileNotFoundError(f"백업 슬롯 {slot}이 없습니다.")
 
-    # 되돌릴 파일을 먼저 옆으로 빼둔다. 아래 make_backup 이 슬롯을 한 칸씩 밀기 때문에
-    # 그냥 두면 bak3 을 고른 경우 목표 파일이 밀려나며 사라진다.
+    # 복구 직전 상태를 먼저 백업한다 (되돌리기 전으로 돌아갈 수 있게).
+    # make_backup 이 슬롯을 한 칸씩 미므로, 복구 대상 슬롯을 덮어쓰지 않게
+    # 대상 파일을 먼저 임시로 복사해 둔다.
     staged = backup_dir() / "_restoring.tmp"
     shutil.copy2(src, staged)
     try:
@@ -149,7 +153,16 @@ def restore(slot: int) -> dict:
             make_backup(f"복구 직전(bak{slot}로 되돌림)")
         except (OSError, sqlite3.Error):
             pass
-        shutil.copy2(staged, DB_PATH)
+        # sqlite3 온라인 백업 API 사용 — shutil.copy2 보다 안전하다
+        dst_conn = sqlite3.connect(DB_PATH)
+        try:
+            src_conn = sqlite3.connect(f"file:{staged}?mode=ro", uri=True)
+            try:
+                src_conn.backup(dst_conn)
+            finally:
+                src_conn.close()
+        finally:
+            dst_conn.close()
         for suffix in ("-wal", "-shm"):   # 남은 저널이 되돌린 DB 를 덮어쓰지 않도록
             j = Path(str(DB_PATH) + suffix)
             if j.exists():
