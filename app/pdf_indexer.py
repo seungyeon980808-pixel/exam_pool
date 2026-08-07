@@ -1,10 +1,12 @@
-"""PDF 폴더 인덱싱 + FTS5 근거 검색.
+"""문서 폴더 인덱싱 + FTS5 근거 검색.
 
-DocFinder 로직 재구현: 폴더 지정 → 하위 폴더 재귀 스캔 → PyMuPDF 로 페이지별
-텍스트 추출 → SQLite FTS5 색인. 검색은 bm25() 랭킹.
+DocFinder 로직 재구현: 폴더 지정 → 하위 폴더 재귀 스캔 → PyMuPDF(·anydoc) 로
+페이지별 텍스트 추출 → SQLite FTS5 색인. 검색은 bm25() 랭킹.
+
+지원 형식:
+  - PDF: PyMuPDF (fitz) — 기존 경로, 하이라이트 렌더링 포함
+  - DOCX·PPTX·XLSX·ODT·ODS·ODP·RTF·EPUB·CSV: anydoc (firecrawl-anydoc)
 2026-07-22 실측: 교과서326p+교육과정280p 인덱싱 7.9초, 검색 2ms.
-
-한글 없이(실제 PDF 없이) 도는 부분은 tests/ 에서 검증한다.
 """
 import os
 import sqlite3
@@ -13,7 +15,13 @@ from collections import OrderedDict
 
 from .db import connect
 
-MIN_CHARS = 10  # 페이지당 이 미만이면 스캔본 추정 → 건너뜀
+MIN_CHARS = 10  # 페이지당 이 미만이면 의미 없는 페이지 → 건너뜀
+
+# anydoc 지원 확장자 (PDF 제외)
+_ANYDOC_EXTS = {".docx", ".pptx", ".xlsx", ".odt", ".ods", ".odp", ".rtf", ".epub", ".csv",
+                ".doc", ".ppt", ".xls", ".docm", ".pptm", ".xlsm", ".xlsb", ".ppsx", ".ppsm"}
+_PDF_EXTS = {".pdf"}
+_ALL_EXTS = _PDF_EXTS | _ANYDOC_EXTS
 
 
 def ensure_fts(conn: sqlite3.Connection) -> None:
@@ -36,6 +44,25 @@ def collect_pdfs(root: str) -> list[str]:
     return sorted(out)
 
 
+def collect_docs(root: str) -> list[tuple[str, str]]:
+    """폴더에서 모든 지원 문서를 수집. 반환: [(경로, 형식명)]. pdf는 제외."""
+    out = []
+    ext_map = {
+        ".docx": "Word", ".doc": "Word", ".docm": "Word",
+        ".pptx": "PPT", ".ppt": "PPT", ".pptm": "PPT", ".ppsx": "PPT", ".ppsm": "PPT",
+        ".xlsx": "Excel", ".xls": "Excel", ".xlsm": "Excel", ".xlsb": "Excel",
+        ".odt": "ODT", ".ods": "ODS", ".odp": "ODP",
+        ".rtf": "RTF", ".epub": "EPUB", ".csv": "CSV",
+    }
+    for dirpath, _dirs, files in os.walk(root):
+        for name in files:
+            ext = os.path.splitext(name.lower())[1]
+            fmt = ext_map.get(ext)
+            if fmt:
+                out.append((os.path.join(dirpath, name), fmt))
+    return sorted(out)
+
+
 def _extract(path: str):
     """PDF 1개 → [(page_no, text)]. PyMuPDF 사용."""
     import fitz  # PyMuPDF — 여기서 import 해 실제 검색을 안 쓰면 로딩도 안 되게
@@ -52,57 +79,92 @@ def _extract(path: str):
     return pages
 
 
+def _extract_anydoc(path: str) -> list[tuple[int, str]]:
+    """anydoc 으로 비PDF 문서 텍스트 추출. 반환: [(page_no, text)].
+
+    anydoc 은 whole-document Markdown 을 반환하므로, 빈 줄 기준으로 페이지를 나눈다.
+    실제 페이지가 아니라 의미 단락이지만 FTS5 검색용으로는 충분하다.
+    """
+    import anydoc
+    md = anydoc.to_markdown(path)
+    chunks = [b.strip() for b in md.split("\n\n") if len(b.strip()) >= MIN_CHARS]
+    if not chunks:
+        return []
+    return [(i + 1, c) for i, c in enumerate(chunks)]
+
+
+def _index_doc(conn, path, title, doc_type, pages, n_docs, n_pages, skipped):
+    """문서 하나를 인덱싱. 기존 등록된 파일이면 갱신."""
+    old = conn.execute("SELECT id FROM document WHERE file_path = ?", (path,)).fetchone()
+    if old:
+        conn.execute("SAVEPOINT idx_doc")
+        try:
+            conn.execute("DELETE FROM page_fts WHERE document_id = ?", (old["id"],))
+            conn.execute("DELETE FROM document WHERE id = ?", (old["id"],))
+        except Exception:
+            conn.execute("ROLLBACK TO idx_doc")
+            raise
+        else:
+            conn.execute("RELEASE idx_doc")
+
+    cur = conn.execute(
+        "INSERT INTO document (title, doc_type, file_path, indexed_at) "
+        "VALUES (?, ?, ?, datetime('now','localtime'))",
+        (title, doc_type, path),
+    )
+    doc_id = cur.lastrowid
+    conn.executemany(
+        "INSERT INTO document_page (document_id, page_no, text) VALUES (?, ?, ?)",
+        [(doc_id, p, t) for p, t in pages],
+    )
+    conn.executemany(
+        "INSERT INTO page_fts (body, doc_title, page_no, document_id) VALUES (?, ?, ?, ?)",
+        [(t, title, p, doc_id) for p, t in pages],
+    )
+    return n_docs + 1, n_pages + len(pages)
+
+
 def index_folder(root: str, doc_type: str = "교과서", progress=None) -> dict:
-    """폴더를 인덱싱한다. 이미 등록된 파일(path 동일)은 갱신한다."""
-    close_all_docs()   # 캐시가 잡고 있는 파일 잠금을 먼저 푼다
+    """폴더를 인덱싱한다. PDF(PyMuPDF) + anydoc(Word·PPT·Excel 등) 모두 처리."""
+    close_all_docs()
     conn = connect()
     try:
         ensure_fts(conn)
+        n_docs, n_pages, skipped, total = 0, 0, [], 0
+
+        # PDF — PyMuPDF
         pdfs = collect_pdfs(root)
-        n_docs, n_pages, skipped = 0, 0, []
+        total += len(pdfs)
         for i, path in enumerate(pdfs):
             title = os.path.splitext(os.path.basename(path))[0]
             if progress:
-                progress(i + 1, len(pdfs), title)
+                progress(i + 1, total, title)
             try:
                 pages = _extract(path)
-            except Exception as e:  # 열기 실패 문서는 건너뛰고 기록
+            except Exception as e:
                 skipped.append({"path": path, "reason": str(e)})
                 continue
             if not pages:
                 skipped.append({"path": path, "reason": "텍스트 없음(스캔본 추정)"})
                 continue
+            n_docs, n_pages = _index_doc(conn, path, title, doc_type, pages, n_docs, n_pages, skipped)
 
-            # 기존 문서 제거 후 재등록 (재인덱싱). SAVEPOINT 로 묶어
-            # 중간 크래시 시 이 문서만 원자적으로 롤백하고 나머지는 보존한다.
-            old = conn.execute("SELECT id FROM document WHERE file_path = ?", (path,)).fetchone()
-            if old:
-                conn.execute("SAVEPOINT idx_doc")
-                try:
-                    conn.execute("DELETE FROM page_fts WHERE document_id = ?", (old["id"],))
-                    conn.execute("DELETE FROM document WHERE id = ?", (old["id"],))
-                except Exception:
-                    conn.execute("ROLLBACK TO idx_doc")
-                    raise
-                else:
-                    conn.execute("RELEASE idx_doc")
+        # 비PDF — anydoc
+        docs = collect_docs(root)
+        total += len(docs)
+        for i, (path, fmt) in enumerate(docs):
+            title = os.path.splitext(os.path.basename(path))[0]
+            if progress:
+                progress(len(pdfs) + i + 1, total, f"{title} ({fmt})")
+            try:
+                pages = _extract_anydoc(path)
+            except Exception as e:
+                skipped.append({"path": path, "reason": f"anydoc({fmt}): {e}"})
+                continue
+            if not pages:
+                continue
+            n_docs, n_pages = _index_doc(conn, path, title, doc_type, pages, n_docs, n_pages, skipped)
 
-            cur = conn.execute(
-                "INSERT INTO document (title, doc_type, file_path, indexed_at) "
-                "VALUES (?, ?, ?, datetime('now','localtime'))",
-                (title, doc_type, path),
-            )
-            doc_id = cur.lastrowid
-            conn.executemany(
-                "INSERT INTO document_page (document_id, page_no, text) VALUES (?, ?, ?)",
-                [(doc_id, p, t) for p, t in pages],
-            )
-            conn.executemany(
-                "INSERT INTO page_fts (body, doc_title, page_no, document_id) VALUES (?, ?, ?, ?)",
-                [(t, title, p, doc_id) for p, t in pages],
-            )
-            n_docs += 1
-            n_pages += len(pages)
         conn.commit()
         return {"documents": n_docs, "pages": n_pages, "skipped": skipped}
     finally:

@@ -6,4 +6,5 @@ playwright>=1.48    # 5E 백그라운드 렌더링(최초 1회: playwright insta
 mcp>=1.26          # 근거·명제·문항을 Claude Code 에서 다루는 MCP 서버 (app/mcp_server.py)
 pydantic>=2.0      # FastAPI 의존 — 명시적 선언
 httpx>=0.27        # FastMCP 내부 의존
+firecrawl-anydoc>=0.1  # PDF 외 문서(Word·PPT·Excel 등) 텍스트 추출
 python-multipart>=0.0.9   # FastAPI 파일 업로드
