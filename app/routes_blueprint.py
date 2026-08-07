@@ -76,8 +76,7 @@ def get_blueprint_api(sid: int):
 def create_slot(sid: int, s: SlotIn):
     if s.plan_qtype not in QTYPES:
         raise HTTPException(400, f"유형은 {'/'.join(QTYPES)} 중 하나여야 합니다.")
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         if not conn.execute("SELECT 1 FROM exam_set WHERE id = ?", (sid,)).fetchone():
             raise HTTPException(404, "세트를 찾을 수 없습니다.")
         cur = conn.execute(
@@ -89,10 +88,7 @@ def create_slot(sid: int, s: SlotIn):
             (sid, sid, s.points, s.plan_qtype, s.plan_standard_code.strip(),
              s.plan_topic.strip(), int(s.plan_is_negative), int(s.plan_needs_figure),
              s.plan_figure_hint.strip(), s.plan_situation.strip()))
-        conn.commit()
         return {"id": cur.lastrowid}
-    finally:
-        conn.close()
 
 
 @router.patch("/api/sets/{sid}/slots/{item_id}")
@@ -100,8 +96,7 @@ def update_slot(sid: int, item_id: int, p: SlotPatch):
     if p.plan_qtype is not None and p.plan_qtype not in QTYPES:
         raise HTTPException(400, f"유형은 {'/'.join(QTYPES)} 중 하나여야 합니다.")
     fields = {k: v for k, v in p.model_dump().items() if v is not None}
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         row = conn.execute("SELECT set_id FROM set_item WHERE id = ?", (item_id,)).fetchone()
         if not row or row["set_id"] != sid:
             raise HTTPException(404, "슬롯을 찾을 수 없습니다.")
@@ -111,10 +106,7 @@ def update_slot(sid: int, item_id: int, p: SlotPatch):
             elif isinstance(v, str):
                 v = v.strip()
             conn.execute(f"UPDATE set_item SET {k} = ? WHERE id = ?", (v, item_id))
-        conn.commit()
         return {"ok": True}
-    finally:
-        conn.close()
 
 
 @router.put("/api/sets/{sid}/short-code")
@@ -126,15 +118,11 @@ def set_short_code(sid: int, body: ShortCodeIn):
     code = body.short_code.strip()
     if any(c in code for c in '\\{}&/:*?"<>| '):
         raise HTTPException(400, "약칭에는 공백과 \\ { } & / : * ? \" < > | 를 쓸 수 없습니다.")
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         if not conn.execute("SELECT 1 FROM exam_set WHERE id = ?", (sid,)).fetchone():
             raise HTTPException(404, "세트를 찾을 수 없습니다.")
         conn.execute("UPDATE exam_set SET short_code = ? WHERE id = ?", (code, sid))
-        conn.commit()
         return {"ok": True}
-    finally:
-        conn.close()
 
 
 @router.get("/api/sets/{sid}/prompt")

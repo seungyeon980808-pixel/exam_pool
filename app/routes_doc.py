@@ -50,18 +50,14 @@ def pick_folder():
 @router.delete("/documents/{doc_id}")
 def delete_document(doc_id: int):
     """근거 검색에서 제외한다(원본 파일은 그대로)."""
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         pdf_indexer.ensure_fts(conn)
         exists = conn.execute("SELECT 1 FROM document WHERE id = ?", (doc_id,)).fetchone()
         if not exists:
             raise HTTPException(404, "문서를 찾을 수 없습니다.")
         conn.execute("DELETE FROM page_fts WHERE document_id = ?", (doc_id,))
         conn.execute("DELETE FROM document WHERE id = ?", (doc_id,))
-        conn.commit()
         return {"ok": True}
-    finally:
-        conn.close()
 
 
 @router.get("/evidence/search")
@@ -197,49 +193,36 @@ def list_refs(q: str = ""):
 @router.post("/exam-refs")
 def create_ref(r: RefIn):
     """이미 담은 문항이면 메모만 갱신한다(중복 방지)."""
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         old = conn.execute(
             "SELECT id FROM exam_ref WHERE document_id=? AND page_no=? AND item_num=?",
             (r.document_id, r.page_no, r.item_num)).fetchone()
         if old:
             if r.note.strip():
                 conn.execute("UPDATE exam_ref SET note=? WHERE id=?", (r.note.strip(), old["id"]))
-                conn.commit()
             return {"id": old["id"], "existed": True}
         cur = conn.execute(
             "INSERT INTO exam_ref (document_id, doc_title, page_no, item_num, note, tags, question_id) "
             "VALUES (?,?,?,?,?,?,?)",
             (r.document_id, r.doc_title.strip(), r.page_no, r.item_num,
              r.note.strip(), r.tags.strip(), r.question_id))
-        conn.commit()
         return {"id": cur.lastrowid, "existed": False}
-    finally:
-        conn.close()
 
 
 @router.patch("/exam-refs/{ref_id}")
 def update_ref(ref_id: int, p: RefPatch):
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         if p.note is not None:
             conn.execute("UPDATE exam_ref SET note=? WHERE id=?", (p.note.strip(), ref_id))
         if p.tags is not None:
             conn.execute("UPDATE exam_ref SET tags=? WHERE id=?", (p.tags.strip(), ref_id))
         if p.question_id is not None:
             conn.execute("UPDATE exam_ref SET question_id=? WHERE id=?", (p.question_id, ref_id))
-        conn.commit()
         return {"ok": True}
-    finally:
-        conn.close()
 
 
 @router.delete("/exam-refs/{ref_id}")
 def delete_ref(ref_id: int):
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         conn.execute("DELETE FROM exam_ref WHERE id=?", (ref_id,))
-        conn.commit()
         return {"ok": True}
-    finally:
-        conn.close()

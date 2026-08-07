@@ -49,24 +49,19 @@ def get_lesson(lid: int):
 def create_lesson(body: LessonIn):
     if not body.date.strip():
         raise HTTPException(400, "수업 날짜를 입력하세요.")
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         pdf_indexer.ensure_fts(conn)
         cur = conn.execute(
             "INSERT INTO lesson (date, class_name, transcript, summary) VALUES (?,?,?,?)",
             (body.date.strip(), body.class_name.strip(), body.transcript, body.summary.strip()))
         lid = cur.lastrowid
         chunks = lessons.index_lesson(conn, lid)
-        conn.commit()
         return {"id": lid, "chunks": chunks}
-    finally:
-        conn.close()
 
 
 @router.put("/lessons/{lid}")
 def update_lesson(lid: int, body: LessonIn):
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         exists = conn.execute("SELECT 1 FROM lesson WHERE id = ?", (lid,)).fetchone()
         if not exists:
             raise HTTPException(404, "수업 기록을 찾을 수 없습니다.")
@@ -75,38 +70,27 @@ def update_lesson(lid: int, body: LessonIn):
                      (body.date.strip(), body.class_name.strip(), body.transcript,
                       body.summary.strip(), lid))
         chunks = lessons.index_lesson(conn, lid)
-        conn.commit()
         return {"ok": True, "chunks": chunks}
-    finally:
-        conn.close()
 
 
 @router.delete("/lessons/{lid}")
 def delete_lesson(lid: int):
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         exists = conn.execute("SELECT 1 FROM lesson WHERE id = ?", (lid,)).fetchone()
         if not exists:
             raise HTTPException(404, "수업 기록을 찾을 수 없습니다.")
         pdf_indexer.ensure_fts(conn)
         lessons.unindex(conn, lid)
         conn.execute("DELETE FROM lesson WHERE id = ?", (lid,))
-        conn.commit()
         return {"ok": True}
-    finally:
-        conn.close()
 
 
 @router.post("/lessons/reindex")
 def reindex_lessons():
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         pdf_indexer.ensure_fts(conn)
         n = lessons.reindex_all(conn)
-        conn.commit()
         return {"chunks": n}
-    finally:
-        conn.close()
 
 
 @router.get("/lesson-chunk/{lid}/{chunk_no}")

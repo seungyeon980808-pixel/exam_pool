@@ -43,8 +43,7 @@ def list_propositions(standard: str = "", unit: int | None = None, q: str = ""):
 
 @router.post("/propositions")
 def create_proposition(p: PropIn):
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         unit_no = p.unit_no
         if unit_no is None:
             row = conn.execute("SELECT unit_no FROM standard WHERE code = ?",
@@ -53,24 +52,17 @@ def create_proposition(p: PropIn):
         cur = conn.execute(
             "INSERT INTO proposition (text, standard_code, unit_no, tags, note) VALUES (?,?,?,?,?)",
             (p.text.strip(), p.standard_code, unit_no, p.tags.strip(), p.note.strip()))
-        conn.commit()
         return {"id": cur.lastrowid}
-    finally:
-        conn.close()
 
 
 @router.delete("/propositions/{prop_id}")
 def delete_proposition(prop_id: int):
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         exists = conn.execute("SELECT 1 FROM proposition WHERE id = ?", (prop_id,)).fetchone()
         if not exists:
             raise HTTPException(404, "명제를 찾을 수 없습니다.")
         conn.execute("DELETE FROM proposition WHERE id = ?", (prop_id,))
-        conn.commit()
         return {"ok": True}
-    finally:
-        conn.close()
 
 
 @router.get("/propositions/{prop_id}")
@@ -97,14 +89,10 @@ def get_proposition(prop_id: int):
 
 @router.patch("/propositions/{prop_id}/class-verified")
 def set_class_verified(prop_id: int, value: bool = True):
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         conn.execute("UPDATE proposition SET class_verified = ? WHERE id = ?",
                      (1 if value else 0, prop_id))
-        conn.commit()
         return {"ok": True}
-    finally:
-        conn.close()
 
 
 # ===== 거짓 변형 (오답) =====
@@ -125,29 +113,21 @@ def get_distortions():
 
 @router.post("/variants")
 def create_variant(v: VariantIn):
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         cur = conn.execute(
             "INSERT INTO false_variant (proposition_id, text, distortion, note) VALUES (?,?,?,?)",
             (v.proposition_id, v.text.strip(), v.distortion, v.note.strip()))
-        conn.commit()
         return {"id": cur.lastrowid}
-    finally:
-        conn.close()
 
 
 @router.delete("/variants/{vid}")
 def delete_variant(vid: int):
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         exists = conn.execute("SELECT 1 FROM false_variant WHERE id = ?", (vid,)).fetchone()
         if not exists:
             raise HTTPException(404, "오답 변형을 찾을 수 없습니다.")
         conn.execute("DELETE FROM false_variant WHERE id = ?", (vid,))
-        conn.commit()
         return {"ok": True}
-    finally:
-        conn.close()
 
 
 # ===== 근거 =====
@@ -161,28 +141,20 @@ class EvidenceIn(BaseModel):
 
 @router.post("/evidence")
 def create_evidence(e: EvidenceIn):
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         cur = conn.execute(
             "INSERT INTO evidence (proposition_id, source_type, source_label, quote, document_page_id) "
             "VALUES (?,?,?,?,?)",
             (e.proposition_id, e.source_type, e.source_label.strip(), e.quote.strip(),
              e.document_page_id))
-        conn.commit()
         return {"id": cur.lastrowid}
-    finally:
-        conn.close()
 
 
 @router.delete("/evidence/{eid}")
 def delete_evidence(eid: int):
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         exists = conn.execute("SELECT 1 FROM evidence WHERE id = ?", (eid,)).fetchone()
         if not exists:
             raise HTTPException(404, "근거를 찾을 수 없습니다.")
         conn.execute("DELETE FROM evidence WHERE id = ?", (eid,))
-        conn.commit()
         return {"ok": True}
-    finally:
-        conn.close()

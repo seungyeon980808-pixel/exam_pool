@@ -221,23 +221,18 @@ def login():
 def set_provider(sid: int, body: ProviderIn):
     if body.provider not in {"codex_local", "mock"}:
         raise HTTPException(400, "지원하지 않는 provider입니다.")
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         _session(conn, sid)
         conn.execute(
             "UPDATE authoring_session SET provider=?,provider_thread_id='',provider_protocol='',"
             "updated_at=datetime('now','localtime') WHERE id=?",
             (body.provider, sid))
-        conn.commit()
         return _session(conn, sid)
-    finally:
-        conn.close()
 
 
 @router.patch("/sessions/{sid}/settings")
 def update_settings(sid: int, body: SettingsIn):
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         current = _session(conn, sid)
         mode = body.authoring_mode or current["authoring_mode"]
         if mode not in AUTHORING_MODES:
@@ -258,10 +253,7 @@ def update_settings(sid: int, body: SettingsIn):
             "updated_at=datetime('now','localtime') WHERE id=?",
             (mode, model, effort, sid),
         )
-        conn.commit()
         return _session(conn, sid)
-    finally:
-        conn.close()
 
 
 @router.post("/sessions/{sid}/cancel")
@@ -283,8 +275,7 @@ def cancel_message(sid: int):
 
 @router.post("/sessions")
 def create_session(body: SessionIn):
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         if body.question_id is not None:
             old = conn.execute(
                 "SELECT id FROM authoring_session WHERE question_id=? AND status<>'discarded' "
@@ -303,7 +294,6 @@ def create_session(body: SessionIn):
                         "updated_at=datetime('now','localtime') WHERE id=?",
                         (payload, payload, old["id"]),
                     )
-                    conn.commit()
                 return {"session": _session(conn, old["id"]), "messages": _messages(conn, old["id"])}
             draft = _question_draft(conn, body.question_id)
         else:
@@ -316,10 +306,7 @@ def create_session(body: SessionIn):
             "INSERT INTO authoring_figure(session_id,options_json) VALUES(?,?)",
             (sid, json.dumps(FIGURE_OPTION_DEFAULTS, ensure_ascii=False)),
         )
-        conn.commit()
         return {"session": _session(conn, sid), "messages": []}
-    finally:
-        conn.close()
 
 
 @router.get("/sessions/{sid}")
@@ -337,8 +324,7 @@ def get_session(sid: int):
 @router.post("/sessions/{sid}/discard")
 def discard_session(sid: int):
     """Soft-discard an attempt while preserving source questions and recovery data."""
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         current = _session(conn, sid)
         thread_id = str(current.get("provider_thread_id") or "")
         if thread_id:
@@ -351,14 +337,11 @@ def discard_session(sid: int):
             "source_question_id=COALESCE(source_question_id,question_id),question_id=NULL,"
             "updated_at=datetime('now','localtime') WHERE id=?", (sid,),
         )
-        conn.commit()
         return {
             "discarded": True, "session_id": sid,
             "source_question_preserved": current.get("question_id") is not None,
             "message": "작성 세션을 폐기했습니다. 기존 문항과 폐기 기록은 삭제하지 않았습니다.",
         }
-    finally:
-        conn.close()
 
 
 @router.patch("/sessions/{sid}/figure/options")
@@ -372,17 +355,13 @@ def update_figure_options(sid: int, body: FigureOptionsIn):
         "include_text": bool(body.include_text),
         "composition": body.composition,
     }
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         _session(conn, sid)
         conn.execute(
             "UPDATE authoring_figure SET options_json=?,updated_at=datetime('now','localtime') "
             "WHERE session_id=?", (json.dumps(options, ensure_ascii=False), sid)
         )
-        conn.commit()
         return _session(conn, sid)
-    finally:
-        conn.close()
 
 
 @router.get("/sessions/{sid}/figure/image")
@@ -437,8 +416,7 @@ def import_figure_image(sid: int, body: FigureImageImportIn):
     if not payload or len(payload) > 20 * 1024 * 1024:
         raise HTTPException(400, "이미지는 20MB 이하여야 합니다.")
     ext = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}[match.group(1)]
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         current = _session(conn, sid)
         context = _figure_context(conn, current, sid)
         assets = current["figure"].get("assets") or []
@@ -479,16 +457,12 @@ def import_figure_image(sid: int, body: FigureImageImportIn):
                 "previous_image_path=?,revision=revision+1,updated_at=datetime('now','localtime') WHERE session_id=?",
                 (str(rendered), previous, sid),
             )
-        conn.commit()
         return _session(conn, sid)
-    finally:
-        conn.close()
 
 
 @router.patch("/sessions/{sid}/draft")
 def update_draft(sid: int, body: DraftIn):
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         current = _session(conn, sid)
         status, flags = _transition_after_change(current, body.draft)
         conn.execute(
@@ -496,52 +470,37 @@ def update_draft(sid: int, body: DraftIn):
             "updated_at=datetime('now','localtime') WHERE id=?",
             (json.dumps(body.draft, ensure_ascii=False), status,
              json.dumps(flags, ensure_ascii=False), sid))
-        conn.commit()
         return _session(conn, sid)
-    finally:
-        conn.close()
 
 
 @router.post("/sessions/{sid}/confirm-text")
 def confirm_text(sid: int):
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         current = _session(conn, sid)
         conn.execute(
             "UPDATE authoring_session SET status='text_confirmed',confirmed_json=draft_json," 
             "review_flags='[]',updated_at=datetime('now','localtime') WHERE id=?", (sid,))
-        conn.commit()
         return _session(conn, sid)
-    finally:
-        conn.close()
 
 
 @router.post("/sessions/{sid}/unconfirm-text")
 def unconfirm_text(sid: int):
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         _session(conn, sid)
         conn.execute(
             "UPDATE authoring_session SET status='text_drafting',updated_at=datetime('now','localtime') WHERE id=?",
             (sid,))
-        conn.commit()
         return _session(conn, sid)
-    finally:
-        conn.close()
 
 
 @router.post("/sessions/{sid}/messages")
 def send_message(sid: int, body: MessageIn):
     if not body.content.strip():
         raise HTTPException(400, "메시지가 비어 있습니다.")
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         current = _session(conn, sid)
         conn.execute("INSERT INTO authoring_message(session_id,role,content) VALUES(?,?,?)",
                      (sid, "user", body.content.strip()))
-        conn.commit()
-    finally:
-        conn.close()
 
     provider = get_provider(current["provider"])
     protocol_version = getattr(provider, "protocol_version", "")
@@ -565,15 +524,11 @@ def send_message(sid: int, body: MessageIn):
                 provider_thread_id2 != current.get("provider_thread_id")
                 or current.get("provider_protocol", "") != protocol_version
             ):
-                conn_thread = db.connect()
-                try:
+                with db.transaction() as conn_thread:
                     conn_thread.execute(
                         "UPDATE authoring_session SET provider_thread_id=?,provider_protocol=?,"
                         "updated_at=datetime('now','localtime') WHERE id=?",
                         (provider_thread_id2, protocol_version, sid))
-                    conn_thread.commit()
-                finally:
-                    conn_thread.close()
 
             yield "event: status\ndata: " + json.dumps({
                 "stage": "generating", "label": "문항을 검토하고 답변을 작성하고 있습니다"
@@ -606,15 +561,11 @@ def send_message(sid: int, body: MessageIn):
                 if kind != "done":
                     continue
                 reply = value
-                conn2 = db.connect()
-                try:
+                with db.transaction() as conn2:
                     cur = conn2.execute(
                         "INSERT INTO authoring_message(session_id,role,content,proposals_json) VALUES(?,?,?,?)",
                         (sid, "assistant", reply.content, json.dumps(reply.proposals, ensure_ascii=False)))
-                    conn2.commit()
                     message_id = cur.lastrowid
-                finally:
-                    conn2.close()
                 yield "event: done\ndata: " + json.dumps({
                     "message": {"id": message_id, "role": "assistant", "content": reply.content,
                                 "proposals": reply.proposals}
@@ -631,8 +582,7 @@ def send_message(sid: int, body: MessageIn):
 
 @router.post("/sessions/{sid}/apply")
 def apply_proposal(sid: int, body: ApplyIn):
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         current = _session(conn, sid)
         row = conn.execute(
             "SELECT proposals_json FROM authoring_message WHERE id=? AND session_id=? AND role='assistant'",
@@ -659,16 +609,12 @@ def apply_proposal(sid: int, body: ApplyIn):
             "updated_at=datetime('now','localtime') WHERE id=?",
             (json.dumps(after, ensure_ascii=False), status,
              json.dumps(flags, ensure_ascii=False), sid))
-        conn.commit()
         return _session(conn, sid)
-    finally:
-        conn.close()
 
 
 @router.post("/sessions/{sid}/undo")
 def undo_apply(sid: int):
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         _session(conn, sid)
         rev = conn.execute(
             "SELECT * FROM authoring_revision WHERE session_id=? ORDER BY id DESC LIMIT 1", (sid,)).fetchone()
@@ -685,34 +631,26 @@ def undo_apply(sid: int):
             "updated_at=datetime('now','localtime') WHERE id=?",
             (rev["before_json"], status, json.dumps(flags, ensure_ascii=False), sid))
         conn.execute("DELETE FROM authoring_revision WHERE id=?", (rev["id"],))
-        conn.commit()
         return _session(conn, sid)
-    finally:
-        conn.close()
 
 
 @router.post("/sessions/{sid}/bind")
 def bind_question(sid: int, body: BindIn):
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         _session(conn, sid)
         if not conn.execute("SELECT 1 FROM question WHERE id=?", (body.question_id,)).fetchone():
             raise HTTPException(404, "문항을 찾을 수 없습니다.")
         conn.execute(
             "UPDATE authoring_session SET question_id=?,status='saved',"
             "updated_at=datetime('now','localtime') WHERE id=?", (body.question_id, sid))
-        conn.commit()
         return _session(conn, sid)
-    finally:
-        conn.close()
 
 
 @router.post("/sessions/{sid}/figure/{action}")
 def figure_action(sid: int, action: str):
     if action not in {"create", "edit", "activate", "sync", "revert", "confirm"}:
         raise HTTPException(400, "지원하지 않는 그림 작업입니다.")
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         current = _session(conn, sid)
         if current["status"] == "text_drafting":
             raise HTTPException(409, "텍스트를 먼저 확정하세요.")
@@ -778,23 +716,19 @@ def figure_action(sid: int, action: str):
             if current.get("question_id"):
                 conn.execute("UPDATE question SET material=? WHERE id=?",
                              (figure["material"], current["question_id"]))
-        conn.commit()
         result = _session(conn, sid)
         # 실행 URL과 안내는 영속 데이터가 아니며, 인증 정보도 포함하지 않는다.
         for key in ("launch_url", "instructions"):
             if figure.get(key):
                 result["figure"][key] = figure[key]
         return result
-    finally:
-        conn.close()
 
 
 @router.post("/sessions/{sid}/figure/assets/{asset_id}/{action}")
 def figure_asset_action(sid: int, asset_id: int, action: str):
     if action not in {"edit", "activate", "sync", "revert"}:
         raise HTTPException(400, "지원하지 않는 패널 그림 작업입니다.")
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         current = _session(conn, sid)
         row = conn.execute(
             "SELECT * FROM authoring_figure_asset WHERE id=? AND session_id=?", (asset_id, sid)
@@ -836,11 +770,8 @@ def figure_asset_action(sid: int, asset_id: int, action: str):
                  figure.get("previous_image_path", current["figure"].get("previous_image_path", "")),
                  1 if action in {"sync", "revert"} else 0, sid),
             )
-        conn.commit()
         result = _session(conn, sid)
         for key in ("launch_url", "instructions"):
             if figure.get(key):
                 result["figure"][key] = figure[key]
         return result
-    finally:
-        conn.close()

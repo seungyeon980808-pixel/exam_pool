@@ -124,8 +124,7 @@ def get_question(qid: int):
 
 @router.post("/questions")
 def create_question(qin: QuestionIn):
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         cur = conn.execute(
             "INSERT INTO question (title, qtype, image_choices, status, review_note, is_negative, "
             " passage, material, ask, bogi_items, answer, default_points, difficulty, standard_code, "
@@ -137,16 +136,12 @@ def create_question(qin: QuestionIn):
              qin.behavior.strip(), qin.origin.strip(), qin.origin_note.strip()))
         qid = cur.lastrowid
         _save_choices(conn, qid, qin.choices)
-        conn.commit()
         return {"id": qid}
-    finally:
-        conn.close()
 
 
 @router.put("/questions/{qid}")
 def update_question(qid: int, qin: QuestionIn):
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         exists = conn.execute("SELECT 1 FROM question WHERE id = ?", (qid,)).fetchone()
         if not exists:
             raise HTTPException(404, "문항을 찾을 수 없습니다.")
@@ -160,10 +155,7 @@ def update_question(qid: int, qin: QuestionIn):
              qin.behavior.strip(), qin.origin.strip(), qin.origin_note.strip(), qid))
         conn.execute("DELETE FROM choice WHERE question_id = ?", (qid,))
         _save_choices(conn, qid, qin.choices)
-        conn.commit()
         return {"ok": True}
-    finally:
-        conn.close()
 
 
 def _save_choices(conn, qid, choices):
@@ -178,16 +170,12 @@ def _save_choices(conn, qid, choices):
 
 @router.delete("/questions/{qid}")
 def delete_question(qid: int):
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         exists = conn.execute("SELECT 1 FROM question WHERE id = ?", (qid,)).fetchone()
         if not exists:
             raise HTTPException(404, "문항을 찾을 수 없습니다.")
         conn.execute("DELETE FROM question WHERE id = ?", (qid,))
-        conn.commit()
         return {"ok": True}
-    finally:
-        conn.close()
 
 
 @router.get("/questions/{qid}/check")
@@ -241,42 +229,30 @@ def list_sets():
 
 @router.post("/sets")
 def create_set(s: SetIn):
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         cur = conn.execute("INSERT INTO exam_set (name, total_points) VALUES (?,?)",
                            (s.name.strip(), s.total_points))
-        conn.commit()
         return {"id": cur.lastrowid}
-    finally:
-        conn.close()
 
 
 @router.patch("/sets/{sid}")
 def update_set(sid: int, p: SetPatch):
     """세트 이름·만점·상태 수정. 만점은 지필 70점처럼 100이 아닌 시험 때문에 필요하다."""
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         if p.name is not None:
             conn.execute("UPDATE exam_set SET name=? WHERE id=?", (p.name.strip(), sid))
         if p.total_points is not None:
             conn.execute("UPDATE exam_set SET total_points=? WHERE id=?", (p.total_points, sid))
         if p.status is not None:
             conn.execute("UPDATE exam_set SET status=? WHERE id=?", (p.status.strip(), sid))
-        conn.commit()
         return {"ok": True}
-    finally:
-        conn.close()
 
 
 @router.delete("/sets/{sid}")
 def delete_set(sid: int):
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         conn.execute("DELETE FROM exam_set WHERE id = ?", (sid,))
-        conn.commit()
         return {"ok": True}
-    finally:
-        conn.close()
 
 
 def _set_items(conn, sid):
@@ -324,27 +300,19 @@ def get_set(sid: int):
 
 @router.post("/sets/{sid}/items")
 def add_set_item(sid: int, item: SetItemIn):
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         row = conn.execute("SELECT COALESCE(MAX(ord),0) AS m FROM set_item WHERE set_id = ?",
                            (sid,)).fetchone()
         conn.execute("INSERT INTO set_item (set_id, question_id, ord, points) VALUES (?,?,?,?)",
                      (sid, item.question_id, row["m"] + 1, item.points))
-        conn.commit()
         return {"ok": True}
-    finally:
-        conn.close()
 
 
 @router.delete("/sets/{sid}/items/{item_id}")
 def remove_set_item(sid: int, item_id: int):
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         conn.execute("DELETE FROM set_item WHERE id = ? AND set_id = ?", (item_id, sid))
-        conn.commit()
         return {"ok": True}
-    finally:
-        conn.close()
 
 
 @router.patch("/sets/{sid}/items/{item_id}")
@@ -353,28 +321,20 @@ def set_item_points(sid: int, item_id: int, body: ItemPointsIn):
 
     같은 문항이 중간고사에선 3점, 기말에선 4점일 수 있다.
     """
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         conn.execute("UPDATE set_item SET points=? WHERE id=? AND set_id=?",
                      (body.points, item_id, sid))
-        conn.commit()
         return {"ok": True}
-    finally:
-        conn.close()
 
 
 @router.put("/sets/{sid}/order")
 def reorder_set(sid: int, body: ReorderIn):
     """드래그 배열 결과 저장 — question_ids 순서대로 ord 재부여."""
-    conn = db.connect()
-    try:
+    with db.transaction() as conn:
         for i, qid in enumerate(body.question_ids, start=1):
             conn.execute("UPDATE set_item SET ord = ? WHERE set_id = ? AND question_id = ?",
                          (i, sid, qid))
-        conn.commit()
         return {"ok": True}
-    finally:
-        conn.close()
 
 
 @router.get("/sets/{sid}/check")
