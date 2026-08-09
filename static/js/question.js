@@ -15,6 +15,8 @@
     if ($("choiceArea")) $("choiceArea").classList.toggle("hidden", essay);
     if ($("modelAnswerBox")) $("modelAnswerBox").classList.toggle("hidden", !essay);
     if (hap && !S.bogi.length) { EP.addBogi(); EP.addBogi(); EP.addBogi(); }
+    if (!essay) EP.ensureFiveChoices();
+    EP.updateQuestionSettingsSummary();
     EP.renderChoices();
   };
 
@@ -42,6 +44,15 @@
   };
 
   /* ---------- 선지 ---------- */
+  EP.ensureFiveChoices = function () {
+    S.choices = (S.choices || []).slice(0, 5);
+    while (S.choices.length < 5) {
+      S.choices.push({ ord: S.choices.length + 1, text: "", proposition_id: null, variant_id: null,
+                       combo: null, custom_evidence: "", is_answer: false });
+    }
+    S.choices.forEach((c, i) => { c.ord = i + 1; });
+  };
+
   EP.addChoice = function () {
     if (S.choices.length >= 5) return;
     S.choices.push({ ord: S.choices.length + 1, text: "", proposition_id: null, variant_id: null,
@@ -49,6 +60,8 @@
     EP.renderChoices();
   };
   EP.renderChoices = function () {
+    const essay = $("qtype").value === "서술형";
+    if (!essay) EP.ensureFiveChoices();
     const hap = $("qtype").value === "합답형";
     const img = $("imgChoices") && $("imgChoices").checked;
     $("choiceRows").innerHTML = S.choices.map((c, i) => `
@@ -62,7 +75,6 @@
         <span class="nz-tag ${c.proposition_id || c.variant_id || c.custom_evidence || (c.combo && c.combo.length) ? "g" : "r"}">
           ${c.proposition_id ? "명제" : c.variant_id ? "변형" : (c.combo && c.combo.length) ? "조합" : c.custom_evidence ? "직접근거" : "근거없음"}</span>
         <label class="nz-lb"><input type="radio" name="ans" ${c.is_answer ? "checked" : ""} onchange="EP.setAnswer(${i})" /> 정답</label>
-        <button class="nz-tb mini" onclick="EP.delChoice(${i})">×</button>
       </div>`).join("");
     EP.hintAnswerLength();
   };
@@ -98,8 +110,8 @@
   EP.renderPresets = async function () {
     const presets = await api("/api/combo-presets");
     $("presetBtns").innerHTML = Object.entries(presets).map(([k, p]) =>
-      `<button class="nz-preset" onclick="EP.applyPreset('${k}')" title="${esc(p.preview)}">
-         <b>${esc(p.name)}</b><span>${esc(p.preview)} · ${esc(p.desc)}</span></button>`).join(" ");
+      `<button class="nz-preset" onclick="EP.applyPreset('${k}')" title="${esc(p.preview)} · ${esc(p.desc)}">
+         <b>${esc(p.name)}</b></button>`).join(" ");
   };
 
   EP.applyPreset = async function (name) {
@@ -177,6 +189,7 @@
     if (S.evSrc) params.set("doc_type", S.evSrc);         // 걸러내기는 서버에서 (상위 60건 잘림 방지)
     const r = await api("/api/evidence/search?" + params);
     const items = r.items;
+    S.evSearchItems = items;
     const groups = {};
     items.forEach((it) => { (groups[it.doc_title] ||= []).push(it); });
     $("evList").innerHTML = items.length
@@ -185,7 +198,7 @@
         <div class="nz-docgroup">
           <div class="nz-docgroup-head">${esc(title)} <span class="n">${list.length}개</span></div>
           ${list.map((h) => `
-            <div class="nz-res" onclick="EP.evShow(${h.document_id}, ${h.page_no}, this)">
+            <div class="nz-res" onclick="EP.evShow(${h.document_id}, ${h.page_no}, this, ${items.indexOf(h)})">
               <div class="nz-res-top">
                 <span class="nz-pct ${h.match_pct < 60 ? "low" : ""}">${h.match_pct}%</span>
                 <span class="nz-res-page">${h.kind === "수업" ? h.page_no + "번째 조각" : h.page_no + "페이지"}</span>
@@ -212,12 +225,14 @@
   EP.evStale = (seq) => seq !== EP.evSeq;
 
   /** 문항 설계 화면의 근거 뷰어 — 원문을 옆에 띄워두고 문항을 쓴다 */
-  EP.evShow = async function (docId, pageNo, el) {
+  EP.evShow = async function (docId, pageNo, el, resultIndex) {
     const seq = ++EP.evSeq;
     document.querySelectorAll("#evList .nz-res.on").forEach((n) => n.classList.remove("on"));
     if (el) el.classList.add("on");
     S.evViewer.docId = docId; S.evViewer.page = pageNo;
     S.evViewer.terms = EP.splitTerms(S.evViewer.q || "");
+    S.evViewer.currentSource = Number.isInteger(resultIndex)
+      ? (S.evSearchItems || [])[resultIndex] || null : null;
 
     // 수업 기록은 PDF 가 아니라 글이다 — 그대로 본문을 보여준다
     if (docId < 0) return EP.evShowLesson(-docId, pageNo, seq);
@@ -246,6 +261,110 @@
     EP.paintHighlights($("evWrap"), $("evImg"), hl, $("evViewBody"));
   };
 
+  let evidenceCrop = null;
+
+  function evidenceSelectionButtons(selecting) {
+    $("evSelectStart").classList.toggle("hidden", selecting);
+    $("evSelectConfirm").classList.toggle("hidden", !selecting);
+    $("evSelectCancel").classList.toggle("hidden", !selecting);
+  }
+
+  EP.cancelEvidenceReference = function () {
+    if (evidenceCrop) {
+      evidenceCrop.host.onpointerdown = null;
+      evidenceCrop.host.onpointermove = null;
+      evidenceCrop.host.onpointerup = null;
+      evidenceCrop.host.classList.remove("nz-reference-selecting");
+      if (evidenceCrop.overlay) evidenceCrop.overlay.remove();
+    }
+    evidenceCrop = null;
+    evidenceSelectionButtons(false);
+  };
+
+  EP.startEvidenceReference = function () {
+    EP.cancelEvidenceReference();
+    const img = $("evViewBody").querySelector("img");
+    if (!img) return alert("영역을 지정할 원문 이미지를 먼저 선택하세요.");
+    if (!img.complete || !img.naturalWidth) return alert("원문 이미지가 로드된 뒤 다시 시도하세요.");
+    const host = img.parentElement;
+    const overlay = document.createElement("div");
+    overlay.className = "nz-reference-selection hidden";
+    host.appendChild(overlay);
+    host.classList.add("nz-reference-selecting");
+    evidenceCrop = { img, host, overlay, rect: null, start: null };
+    evidenceSelectionButtons(true);
+
+    const point = (event) => {
+      const box = img.getBoundingClientRect();
+      return {
+        x: Math.max(0, Math.min(box.width, event.clientX - box.left)),
+        y: Math.max(0, Math.min(box.height, event.clientY - box.top)),
+      };
+    };
+    const paint = (a, b) => {
+      const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+      const w = Math.abs(a.x - b.x), h = Math.abs(a.y - b.y);
+      evidenceCrop.rect = { x, y, w, h };
+      overlay.classList.remove("hidden");
+      overlay.style.left = `${img.offsetLeft + x}px`;
+      overlay.style.top = `${img.offsetTop + y}px`;
+      overlay.style.width = `${w}px`;
+      overlay.style.height = `${h}px`;
+    };
+    host.onpointerdown = (event) => {
+      event.preventDefault();
+      evidenceCrop.start = point(event);
+      host.setPointerCapture(event.pointerId);
+      paint(evidenceCrop.start, evidenceCrop.start);
+    };
+    host.onpointermove = (event) => {
+      if (evidenceCrop && evidenceCrop.start) paint(evidenceCrop.start, point(event));
+    };
+    host.onpointerup = (event) => {
+      if (!evidenceCrop || !evidenceCrop.start) return;
+      paint(evidenceCrop.start, point(event));
+      evidenceCrop.start = null;
+      if (host.hasPointerCapture(event.pointerId)) host.releasePointerCapture(event.pointerId);
+    };
+  };
+
+  EP.confirmEvidenceReference = async function () {
+    if (!evidenceCrop || !evidenceCrop.rect) return alert("원문에서 참고할 영역을 드래그하세요.");
+    const { img, rect } = evidenceCrop;
+    if (rect.w < 12 || rect.h < 12) return alert("참고할 영역을 조금 더 크게 지정하세요.");
+    const canvas = document.createElement("canvas");
+    const scaleX = img.naturalWidth / img.clientWidth;
+    const scaleY = img.naturalHeight / img.clientHeight;
+    canvas.width = Math.max(1, Math.round(rect.w * scaleX));
+    canvas.height = Math.max(1, Math.round(rect.h * scaleY));
+    canvas.getContext("2d").drawImage(
+      img, rect.x * scaleX, rect.y * scaleY, rect.w * scaleX, rect.h * scaleY,
+      0, 0, canvas.width, canvas.height
+    );
+    const source = S.evViewer.currentSource || {};
+    const sourceLabel = $("evViewTitle").textContent.trim();
+    const payload = {
+      filename: `reference_${Math.abs(S.evViewer.docId || 0)}_${S.evViewer.page || 1}.png`,
+      data_url: canvas.toDataURL("image/png"),
+      source_label: sourceLabel,
+      source_text: source.snippet || (S.evViewer.q ? `검색어: ${S.evViewer.q}` : ""),
+      usage: "both",
+      source_meta: {
+        document_id: S.evViewer.docId, page_no: S.evViewer.page, query: S.evViewer.q || "",
+        crop: {
+          x: rect.x / img.clientWidth, y: rect.y / img.clientHeight,
+          w: rect.w / img.clientWidth, h: rect.h / img.clientHeight,
+        },
+      },
+    };
+    try {
+      await EP.authoringAddReferenceData(payload);
+      EP.cancelEvidenceReference();
+    } catch (error) {
+      alert("참고 자료 연결 실패: " + error.message);
+    }
+  };
+
   /** 수업 기록 조각을 오른쪽 패널에 — 검색어는 형광으로 칠한다 */
   EP.evShowLesson = async function (lessonId, chunkNo, seq) {
     const d = await api(`/api/lesson-chunk/${lessonId}/${chunkNo}`);
@@ -270,8 +389,61 @@
     const folded = el.classList.contains("folded");
     // 접을 땐 인라인 폭을 비운다 — 안 그러면 드래그로 정한 폭이 34px 규칙을 이긴다
     if (folded) el.style.width = ""; else EP.applyWidths();
-    $("evFoldBtn").textContent = folded ? "◀" : "▶";
+    $("evFoldBtn").textContent = folded ? "+" : "−";
     localStorage.setItem("ep_side_folded", folded ? "1" : "");
+  };
+
+  EP.toggleAuthoringRight = function (fold) {
+    const grid = document.querySelector("#tab-question .au-grid");
+    if (!grid) return;
+    const folded = typeof fold === "boolean" ? fold : !grid.classList.contains("right-folded");
+    grid.classList.toggle("right-folded", folded);
+    localStorage.setItem("ep_authoring_right_folded", folded ? "1" : "");
+  };
+
+  EP.toggleAuthoringPreview = function (collapse) {
+    const grid = document.querySelector("#tab-question .au-grid");
+    const button = $("auPreviewToggle");
+    if (!grid) return;
+    const collapsed = typeof collapse === "boolean"
+      ? collapse : !grid.classList.contains("preview-collapsed");
+    grid.classList.toggle("preview-collapsed", collapsed);
+    if (button) {
+      button.textContent = collapsed ? "펼치기" : "접기";
+      button.setAttribute("aria-expanded", collapsed ? "false" : "true");
+      button.title = collapsed ? "문항 미리보기 펼치기" : "문항 미리보기 접기";
+    }
+    localStorage.setItem("ep_authoring_preview_collapsed", collapsed ? "1" : "0");
+  };
+
+  EP.setQuestionSection = function (name, open) {
+    const section = $(name === "settings" ? "questionSettingsSection" : "questionReviewSection");
+    const body = $(name === "settings" ? "questionSettingsBody" : "questionReviewBody");
+    if (!section || !body) return;
+    section.classList.toggle("collapsed", !open);
+    body.classList.toggle("hidden", !open);
+    const button = section.querySelector(".nz-section-toggle");
+    if (button) {
+      button.setAttribute("aria-expanded", open ? "true" : "false");
+      button.textContent = open ? "접기" : (name === "review" ? "확인하기" : "펼치기");
+    }
+    localStorage.setItem(`ep_question_${name}_open`, open ? "1" : "0");
+  };
+
+  EP.toggleQuestionSection = function (name) {
+    const section = $(name === "settings" ? "questionSettingsSection" : "questionReviewSection");
+    EP.setQuestionSection(name, !!section && section.classList.contains("collapsed"));
+  };
+
+  EP.updateQuestionSettingsSummary = function () {
+    const summary = $("questionSettingsSummary");
+    if (!summary) return;
+    summary.textContent = [
+      $("qtype") && $("qtype").value,
+      $("qdiff") && $("qdiff").value,
+      $("qpoints") && `${$("qpoints").value || 3}점`,
+      EP.stdValue && EP.stdValue(),
+    ].filter(Boolean).join(" · ");
   };
   EP.togglePicker = function () { $("pickerList").classList.toggle("hidden"); };
 
@@ -340,9 +512,15 @@
     }
     if (q.status === "완성") {
       const missing = CHECKS.filter((c) => !S.checkState[c.k]);
-      if (missing.length) return alert("'완성'으로 저장하려면 확인 항목을 모두 체크해야 합니다.\n\n미확인: "
-        + missing.map((m) => m.t).join(", "));
-      if (!(S.checkState.note || "").trim()) return alert("확인 근거를 적어주세요.");
+      if (missing.length) {
+        EP.setQuestionSection("review", true);
+        return alert("'완성'으로 저장하려면 확인 항목을 모두 체크해야 합니다.\n\n미확인: "
+          + missing.map((m) => m.t).join(", "));
+      }
+      if (!(S.checkState.note || "").trim()) {
+        EP.setQuestionSection("review", true);
+        return alert("확인 근거를 적어주세요.");
+      }
     }
     let qid = S.editingQid;
     if (S.editingQid) { await put(`/api/questions/${S.editingQid}`, q); }
@@ -474,7 +652,20 @@
         ? '<span class="g">확인 완료 — 근거를 적고 저장하세요</span>'
         : "확인 " + done + "/" + CHECKS.length + " · '완성'으로 저장하려면 모두 확인해야 합니다";
     }
+    const summary = $("questionReviewSummary");
+    if (summary) summary.textContent = done === CHECKS.length ? "검토 완료 6/6" : `${CHECKS.length - done}개 확인 필요`;
   }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    EP.setQuestionSection("settings", localStorage.getItem("ep_question_settings_open") !== "0");
+    EP.setQuestionSection("review", localStorage.getItem("ep_question_review_open") === "1");
+    if (localStorage.getItem("ep_authoring_right_folded") === "1") EP.toggleAuthoringRight(true);
+    EP.toggleAuthoringPreview(localStorage.getItem("ep_authoring_preview_collapsed") === "1");
+    ["qtype", "qdiff", "qpoints"].forEach((id) => {
+      const el = $(id);
+      if (el) el.addEventListener("change", EP.updateQuestionSettingsSummary);
+    });
+  });
 
   /* ---------- 참고 기출 (문항 설계 안에서) ---------- */
   // 이 문항을 만들 때 참고한 기출들. 성취기준 아래 버튼으로 놓고, 누르면 옆에서 바로 본다.
@@ -494,7 +685,7 @@
         ${r.note ? `<span class="memo">${esc(r.note)}</span>` : ""}
         <span class="x" onclick="event.stopPropagation();EP.delRef(${r.id})">×</span>
       </span>`).join("")
-      : '<span class="nz-refempty">기출 검색에서 “참고로 기록”을 누르면 여기 버튼으로 담깁니다.</span>';
+      : '<span class="nz-refempty">왼쪽 검색 결과에서 참고할 영역을 지정하면 참고 자료로 연결됩니다.</span>';
   };
 
   /** 참고 기출 버튼 → 오른쪽 패널에 그 문항과 메모를 띄운다 */
@@ -503,7 +694,7 @@
     if (!r) return;
     S.curRefId = refId;
     EP.renderRefs();
-    $("evViewTitle").textContent = `${r.doc_title} — ${r.page_no}p ${r.item_num}번 (참고 기출)`;
+    $("evViewTitle").textContent = `${r.doc_title} — ${r.page_no}p ${r.item_num}번 (참고 자료)`;
     $("evViewBody").innerHTML = `
       <div class="nz-refview">
         <img src="/api/documents/${r.document_id}/page/${r.page_no}/item/${r.item_num}/image?dpi=130" />

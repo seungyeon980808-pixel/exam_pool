@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """대화형 문항 제작 세션의 저장·확정·선택 반영·복구 테스트."""
 import json
+import base64
 import asyncio
 import tempfile
 import unittest
@@ -12,6 +13,7 @@ from unittest.mock import patch
 
 from app.authoring.providers import (
     CodexLocalProvider, DEVELOPER_INSTRUCTIONS, MockProvider, PROPOSAL_MARKER,
+    PROPOSAL_EVENT_MARKER,
 )
 from app.authoring.codex_app_server import CodexAppServerClient
 from app.authoring.figures import (
@@ -238,6 +240,123 @@ class TestAuthoring(unittest.TestCase):
         self.assertEqual(stream_turn.call_args.kwargs["model"], "gpt-5.6-luna")
         self.assertEqual(stream_turn.call_args.kwargs["reasoning_effort"], "medium")
 
+    def test_codex_stream_emits_each_progressive_proposal_before_done(self):
+        raw = (
+            "두 항목을 차례로 제안합니다."
+            + PROPOSAL_EVENT_MARKER
+            + '{"field":"ask","label":"발문","value":"옳은 것은?"}'
+            + PROPOSAL_EVENT_MARKER
+            + '{"field":"answer","label":"정답","value":"2"}'
+        )
+        chunks = [raw[:32], raw[32:70], raw[70:105], raw[105:]]
+        with patch(
+            "app.authoring.codex_app_server.codex_app_server.stream_turn",
+            return_value=("thread-2", iter(chunks)),
+        ):
+            _, events = CodexLocalProvider().stream("제안해줘", {})
+            events = list(events)
+        kinds = [kind for kind, _ in events]
+        self.assertEqual(kinds.count("proposal"), 2)
+        self.assertLess(kinds.index("proposal"), kinds.index("done"))
+        reply = next(value for kind, value in events if kind == "done")
+        self.assertEqual([p["field"] for p in reply.proposals], ["ask", "answer"])
+        self.assertEqual(reply.proposals[1]["value"], "②")
+
+    def test_codex_stream_parses_all_proposals_from_one_final_chunk(self):
+        raw = (
+            "문항 전체를 제안합니다."
+            + PROPOSAL_EVENT_MARKER
+            + '{"field":"passage","label":"제시문","value":"제시문"}'
+            + PROPOSAL_EVENT_MARKER
+            + '{"field":"ask","label":"발문","value":"옳은 것은?"}'
+            + PROPOSAL_EVENT_MARKER
+            + '{"field":"choices","label":"선지","value":['
+              '{"ord":1,"text":"가","is_answer":true},'
+              '{"ord":2,"text":"나","is_answer":false},'
+              '{"ord":3,"text":"다","is_answer":false},'
+              '{"ord":4,"text":"라","is_answer":false},'
+              '{"ord":5,"text":"마","is_answer":false}]}'
+            + PROPOSAL_EVENT_MARKER
+            + '{"field":"answer","label":"정답","value":"1"}'
+            + PROPOSAL_EVENT_MARKER
+            + '{"field":"explanation","label":"해설","value":"해설"}'
+        )
+        with patch(
+            "app.authoring.codex_app_server.codex_app_server.stream_turn",
+            return_value=("thread-final", iter([raw])),
+        ):
+            _, events = CodexLocalProvider().stream("문항 전체를 만들어줘", {})
+            events = list(events)
+        reply = next(value for kind, value in events if kind == "done")
+        self.assertEqual(
+            [proposal["field"] for proposal in reply.proposals],
+            ["passage", "ask", "choices", "answer", "explanation"],
+        )
+
+    def test_codex_stream_parses_jsonl_after_one_marker(self):
+        raw = (
+            "문항 전체를 제안합니다."
+            + PROPOSAL_EVENT_MARKER
+            + '{"field":"passage","label":"제시문","value":"제시문"}\n'
+            + '{"field":"ask","label":"발문","value":"옳은 것은?"}\n'
+            + '{"field":"answer","label":"정답","value":"1"}\n'
+            + '{"field":"explanation","label":"해설","value":"해설"}'
+        )
+        with patch(
+            "app.authoring.codex_app_server.codex_app_server.stream_turn",
+            return_value=("thread-jsonl", iter([raw])),
+        ):
+            _, events = CodexLocalProvider().stream("문항 전체를 만들어줘", {})
+            events = list(events)
+        reply = next(value for kind, value in events if kind == "done")
+        self.assertEqual(
+            [proposal["field"] for proposal in reply.proposals],
+            ["passage", "ask", "answer", "explanation"],
+        )
+
+    def test_reference_image_is_stored_separately_from_generated_assets(self):
+        sid, _ = self._new()
+        data_url = "data:image/png;base64," + base64.b64encode(b"reference-png").decode()
+        with tempfile.TemporaryDirectory() as tmp, patch.object(ra, "data_dir", return_value=Path(tmp)):
+            session = ra.add_figure_reference(
+                sid, ra.FigureReferenceIn(
+                    filename="setup.png", data_url=data_url,
+                    source_label="교과서 247쪽", source_text="검전기 정전기 유도",
+                    usage="both", source_meta={"page_no": 247},
+                ))
+            reference = session["figure"]["references"][0]
+            self.assertTrue(Path(reference["image_path"]).is_file())
+            self.assertEqual(reference["source_label"], "교과서 247쪽")
+            self.assertEqual(reference["source_text"], "검전기 정전기 유도")
+            self.assertEqual(session["figure"]["assets"], [])
+            updated = ra.update_figure_reference(
+                sid, reference["id"], ra.FigureReferenceUsageIn(usage="content"))
+            self.assertEqual(updated["figure"]["references"][0]["usage"], "content")
+            ra.delete_figure_reference(sid, reference["id"])
+            reopened = ra.get_session(sid)["session"]
+            self.assertEqual(reopened["figure"]["references"], [])
+
+    def test_codex_prompt_contains_selected_reference_material(self):
+        prompt = CodexLocalProvider._prompt("문항 전체를 만들어줘", {
+            "_references": [{
+                "source_label": "교과서 247쪽",
+                "source_text": "검전기에서 정전기 유도가 일어난다.",
+                "usage": "content",
+            }],
+        })
+        self.assertIn("교과서 247쪽", prompt)
+        self.assertIn("정전기 유도", prompt)
+
+    def test_codex_prompt_defaults_question_creation_to_complete_question(self):
+        prompt = CodexLocalProvider._prompt("정전기 유도 문항을 만들어줘", {})
+        self.assertIn("전체 문항 제작 요청", prompt)
+        self.assertIn("선지 5개", prompt)
+
+    def test_codex_prompt_respects_explicit_partial_request(self):
+        prompt = CodexLocalProvider._prompt("선지만 다시 만들어줘", {})
+        self.assertIn("명시적으로 지정된 항목만", prompt)
+        self.assertNotIn("전체 문항 제작 요청이다", prompt)
+
     def test_authoring_model_settings_are_persisted_per_session(self):
         sid, session = self._new()
         self.assertEqual(session["effective_model"], "gpt-5.6-luna")
@@ -288,6 +407,25 @@ class TestAuthoring(unittest.TestCase):
             state = ra.connection("codex_local")
         self.assertEqual(state["authoring_protocol"], CodexLocalProvider.protocol_version)
 
+    def test_connection_refresh_restarts_codex_child(self):
+        with patch.object(ra.codex_app_server, "restart") as restart, patch.object(
+            CodexLocalProvider, "connection_state", return_value={"connected": True}
+        ):
+            state = ra.refresh_connection("codex_local")
+        restart.assert_called_once_with()
+        self.assertTrue(state["connected"])
+
+    def test_login_reuses_existing_managed_codex_login(self):
+        with patch.object(ra.codex_app_server, "restart") as restart, patch.object(
+            ra.codex_app_server,
+            "account_state",
+            return_value={"signed_in": True, "account": {"type": "chatgpt"}},
+        ), patch.object(ra.codex_app_server, "start_login") as start_login:
+            result = ra.login()
+        restart.assert_called_once_with()
+        self.assertTrue(result["alreadySignedIn"])
+        start_login.assert_not_called()
+
     def test_app_server_interrupts_the_active_turn(self):
         client = CodexAppServerClient()
         client._active_turns["thread-1"] = "turn-1"
@@ -329,6 +467,39 @@ class TestAuthoring(unittest.TestCase):
             ):
                 result = client.generate_image("검전기")
         self.assertEqual(result["savedPath"], str(image))
+
+    def test_app_server_passes_reference_as_local_image_input(self):
+        client = CodexAppServerClient()
+        with tempfile.TemporaryDirectory() as tmp:
+            image = Path(tmp) / "generated.png"
+            reference = Path(tmp) / "reference.png"
+            image.write_bytes(b"png")
+            reference.write_bytes(b"ref")
+            captured = {}
+
+            def request(method, params=None, timeout=30):
+                if method == "thread/start":
+                    return {"thread": {"id": "image-thread"}}
+                if method == "turn/start":
+                    captured["input"] = params["input"]
+                    for target in list(client._subscribers):
+                        target.put({"method": "item/completed", "params": {
+                            "threadId": "image-thread", "turnId": "turn-1",
+                            "item": {"type": "imageGeneration", "savedPath": str(image)},
+                        }})
+                        target.put({"method": "turn/completed", "params": {
+                            "threadId": "image-thread", "turnId": "turn-1",
+                            "turn": {"status": "completed"},
+                        }})
+                    return {"turn": {"id": "turn-1"}}
+                return {}
+
+            with patch.object(client, "account_state", return_value={"account": {"type": "chatgpt"}}), \
+                 patch.object(client, "capabilities", return_value={"imageGeneration": True}), \
+                 patch.object(client, "request", side_effect=request):
+                client.generate_image("새 도판", reference_paths=[str(reference)])
+        self.assertEqual(captured["input"][1]["type"], "localImage")
+        self.assertEqual(captured["input"][1]["path"], str(reference.resolve()))
 
     def test_app_server_splits_distinct_figure_situations(self):
         client = CodexAppServerClient()
@@ -548,7 +719,9 @@ class TestAuthoring(unittest.TestCase):
                 result = provider.activate(8, {}, {
                     "status": "draft", "fivee_project_path": str(project),
                     "scene_spec_path": str(scene), "figure_name": "draft_8",
+                    "activation_token": "target-editor-123",
                 })
+            client.wait_for_app.assert_called_once_with(href_token="target-editor-123")
             names = [call.args[0] for call in client.call.call_args_list]
             self.assertEqual(names, [
                 "load_project", "set_page", "read_app", "clear_app",

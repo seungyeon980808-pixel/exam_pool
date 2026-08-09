@@ -1,9 +1,14 @@
 /* ===== 대화형 문항 제작 — 세션·대화·선택 반영·되돌리기 ===== */
 (function (EP) {
   "use strict";
-  const $ = EP.$, esc = EP.esc, api = EP.api, post = EP.post, patch = EP.patch;
+  const $ = EP.$, esc = EP.esc, api = EP.api, post = EP.post, patch = EP.patch, del = EP.del;
   const S = EP.S;
-  const EXPECTED_AUTHORING_PROTOCOL = "authoring-v4-figure-options-panels";
+  const EXPECTED_AUTHORING_PROTOCOL = "authoring-v8-default-complete-question";
+  const AUTHORING_PANEL_KEYS = {
+    evidence: "ep_authoring_evidence_width",
+    right: "ep_authoring_right_width",
+  };
+  const AUTHORING_PANEL_DEFAULTS = { evidence: 37, right: 44 };
 
   const STATUS = {
     text_drafting: "텍스트 작성 중", text_confirmed: "텍스트 확정",
@@ -26,6 +31,99 @@
     el.textContent = text || "";
     const expected = el.textContent;
     setTimeout(() => { if (el.textContent === expected) el.textContent = ""; }, 1500);
+  }
+
+  function fiveeLaunchTarget(url) {
+    const token = `exampool-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const target = new URL(url, window.location.href);
+    target.searchParams.set("activate", token);
+    return { url: target.toString(), token };
+  }
+
+  function clampPanelWidth(value, min, max) {
+    return Math.max(min, Math.min(max, Math.round(value * 10) / 10));
+  }
+
+  function applyAuthoringPanelWidths() {
+    const layout = document.querySelector("#tab-question .nz-qlayout");
+    const grid = document.querySelector("#tab-question .au-grid");
+    if (!layout || !grid) return;
+    const evidence = clampPanelWidth(
+      Number(localStorage.getItem(AUTHORING_PANEL_KEYS.evidence)) || AUTHORING_PANEL_DEFAULTS.evidence, 20, 60
+    );
+    const right = clampPanelWidth(
+      Number(localStorage.getItem(AUTHORING_PANEL_KEYS.right)) || AUTHORING_PANEL_DEFAULTS.right, 18, 45
+    );
+    layout.style.setProperty("--au-evidence-width", `${evidence}%`);
+    grid.style.setProperty("--au-right-width", `${right}%`);
+  }
+
+  function initAuthoringPanelResizer(handle, kind) {
+    if (!handle || handle.dataset.resizerReady) return;
+    handle.dataset.resizerReady = "1";
+    const isEvidence = kind === "evidence";
+    const key = AUTHORING_PANEL_KEYS[kind];
+    const min = isEvidence ? 20 : 18;
+    const max = isEvidence ? 60 : 45;
+    const target = () => document.querySelector(isEvidence
+      ? "#tab-question .nz-qlayout" : "#tab-question .au-grid");
+    const update = (clientX) => {
+      const element = target();
+      if (!element) return;
+      const box = element.getBoundingClientRect();
+      if (!box.width) return;
+      const raw = isEvidence
+        ? ((clientX - box.left) / box.width) * 100
+        : ((box.right - clientX) / box.width) * 100;
+      const value = clampPanelWidth(raw, min, max);
+      localStorage.setItem(key, value);
+      element.style.setProperty(isEvidence ? "--au-evidence-width" : "--au-right-width", `${value}%`);
+      handle.dataset.widthLabel = `${isEvidence ? "근거" : "우측"} ${value}%`;
+      handle.setAttribute("aria-valuenow", String(value));
+    };
+    handle.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      handle.setPointerCapture(event.pointerId);
+      handle.classList.add("dragging");
+      document.body.classList.add("au-resizing-panels");
+      update(event.clientX);
+      const move = (moveEvent) => update(moveEvent.clientX);
+      const stop = () => {
+        handle.classList.remove("dragging");
+        document.body.classList.remove("au-resizing-panels");
+        handle.removeEventListener("pointermove", move);
+      };
+      handle.addEventListener("pointermove", move);
+      handle.addEventListener("pointerup", stop, { once: true });
+      handle.addEventListener("pointercancel", stop, { once: true });
+    });
+    handle.addEventListener("keydown", (event) => {
+      if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+      event.preventDefault();
+      const current = Number(localStorage.getItem(key)) || AUTHORING_PANEL_DEFAULTS[kind];
+      const direction = event.key === "ArrowRight" ? 1 : -1;
+      const next = isEvidence ? current + direction : current - direction;
+      const element = target();
+      const value = clampPanelWidth(next, min, max);
+      localStorage.setItem(key, value);
+      element.style.setProperty(isEvidence ? "--au-evidence-width" : "--au-right-width", `${value}%`);
+      handle.dataset.widthLabel = `${isEvidence ? "근거" : "우측"} ${value}%`;
+    });
+  }
+
+  EP.resetAuthoringPanelWidths = function () {
+    Object.values(AUTHORING_PANEL_KEYS).forEach((key) => localStorage.removeItem(key));
+    applyAuthoringPanelWidths();
+    savedNotice("패널 폭을 기본값으로 돌렸습니다");
+  };
+
+  function setFigureProgress(active, percent, label) {
+    const box = $("auFigureProgress");
+    if (!box) return;
+    box.classList.toggle("hidden", !active);
+    $("auFigureProgressBar").style.width = `${Math.max(0, Math.min(100, percent || 0))}%`;
+    $("auFigureProgressText").textContent = label || "그림 생성 준비 중";
+    $("auFigureProgressPercent").textContent = `${Math.round(percent || 0)}%`;
   }
 
   function answerFromChoices() {
@@ -189,7 +287,7 @@
     const assetBox = $("auFigureAssets");
     assetBox.classList.toggle("hidden", !multiAssets);
     assetBox.innerHTML = multiAssets ? renderedAssets.map((asset, index) =>
-      `<figure><img src="/api/authoring/sessions/${session.id}/figure/assets/${asset.id}/image?t=${Date.now()}" alt="그림 ${index + 1}"><figcaption>${index + 1}</figcaption>${asset.fivee_project_path ? `<div><button class="nz-tb mini" onclick="EP.authoringEditAsset(${asset.id})">5E 편집</button><button class="nz-tb mini blu" onclick="EP.authoringSyncAsset(${asset.id})">수정본 가져오기</button></div>` : ""}</figure>`
+      `<figure><img src="/api/authoring/sessions/${session.id}/figure/assets/${asset.id}/image?t=${Date.now()}" alt="그림 ${index + 1}" ${asset.fivee_project_path ? `onclick="EP.authoringEditAsset(${asset.id})" title="클릭하여 5E에서 편집"` : ""}><figcaption>${index + 1}</figcaption>${asset.fivee_project_path ? `<div><button class="nz-tb mini" onclick="EP.authoringEditAsset(${asset.id})">5E 편집</button><button class="nz-tb mini blu" onclick="EP.authoringSyncAsset(${asset.id})">수정본 가져오기</button></div>` : ""}</figure>`
     ).join("") : "";
     $("auFigurePreview").querySelector(".au-figure-icon").classList.toggle("hidden", hasImage);
     const projectPath = (session.figure || {}).fivee_project_path || "";
@@ -208,6 +306,22 @@
       figureOptions.composition === "auto" ? "문항에 따라 자동 분리"
         : (figureOptions.composition === "separate" ? "장면별 개별 생성" : "한 도판에 구성"),
     ].join(" · ");
+    const references = (session.figure || {}).references || [];
+    const referenceBox = $("auFigureReferences");
+    if (referenceBox) {
+      referenceBox.innerHTML = references.map((reference) => `
+        <figure><img src="/api/authoring/sessions/${session.id}/figure/references/${reference.id}/image?t=${Date.now()}" alt="참고 이미지">
+          <figcaption title="${esc(reference.source_label || reference.filename || "참고 자료")}">${esc(reference.source_label || reference.filename || "참고 자료")}</figcaption>
+          <select class="nz-sel mini" onchange="EP.authoringReferenceUsage(${reference.id}, this.value)" title="참고 자료 사용 용도">
+            <option value="both" ${reference.usage === "both" ? "selected" : ""}>내용+그림</option>
+            <option value="content" ${reference.usage === "content" ? "selected" : ""}>내용</option>
+            <option value="image" ${reference.usage === "image" ? "selected" : ""}>그림</option>
+          </select>
+          <button type="button" class="nz-tb mini" onclick="EP.authoringDeleteReference(${reference.id})">삭제</button>
+        </figure>`).join("");
+      referenceBox.classList.toggle("hidden", !references.length);
+      $("auFigureReferenceCount").textContent = references.length ? `${references.length}/6개 첨부` : "최대 6개";
+    }
     const hasProject = !!projectPath || fs !== "none";
     const fiveeMode = figureOptions.provider === "fivee_assets";
     $("auFigureCreate").disabled = false;
@@ -275,6 +389,56 @@
     savedNotice("이미지 가져오기 완료");
   };
 
+  EP.authoringAddReferences = async function (files) {
+    if (!session) await EP.authoringInit();
+    const images = [...(files || [])].filter((file) => /^image\/(png|jpeg|webp)$/.test(file.type));
+    if (!images.length) return;
+    const existing = ((session.figure || {}).references || []).length;
+    if (existing + images.length > 6) return alert("참고 이미지는 문항당 최대 6개까지 넣을 수 있습니다.");
+    for (const file of images) {
+      if (file.size > 20 * 1024 * 1024) return alert("참고 이미지는 파일당 20MB 이하여야 합니다.");
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      session = await post(`/api/authoring/sessions/${session.id}/figure/references`, {
+        filename: file.name, data_url: dataUrl, source_label: file.name, usage: "both",
+      });
+      renderSession();
+    }
+    $("auFigureReferenceFile").value = "";
+    savedNotice(`참고 이미지 ${images.length}개를 추가했습니다`);
+  };
+
+  EP.authoringAddReferenceData = async function (reference) {
+    if (!session) await EP.authoringInit();
+    const existing = ((session.figure || {}).references || []).length;
+    if (existing >= 6) throw new Error("참고 자료는 문항별 최대 6개까지 연결할 수 있습니다.");
+    session = await post(`/api/authoring/sessions/${session.id}/figure/references`, reference);
+    renderSession();
+    savedNotice("선택 영역을 참고 자료로 연결했습니다");
+    return session;
+  };
+
+  EP.authoringReferenceUsage = async function (referenceId, usage) {
+    session = await patch(
+      `/api/authoring/sessions/${session.id}/figure/references/${referenceId}`, { usage }
+    );
+    renderSession();
+    savedNotice(usage === "content" ? "내용 참고로 설정했습니다"
+      : usage === "image" ? "그림 참고로 설정했습니다" : "내용과 그림 참고로 설정했습니다");
+  };
+
+  EP.authoringDeleteReference = async function (referenceId) {
+    await del(`/api/authoring/sessions/${session.id}/figure/references/${referenceId}`);
+    const data = await api(`/api/authoring/sessions/${session.id}`);
+    session = data.session;
+    renderSession();
+    savedNotice("참고 이미지를 제거했습니다");
+  };
+
   EP.authoringCopyImagePrompt = async function () {
     const prompts = ((session.figure || {}).assets || []).filter((asset) => asset.prompt)
       .map((asset) => `[그림 ${asset.ord}]\n${asset.prompt}`).join("\n\n");
@@ -288,8 +452,10 @@
     try {
       session = await post(`/api/authoring/sessions/${session.id}/figure/assets/${assetId}/edit`, {});
       const url = (session.figure || {}).launch_url;
-      if (win && url) win.location.href = url;
-      session = await post(`/api/authoring/sessions/${session.id}/figure/assets/${assetId}/activate`, {});
+      if (!url) throw new Error("5E 실행 주소를 받지 못했습니다.");
+      const target = fiveeLaunchTarget(url);
+      if (win) win.location.href = target.url;
+      session = await post(`/api/authoring/sessions/${session.id}/figure/assets/${assetId}/activate?activation_token=${encodeURIComponent(target.token)}`, {});
       renderSession(); savedNotice("선택한 패널을 5E에 열었습니다");
     } catch (e) {
       if (win) win.close();
@@ -301,6 +467,20 @@
     savedNotice("선택한 5E 패널 가져오는 중…");
     session = await post(`/api/authoring/sessions/${session.id}/figure/assets/${assetId}/sync`, {});
     renderSession(); savedNotice("선택한 패널 반영 완료");
+  };
+
+  EP.authoringOpenFigureEditor = async function (event) {
+    if (event && event.target && event.target.closest("button")) return;
+    if (!session) await EP.authoringInit();
+    const figure = (session && session.figure) || {};
+    const editable = (figure.assets || []).find((asset) => asset.fivee_project_path);
+    if (editable) return EP.authoringEditAsset(editable.id);
+    if (figure.fivee_project_path) return EP.authoringFigure("edit");
+    if (figure.rendered_image_path || figure.material_image_path) {
+      alert("현재 그림에는 5E 편집 프로젝트가 없습니다. '5E 자산' 방식으로 다시 생성하면 그림을 클릭해 편집할 수 있습니다.");
+      return;
+    }
+    alert("먼저 그림을 생성하세요. 생성된 그림은 이 영역을 클릭해 5E에서 편집할 수 있습니다.");
   };
 
   function usageText(c) {
@@ -376,7 +556,21 @@
     }
   }
 
-  EP.authoringRefreshConnection = loadConnection;
+  EP.authoringRefreshConnection = async function () {
+    const provider = session && session.provider === "mock" ? "mock" : "codex_local";
+    $("auAccountText").textContent = provider === "mock" ? "로컬 시연 상태를 확인하고 있습니다." : "Codex 로그인 상태를 다시 불러오고 있습니다.";
+    try {
+      await post(`/api/authoring/connection/refresh?provider=${provider}`, {});
+    } catch (e) {
+      $("auAccountText").textContent = "연결 새로고침 오류: " + e.message;
+    }
+    return loadConnection();
+  };
+
+  EP.authoringLayoutChanged = function (value) {
+    localStorage.setItem("ep_authoring_layout_style", value === "suneung" ? "suneung" : "school");
+    if (EP.scheduleQuestionPreview) EP.scheduleQuestionPreview(100);
+  };
 
   EP.authoringChangeMode = async function (mode) {
     if (!session) return;
@@ -417,6 +611,12 @@
     $("auLogin").disabled = true;
     try {
       const result = await post("/api/authoring/login", {});
+      if (result.alreadySignedIn) {
+        if (popup) popup.close();
+        await loadConnection();
+        savedNotice("기존 Codex 로그인을 연결했습니다");
+        return;
+      }
       if (!result.authUrl) throw new Error("로그인 주소를 받지 못했습니다.");
       if (popup) popup.location.href = result.authUrl;
       else window.open(result.authUrl, "_blank", "noopener");
@@ -510,10 +710,11 @@
     const box = $("auMessages");
     const typing = document.createElement("div");
     typing.className = "au-msg assistant streaming";
-    typing.innerHTML = '<div class="who">ChatGPT <span class="au-stream-state">요청 전송 중</span></div><div class="bubble"><span class="au-typing-dots"><i></i><i></i><i></i></span></div>';
+    typing.innerHTML = '<div class="who">ChatGPT <span class="au-stream-state">요청 전송 중</span></div><div class="bubble"><span class="au-typing-dots"><i></i><i></i><i></i></span></div><div class="au-live-proposals"></div>';
     box.appendChild(typing); box.scrollTop = box.scrollHeight;
     const bubble = typing.querySelector(".bubble");
     const streamState = typing.querySelector(".au-stream-state");
+    const liveProposalBox = typing.querySelector(".au-live-proposals");
     let textQueue = "", queueRunning = false;
     const queueWaiters = [];
     function resolveQueueWaiters() {
@@ -577,6 +778,14 @@
           if (event === "chunk") {
             streamState.textContent = "답변 작성 중";
             enqueueText(data.delta);
+          }
+          if (event === "proposal" && data.proposal) {
+            const proposal = data.proposal;
+            const card = document.createElement("div");
+            card.className = "au-proposal live";
+            card.innerHTML = `<div class="au-proposal-head"><b>${esc(proposal.label || proposal.field)}</b><span class="au-ready-badge">준비됨</span></div><div class="au-proposal-value">${esc(proposalValue(proposal))}</div>`;
+            liveProposalBox.appendChild(card);
+            streamState.textContent = `${liveProposalBox.children.length}개 제안 준비됨 · 다음 항목 작성 중`;
           }
           if (event === "done") finalMessage = data.message;
           if (event === "error") throw new Error(data.message || "ChatGPT 응답 오류");
@@ -719,15 +928,45 @@
         ? "ChatGPT가 이미지를 생성하고 있습니다… 보통 1~3분 걸립니다."
         : "5E 도판 생성·미리보기 렌더링 중…")
       : "그림 작업 처리 중…");
+    if (action === "create") setFigureProgress(true, 3, "그림 생성 요청을 준비하는 중");
     try {
-      session = await post(`/api/authoring/sessions/${session.id}/figure/${action}`, {});
+      if (action === "create") {
+        const response = await fetch(`/api/authoring/sessions/${session.id}/figure/create-stream`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+        });
+        if (!response.ok) throw new Error(await response.text());
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "", completed = null;
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const blocks = buffer.split("\n\n"); buffer = blocks.pop();
+          for (const block of blocks) {
+            const event = (block.match(/^event: (.+)$/m) || [])[1];
+            const raw = (block.match(/^data: (.+)$/m) || [])[1];
+            if (!raw) continue;
+            const data = JSON.parse(raw);
+            if (event === "progress") setFigureProgress(true, data.percent, data.label);
+            if (event === "done") completed = data.session;
+            if (event === "error") throw new Error(data.message || "그림 생성 오류");
+          }
+        }
+        if (!completed) throw new Error("그림 생성 완료 응답을 받지 못했습니다.");
+        session = completed;
+        setFigureProgress(true, 100, "그림 생성과 연결이 완료되었습니다");
+      } else {
+        session = await post(`/api/authoring/sessions/${session.id}/figure/${action}`, {});
+      }
       renderSession();
       const figure = session.figure || {};
       if (action === "edit" && figure.launch_url) {
-        if (fiveeWindow) fiveeWindow.location.href = figure.launch_url;
-        else window.open(figure.launch_url, "_blank", "noopener");
+        const target = fiveeLaunchTarget(figure.launch_url);
+        if (fiveeWindow) fiveeWindow.location.href = target.url;
+        else window.open(target.url, "_blank", "noopener");
         // 5E 창이 열린 뒤 MCP가 이 문항 전용 페이지를 선택하거나 새로 만든다.
-        session = await post(`/api/authoring/sessions/${session.id}/figure/activate`, {});
+        session = await post(`/api/authoring/sessions/${session.id}/figure/activate?activation_token=${encodeURIComponent(target.token)}`, {});
         renderSession();
         const path = figure.fivee_project_path || "";
         if (navigator.clipboard && path) navigator.clipboard.writeText(path).catch(() => {});
@@ -746,6 +985,7 @@
       if (fiveeWindow) fiveeWindow.close();
       alert(e.message || "그림 작업을 시작할 수 없습니다.");
     } finally {
+      if (action === "create") setTimeout(() => setFigureProgress(false, 0, ""), 1200);
       if (actionButton) {
         actionButton.disabled = false;
         actionButton.textContent = originalLabel;
@@ -759,6 +999,11 @@
   };
 
   document.addEventListener("DOMContentLoaded", () => {
+    applyAuthoringPanelWidths();
+    initAuthoringPanelResizer($("authoringEvidenceDrag"), "evidence");
+    initAuthoringPanelResizer($("authoringRightDrag"), "right");
+    const layout = $("auLayoutStyle");
+    if (layout) layout.value = localStorage.getItem("ep_authoring_layout_style") || "school";
     const current = document.querySelector(".au-current");
     if (current) {
       current.addEventListener("input", () => { if (!syncing) syncSoon(); });
@@ -767,6 +1012,23 @@
     const prompt = $("auPrompt");
     if (prompt) prompt.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); EP.authoringSend(); }
+    });
+    const dropzone = $("auFigureReferenceDrop");
+    if (dropzone) {
+      ["dragenter", "dragover"].forEach((name) => dropzone.addEventListener(name, (e) => {
+        e.preventDefault(); dropzone.classList.add("dragging");
+      }));
+      ["dragleave", "drop"].forEach((name) => dropzone.addEventListener(name, (e) => {
+        e.preventDefault(); dropzone.classList.remove("dragging");
+      }));
+      dropzone.addEventListener("drop", (e) => EP.authoringAddReferences(e.dataTransfer.files));
+    }
+    const inlineFigure = $("auFigurePreview");
+    if (inlineFigure) inlineFigure.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        EP.authoringOpenFigureEditor(e);
+      }
     });
   });
 })(window.EP);

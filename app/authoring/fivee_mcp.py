@@ -93,14 +93,19 @@ class FiveEMcpClient:
                 return content[0].get("text", "")
             return content
 
-    def wait_for_app(self, seconds: float = 12) -> str:
+    def wait_for_app(self, seconds: float = 12, href_token: str = "") -> str:
         deadline = time.monotonic() + seconds
         last = ""
         while time.monotonic() < deadline:
             last = str(self.call("app_status"))
-            if last.startswith("✅"):
+            if last.startswith("✅") and (not href_token or href_token in last):
                 return last
             time.sleep(0.5)
+        if href_token and last.startswith("✅"):
+            raise FiveEMcpError(
+                "새로 연 5E 편집기 대신 다른 5E 창이 연결되어 있습니다. "
+                "새 창을 새로고침한 뒤 다시 시도하세요.\n" + last
+            )
         raise FiveEMcpError("5E 편집기가 MCP에 연결되지 않았습니다. 5E 창을 새로고침하세요.\n" + last)
 
     def close(self) -> None:
@@ -114,4 +119,3 @@ class FiveEMcpClient:
                 proc.wait(timeout=3)
             except Exception:
                 proc.kill()
-

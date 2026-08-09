@@ -175,7 +175,8 @@ class CodexAppServerClient:
         except CodexAppServerError:
             return {}
 
-    def generate_image(self, prompt: str, timeout: float = 600) -> dict:
+    def generate_image(self, prompt: str, timeout: float = 600,
+                       reference_paths: list[str] | None = None, progress=None) -> dict:
         """Generate one image through the user's ChatGPT-managed Codex session."""
         account = self.account_state().get("account")
         if not account or account.get("type") != "chatgpt":
@@ -186,6 +187,8 @@ class CodexAppServerClient:
         notifications: queue.Queue = queue.Queue()
         self._subscribers.add(notifications)
         try:
+            if progress:
+                progress(35, "ChatGPT 이미지 생성 세션을 준비하는 중")
             started = self.request("thread/start", {
                 "cwd": str(Path(BASE_DIR).resolve()),
                 "sandbox": "read-only", "approvalPolicy": "never", "ephemeral": True,
@@ -196,12 +199,19 @@ class CodexAppServerClient:
                 ),
             }, timeout=30)
             thread_id = started["thread"]["id"]
+            turn_input = [{"type": "text", "text": prompt}]
+            for raw_path in reference_paths or []:
+                path = Path(raw_path).resolve()
+                if path.is_file():
+                    turn_input.append({"type": "localImage", "path": str(path), "detail": "high"})
             turn = self.request("turn/start", {
                 "threadId": thread_id,
-                "input": [{"type": "text", "text": prompt}],
+                "input": turn_input,
                 "cwd": str(Path(BASE_DIR).resolve()), "approvalPolicy": "never",
             }, timeout=45).get("turn") or {}
             turn_id = turn.get("id")
+            if progress:
+                progress(50, "레퍼런스와 장면 설명을 바탕으로 이미지 생성 중")
             image_item = None
             while True:
                 try:
@@ -217,8 +227,12 @@ class CodexAppServerClient:
                     continue
                 method = event.get("method")
                 item = params.get("item") or {}
+                if method == "item/started" and item.get("type") == "imageGeneration" and progress:
+                    progress(60, "AI가 도판을 렌더링하는 중")
                 if method == "item/completed" and item.get("type") == "imageGeneration":
                     image_item = item
+                    if progress:
+                        progress(88, "생성된 이미지 파일을 확인하는 중")
                 if method == "turn/completed":
                     completed = params.get("turn") or {}
                     if completed.get("status") == "failed":
@@ -432,6 +446,11 @@ class CodexAppServerClient:
             self._models = None
             with self._active_turns_lock:
                 self._active_turns.clear()
+
+    def restart(self) -> None:
+        """Restart the local app-server so it reloads Codex CLI login state."""
+        self.close()
+        self._ensure_started()
 
 
 codex_app_server = CodexAppServerClient()

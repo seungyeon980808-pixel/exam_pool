@@ -15,6 +15,13 @@
     return JSON.stringify(question);
   }
 
+  function collectPreviewQuestion() {
+    const question = EP.collectQuestion();
+    const picker = document.getElementById("auLayoutStyle");
+    question.layout_style = picker ? picker.value : "school";
+    return question;
+  }
+
   function errorMessage(error) {
     let message = error.message || "미리보기를 만들지 못했습니다.";
     try {
@@ -73,12 +80,38 @@
       status: document.getElementById("auLivePreviewStatus"),
       empty: document.getElementById("auLivePreviewEmpty"),
       loading: document.getElementById("auLivePreviewLoading"),
+      quick: document.getElementById("auQuickPreview"),
       image: document.getElementById("auLivePreviewImage"),
       error: document.getElementById("auLivePreviewError"),
       meta: document.getElementById("auLivePreviewMeta"),
       work: document.getElementById("auLivePreviewWork"),
       workHelp: document.getElementById("auLivePreviewWorkHelp"),
     };
+  }
+
+  function renderQuickPreview(question) {
+    const el = liveElements();
+    if (!el.quick) return;
+    if (!question.ask.trim()) {
+      el.quick.innerHTML = "";
+      el.quick.classList.add("hidden");
+      return;
+    }
+    const circled = ["①", "②", "③", "④", "⑤"];
+    const choices = (question.choices || []).map((choice, index) =>
+      `<li value="${index + 1}">${esc(circled[index] || `${index + 1}.`)}&nbsp; ${esc(choice.text || "")}</li>`
+    ).join("");
+    const figure = document.querySelector("#auFigureAssets img, #auFigureImage:not(.hidden)");
+    const figureHtml = figure && figure.getAttribute("src")
+      ? `<img class="au-quick-material" src="${esc(figure.getAttribute("src"))}" alt="문항 그림">` : "";
+    const styleName = question.layout_style === "suneung" ? "수능 양식" : "학교 양식";
+    el.quick.innerHTML = `
+      <div class="au-quick-badge">즉시 미리보기 · ${styleName} · 정밀 조판은 백그라운드 갱신</div>
+      ${question.passage ? `<div class="au-quick-passage">${esc(question.passage).replace(/\n/g, "<br>")}</div>` : ""}
+      ${figureHtml}
+      <div class="au-quick-ask">1. ${esc(question.ask).replace(/\n/g, "<br>")} ${question.default_points ? `(${esc(question.default_points)}점)` : ""}</div>
+      ${choices ? `<ol>${choices}</ol>` : ""}`;
+    el.quick.classList.remove("hidden");
   }
 
   function stopElapsed() {
@@ -111,22 +144,25 @@
     el.status.className = `au-live-status ${state === "empty" ? "" : state}`;
     el.empty.classList.toggle("hidden", state !== "empty");
     const working = state === "queued" || state === "loading";
+    const hasQuickPreview = !!(el.quick && el.quick.innerHTML.trim());
     const hasOldPreview = !!el.image.getAttribute("src");
-    el.loading.classList.toggle("hidden", !working);
-    el.image.classList.toggle("hidden", state !== "ready" && !(working && hasOldPreview));
+    el.loading.classList.toggle("hidden", !working || hasQuickPreview);
+    if (el.quick) el.quick.classList.toggle("hidden", state === "empty" || state === "ready" || !hasQuickPreview);
+    el.image.classList.toggle("hidden", state !== "ready");
     el.image.classList.toggle("stale", working && hasOldPreview);
     el.error.classList.toggle("hidden", state !== "error");
     if (state === "empty") {
       el.status.textContent = "입력 대기";
       el.meta.textContent = "입력이 멈추면 자동 갱신";
       el.image.removeAttribute("src");
+      if (el.quick) el.quick.innerHTML = "";
     } else if (state === "queued") {
       el.status.textContent = liveRunning ? "새 변경 감지" : "변경 감지 · 준비 중";
       el.work.textContent = liveRunning ? "최신 변경 사항 대기 중" : "자동 조판 준비 중";
       el.workHelp.textContent = liveRunning
         ? "현재 조판이 끝나면 변경된 내용으로 다시 조판합니다."
-        : "입력을 마치면 1.2초 뒤 자동으로 시작합니다.";
-      el.meta.textContent = liveRunning ? "현재 작업 완료 후 다시 갱신" : "입력 변경을 확인했습니다.";
+        : "즉시 미리보기는 반영됐고, 정밀 조판은 입력이 멈추면 시작합니다.";
+      el.meta.textContent = liveRunning ? "현재 작업 완료 후 다시 갱신" : "즉시 미리보기 반영 완료";
     } else if (state === "loading") {
       el.meta.textContent = "HwpPalette에 현재 문항을 전달했습니다.";
     } else if (state === "ready") {
@@ -146,7 +182,8 @@
 
   async function renderLivePreview(force) {
     if (!document.getElementById("auLivePreview")) return;
-    const question = EP.collectQuestion();
+    const question = collectPreviewQuestion();
+    renderQuickPreview(question);
     const currentFingerprint = fingerprint(question);
     if (!question.ask.trim()) {
       lastFingerprint = "";
@@ -165,7 +202,7 @@
     startElapsed();
     try {
       const result = await EP.post("/api/previews/question", question);
-      const latestFingerprint = fingerprint(EP.collectQuestion());
+      const latestFingerprint = fingerprint(collectPreviewQuestion());
       if (latestFingerprint === currentFingerprint) {
         lastFingerprint = currentFingerprint;
         lastResult = result;
@@ -174,7 +211,7 @@
         livePending = true;
       }
     } catch (error) {
-      if (fingerprint(EP.collectQuestion()) === currentFingerprint) {
+      if (fingerprint(collectPreviewQuestion()) === currentFingerprint) {
         setLiveState("error", errorMessage(error));
       } else {
         livePending = true;
@@ -191,7 +228,8 @@
   EP.scheduleQuestionPreview = function (delay) {
     clearTimeout(liveTimer);
     if (!document.getElementById("auLivePreview")) return;
-    const question = EP.collectQuestion();
+    const question = collectPreviewQuestion();
+    renderQuickPreview(question);
     if (!question.ask.trim()) {
       setLiveState("empty");
       return;
@@ -201,7 +239,7 @@
       return;
     }
     setLiveState("queued");
-    liveTimer = setTimeout(() => renderLivePreview(false), delay == null ? 1200 : delay);
+    liveTimer = setTimeout(() => renderLivePreview(false), delay == null ? 3200 : delay);
   };
 
   EP.refreshQuestionPreview = function () {
@@ -210,7 +248,7 @@
   };
 
   EP.previewQuestion = async function () {
-    const question = EP.collectQuestion();
+    const question = collectPreviewQuestion();
     if (!question.ask.trim()) return alert("발문을 입력한 뒤 미리보기를 실행하세요.");
     if (lastResult && fingerprint(question) === lastFingerprint) {
       const modal = EP.modal("typesetPreviewModal");

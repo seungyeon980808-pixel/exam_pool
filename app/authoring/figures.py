@@ -390,6 +390,9 @@ class FiveELocalProvider:
         return assets
 
     def create(self, session_id: int, draft: dict, current: dict) -> dict:
+        progress = current.get("progress_callback")
+        if callable(progress):
+            progress(18, "5E 의미 객체 설계안을 확인하는 중")
         self._ensure_server()
         client = self._mcp()
         path = self._project_path(session_id, current)
@@ -430,10 +433,14 @@ class FiveELocalProvider:
             normalized_panels.append(panel)
 
         if options["composition"] in {"auto", "separate"}:
+            if callable(progress):
+                progress(45, f"5E에서 {len(normalized_panels)}개 그림을 배치하는 중")
             assets = self._render_separate_previews(
                 client, session_id, draft, current, path, normalized_panels
             )
         else:
+            if callable(progress):
+                progress(45, "5E에서 도판 객체를 배치하는 중")
             panel = normalized_panels[0]
             panel_id = str(panel.get("id") or "main")
             panel_path = path
@@ -452,6 +459,8 @@ class FiveELocalProvider:
         if not assets:
             raise FigureProviderError("생성할 그림 패널이 없습니다.")
         primary = assets[0]
+        if callable(progress):
+            progress(92, "5E 미리보기와 프로젝트를 저장하는 중")
         result = self._result(
             Path(primary["fivee_project_path"]), "draft", primary["scene_spec_path"],
             primary["rendered_image_path"], ",".join(a["material"] for a in assets),
@@ -474,7 +483,7 @@ class FiveELocalProvider:
     def activate(self, session_id: int, draft: dict, current: dict) -> dict:
         client = self._mcp()
         try:
-            client.wait_for_app()
+            client.wait_for_app(href_token=str(current.get("activation_token") or ""))
             project_path = self._project_path(session_id, current)
             if project_path.is_file():
                 client.call("load_project", {"path": str(project_path)})
@@ -663,6 +672,9 @@ class RasterImageProvider:
         return project_path
 
     def create(self, session_id: int, draft: dict, current: dict) -> dict:
+        progress = current.get("progress_callback")
+        if callable(progress):
+            progress(15, "그림 장면과 생성 옵션을 분석하는 중")
         plan = draft.get("figure_plan")
         if not isinstance(plan, dict):
             context_text = "\n".join(filter(None, [
@@ -686,6 +698,8 @@ class RasterImageProvider:
                 str(plan.get("summary") or ""),
             ]))
             try:
+                if callable(progress):
+                    progress(25, "문항에 필요한 그림 장면 수를 판단하는 중")
                 panels = codex_app_server.plan_image_panels(question_context)
             except CodexAppServerError as exc:
                 raise FigureProviderError(f"그림 장면 자동 분리 실패: {exc}") from exc
@@ -708,6 +722,10 @@ class RasterImageProvider:
             "scientific comparison only through object positions, distances, shapes, and leaf spread."
         )
         assets = []
+        references = [
+            str(row.get("image_path") or "") for row in current.get("references") or []
+            if row.get("usage", "both") in {"image", "both"}
+        ]
         for index, panel in enumerate(panels):
             panel_prompt = str(
                 panel.get("image_prompt") or panel.get("summary") or plan.get("summary") or ""
@@ -720,8 +738,19 @@ class RasterImageProvider:
                 f"{text_rule}\nScene description (semantic reference only): {panel_prompt}\n"
                 "The style and no-annotation rules above override any conflicting wording in the scene description."
             )
+            if references:
+                prompt += (
+                    "\nAttached images are visual references only. Preserve the scientifically important "
+                    "objects and relationships, but reinterpret the composition as a new KICE-style diagram; "
+                    "do not trace, copy text, or reproduce the source layout."
+                )
             try:
-                generated = codex_app_server.generate_image(prompt)
+                if callable(progress):
+                    base = 35 + int((index / max(1, len(panels))) * 50)
+                    progress(base, f"그림 {index + 1}/{len(panels)} 생성 요청 중")
+                generated = codex_app_server.generate_image(
+                    prompt, reference_paths=references, progress=progress,
+                )
                 source = Path(str(generated.get("savedPath") or ""))
                 if not source.is_file():
                     raise FigureProviderError("Codex가 반환한 이미지 파일을 찾을 수 없습니다.")
@@ -743,7 +772,12 @@ class RasterImageProvider:
                 "source_image_path": str(source_copy), "rendered_image_path": str(rendered),
                 "image_prompt": prompt,
             })
+            if callable(progress):
+                progress(85 + int(((index + 1) / max(1, len(panels))) * 10),
+                         f"그림 {index + 1}/{len(panels)} 저장 완료")
         project_path = self._build_fivee_project(folder, assets)
+        if callable(progress):
+            progress(98, "5E 편집 프로젝트와 문항 그림을 연결하는 중")
         return {
             "provider": self.name, "status": "draft",
             "scene_spec_path": str(scene_path), "fivee_project_path": str(project_path),

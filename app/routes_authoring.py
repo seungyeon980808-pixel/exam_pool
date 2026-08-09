@@ -74,6 +74,19 @@ class FigureImageImportIn(BaseModel):
     data_url: str
 
 
+class FigureReferenceIn(BaseModel):
+    filename: str = "reference.png"
+    data_url: str
+    source_label: str = ""
+    source_text: str = ""
+    usage: str = "both"
+    source_meta: dict = {}
+
+
+class FigureReferenceUsageIn(BaseModel):
+    usage: str = "both"
+
+
 AUTHORING_MODES = {
     "quick": {"label": "빠르게 작성", "model": "gpt-5.6-luna", "reasoning_effort": "medium"},
     "precise": {"label": "정밀하게 수정", "model": "gpt-5.6-terra", "reasoning_effort": "medium"},
@@ -162,6 +175,9 @@ def _session(conn, sid: int) -> dict:
     d["figure"]["assets"] = [dict(row) for row in conn.execute(
         "SELECT * FROM authoring_figure_asset WHERE session_id=? ORDER BY ord,id", (sid,)
     )]
+    d["figure"]["references"] = [dict(row) for row in conn.execute(
+        "SELECT * FROM authoring_figure_reference WHERE session_id=? ORDER BY id", (sid,)
+    )]
     material = str(d["draft"].get("material") or "").split(",", 1)[0].strip()
     material_path = hwppalette_provider.resolve_photo(material)
     d["figure"]["material_name"] = material
@@ -209,9 +225,25 @@ def connection(provider: str = "codex_local"):
     return state
 
 
+@router.post("/connection/refresh")
+def refresh_connection(provider: str = "codex_local"):
+    if provider == "codex_local":
+        try:
+            codex_app_server.restart()
+        except CodexAppServerError as exc:
+            raise HTTPException(503, str(exc)) from exc
+    return connection(provider)
+
+
 @router.post("/login")
 def login():
     try:
+        # The long-lived child process may predate a successful Codex Desktop/CLI login.
+        # Restart first and reuse that managed login instead of opening another OAuth flow.
+        codex_app_server.restart()
+        state = codex_app_server.account_state()
+        if state.get("signed_in") or state.get("account"):
+            return {"alreadySignedIn": True}
         return codex_app_server.start_login()
     except CodexAppServerError as exc:
         raise HTTPException(503, str(exc)) from exc
@@ -460,6 +492,100 @@ def import_figure_image(sid: int, body: FigureImageImportIn):
         return _session(conn, sid)
 
 
+@router.post("/sessions/{sid}/figure/references")
+def add_figure_reference(sid: int, body: FigureReferenceIn):
+    if body.usage not in {"content", "image", "both"}:
+        raise HTTPException(400, "참고 자료 용도는 내용, 그림 또는 모두 중 하나여야 합니다.")
+    match = re.match(r"^data:(image/(?:png|jpeg|webp));base64,(.+)$", body.data_url, re.S)
+    if not match:
+        raise HTTPException(400, "PNG, JPEG 또는 WebP 이미지만 참고 이미지로 넣을 수 있습니다.")
+    try:
+        payload = base64.b64decode(match.group(2), validate=True)
+    except ValueError as exc:
+        raise HTTPException(400, "참고 이미지 데이터가 올바르지 않습니다.") from exc
+    if not payload or len(payload) > 20 * 1024 * 1024:
+        raise HTTPException(400, "참고 이미지는 파일당 20MB 이하여야 합니다.")
+    ext = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}[match.group(1)]
+    with db.transaction() as conn:
+        _session(conn, sid)
+        count = conn.execute(
+            "SELECT COUNT(*) AS n FROM authoring_figure_reference WHERE session_id=?", (sid,)
+        ).fetchone()["n"]
+        if count >= 6:
+            raise HTTPException(409, "참고 이미지는 문항당 최대 6개까지 넣을 수 있습니다.")
+        folder = data_dir() / "authoring_figures" / f"session_{sid}" / "references"
+        folder.mkdir(parents=True, exist_ok=True)
+        safe_name = re.sub(r"[^0-9A-Za-z가-힣._-]+", "_", Path(body.filename).stem)[:60] or "reference"
+        path = folder / f"{count + 1:02d}_{safe_name}{ext}"
+        path.write_bytes(payload)
+        conn.execute(
+            "INSERT INTO authoring_figure_reference("
+            "session_id,filename,image_path,source_label,source_text,usage,source_meta_json"
+            ") VALUES(?,?,?,?,?,?,?)",
+            (sid, Path(body.filename).name[:120], str(path), body.source_label.strip()[:240],
+             body.source_text.strip()[:5000], body.usage,
+             json.dumps(body.source_meta, ensure_ascii=False)),
+        )
+        return _session(conn, sid)
+
+
+@router.patch("/sessions/{sid}/figure/references/{reference_id}")
+def update_figure_reference(sid: int, reference_id: int, body: FigureReferenceUsageIn):
+    if body.usage not in {"content", "image", "both"}:
+        raise HTTPException(400, "참고 자료 용도는 내용, 그림 또는 모두 중 하나여야 합니다.")
+    with db.transaction() as conn:
+        _session(conn, sid)
+        exists = conn.execute(
+            "SELECT 1 FROM authoring_figure_reference WHERE id=? AND session_id=?",
+            (reference_id, sid),
+        ).fetchone()
+        if not exists:
+            raise HTTPException(404, "참고 자료를 찾을 수 없습니다.")
+        conn.execute(
+            "UPDATE authoring_figure_reference SET usage=? WHERE id=?", (body.usage, reference_id)
+        )
+        return _session(conn, sid)
+
+
+@router.get("/sessions/{sid}/figure/references/{reference_id}/image")
+def get_figure_reference(sid: int, reference_id: int):
+    conn = db.connect()
+    try:
+        row = conn.execute(
+            "SELECT * FROM authoring_figure_reference WHERE id=? AND session_id=?",
+            (reference_id, sid),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        raise HTTPException(404, "참고 이미지를 찾을 수 없습니다.")
+    path = Path(row["image_path"])
+    media_types = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
+    if not path.is_file() or path.suffix.lower() not in media_types:
+        raise HTTPException(404, "참고 이미지 파일을 찾을 수 없습니다.")
+    return FileResponse(path, media_type=media_types[path.suffix.lower()], filename=path.name)
+
+
+@router.delete("/sessions/{sid}/figure/references/{reference_id}")
+def delete_figure_reference(sid: int, reference_id: int):
+    with db.transaction() as conn:
+        _session(conn, sid)
+        row = conn.execute(
+            "SELECT image_path FROM authoring_figure_reference WHERE id=? AND session_id=?",
+            (reference_id, sid),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "참고 이미지를 찾을 수 없습니다.")
+        conn.execute("DELETE FROM authoring_figure_reference WHERE id=?", (reference_id,))
+    path = Path(row["image_path"])
+    try:
+        if path.is_file():
+            path.unlink()
+    except OSError:
+        pass
+    return {"ok": True}
+
+
 @router.patch("/sessions/{sid}/draft")
 def update_draft(sid: int, body: DraftIn):
     with db.transaction() as conn:
@@ -516,6 +642,14 @@ def send_message(sid: int, body: MessageIn):
             }, ensure_ascii=False) + "\n\n"
             prompt_draft = copy.deepcopy(current["draft"])
             prompt_draft["_figure_options"] = current.get("figure", {}).get("options", FIGURE_OPTION_DEFAULTS)
+            prompt_draft["_references"] = [
+                {
+                    "source_label": row.get("source_label", ""),
+                    "source_text": row.get("source_text", ""),
+                    "usage": row.get("usage", "both"),
+                }
+                for row in current.get("figure", {}).get("references", [])
+            ]
             provider_thread_id2, provider_events = provider.stream(
                 body.content, prompt_draft, provider_thread_id,
                 model=current.get("effective_model"),
@@ -557,6 +691,9 @@ def send_message(sid: int, body: MessageIn):
                     raise value
                 if kind == "delta":
                     yield "event: chunk\ndata: " + json.dumps({"delta": value}, ensure_ascii=False) + "\n\n"
+                    continue
+                if kind == "proposal":
+                    yield "event: proposal\ndata: " + json.dumps({"proposal": value}, ensure_ascii=False) + "\n\n"
                     continue
                 if kind != "done":
                     continue
@@ -646,8 +783,7 @@ def bind_question(sid: int, body: BindIn):
         return _session(conn, sid)
 
 
-@router.post("/sessions/{sid}/figure/{action}")
-def figure_action(sid: int, action: str):
+def _figure_action(sid: int, action: str, progress=None, activation_token: str = ""):
     if action not in {"create", "edit", "activate", "sync", "revert", "confirm"}:
         raise HTTPException(400, "지원하지 않는 그림 작업입니다.")
     with db.transaction() as conn:
@@ -662,6 +798,10 @@ def figure_action(sid: int, action: str):
         figure_provider = get_figure_provider(provider_name)
         try:
             figure_context = _figure_context(conn, current, sid)
+            if progress:
+                figure_context["progress_callback"] = progress
+            if action == "activate" and activation_token:
+                figure_context["activation_token"] = activation_token
             figure = getattr(figure_provider, action)(sid, current["draft"], figure_context)
         except FigureProviderError as exc:
             raise HTTPException(503, str(exc)) from exc
@@ -724,8 +864,54 @@ def figure_action(sid: int, action: str):
         return result
 
 
+@router.post("/sessions/{sid}/figure/create-stream")
+def stream_figure_create(sid: int):
+    """Stream honest pipeline stages while the blocking local image renderer runs."""
+    def events():
+        updates: queue.Queue = queue.Queue()
+
+        def report(percent: int, label: str) -> None:
+            updates.put(("progress", {
+                "percent": max(0, min(100, int(percent))), "label": str(label),
+            }))
+
+        def work() -> None:
+            try:
+                updates.put(("progress", {"percent": 5, "label": "문항과 그림 설정 확인 중"}))
+                updates.put(("done", _figure_action(sid, "create", progress=report)))
+            except HTTPException as exc:
+                updates.put(("error", str(exc.detail)))
+            except Exception as exc:  # keep the SSE response parseable
+                updates.put(("error", str(exc)))
+
+        threading.Thread(target=work, daemon=True).start()
+        while True:
+            try:
+                kind, value = updates.get(timeout=1.0)
+            except queue.Empty:
+                yield "event: heartbeat\ndata: {}\n\n"
+                continue
+            if kind == "progress":
+                yield "event: progress\ndata: " + json.dumps(value, ensure_ascii=False) + "\n\n"
+                continue
+            if kind == "done":
+                yield "event: done\ndata: " + json.dumps({"session": value}, ensure_ascii=False) + "\n\n"
+                return
+            yield "event: error\ndata: " + json.dumps({"message": value}, ensure_ascii=False) + "\n\n"
+            return
+
+    return StreamingResponse(events(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no",
+    })
+
+
+@router.post("/sessions/{sid}/figure/{action}")
+def figure_action(sid: int, action: str, activation_token: str = ""):
+    return _figure_action(sid, action, activation_token=activation_token)
+
+
 @router.post("/sessions/{sid}/figure/assets/{asset_id}/{action}")
-def figure_asset_action(sid: int, asset_id: int, action: str):
+def figure_asset_action(sid: int, asset_id: int, action: str, activation_token: str = ""):
     if action not in {"edit", "activate", "sync", "revert"}:
         raise HTTPException(400, "지원하지 않는 패널 그림 작업입니다.")
     with db.transaction() as conn:
@@ -746,6 +932,8 @@ def figure_asset_action(sid: int, asset_id: int, action: str):
                 Path(asset.get("fivee_project_path") or "").with_name("figure.previous.png")
             ),
         }
+        if action == "activate" and activation_token:
+            context["activation_token"] = activation_token
         provider = get_figure_provider("fivee_local")
         try:
             figure = getattr(provider, action)(sid, current["draft"], context)

@@ -157,6 +157,7 @@ CREATE TABLE IF NOT EXISTS exam_set (
     status       TEXT NOT NULL DEFAULT '설계중',
     -- 지필 만점. 100 이 아닌 시험(예: 지필 70 + 수행 30)이 흔해 세트마다 따로 갖는다.
     total_points REAL NOT NULL DEFAULT 100.0,
+    layout_style TEXT NOT NULL DEFAULT 'school',
     created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
@@ -288,12 +289,26 @@ CREATE TABLE IF NOT EXISTS authoring_figure_asset (
     UNIQUE(session_id, panel_id)
 );
 
+CREATE TABLE IF NOT EXISTS authoring_figure_reference (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id  INTEGER NOT NULL REFERENCES authoring_session(id) ON DELETE CASCADE,
+    filename    TEXT NOT NULL DEFAULT '',
+    image_path  TEXT NOT NULL,
+    source_label TEXT NOT NULL DEFAULT '',
+    source_text TEXT NOT NULL DEFAULT '',
+    usage       TEXT NOT NULL DEFAULT 'both',
+    source_meta_json TEXT NOT NULL DEFAULT '{}',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_authoring_message_session
     ON authoring_message(session_id, id);
 CREATE INDEX IF NOT EXISTS idx_authoring_revision_session
     ON authoring_revision(session_id, id);
 CREATE INDEX IF NOT EXISTS idx_authoring_figure_asset_session
     ON authoring_figure_asset(session_id, ord);
+CREATE INDEX IF NOT EXISTS idx_authoring_figure_reference_session
+    ON authoring_figure_reference(session_id, id);
 
 CREATE INDEX IF NOT EXISTS idx_prop_std ON proposition(standard_code);
 CREATE INDEX IF NOT EXISTS idx_prop_unit ON proposition(unit_no);
@@ -352,7 +367,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
     _add_column(conn, "authoring_figure", "revision", "INTEGER NOT NULL DEFAULT 0")
     _add_column(conn, "authoring_figure", "previous_image_path", "TEXT NOT NULL DEFAULT ''")
     _add_column(conn, "authoring_figure_asset", "prompt", "TEXT NOT NULL DEFAULT ''")
+    _add_column(conn, "authoring_figure_reference", "source_label", "TEXT NOT NULL DEFAULT ''")
+    _add_column(conn, "authoring_figure_reference", "source_text", "TEXT NOT NULL DEFAULT ''")
+    _add_column(conn, "authoring_figure_reference", "usage", "TEXT NOT NULL DEFAULT 'both'")
+    _add_column(conn, "authoring_figure_reference", "source_meta_json", "TEXT NOT NULL DEFAULT '{}'")
     _add_column(conn, "exam_set", "total_points", "REAL NOT NULL DEFAULT 100.0")
+    _add_column(conn, "exam_set", "layout_style", "TEXT NOT NULL DEFAULT 'school'")
     _add_column(conn, "lesson", "indexed_at", "TEXT NOT NULL DEFAULT ''")
 
     # ExamMaker 청사진 — 세트 약칭(그림 파일명 규약 {short_code}_{번호2자리}의 앞부분)

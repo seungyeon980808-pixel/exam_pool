@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import re
 from typing import Iterator, Protocol
 from uuid import uuid4
 
@@ -140,12 +141,24 @@ class MockProvider:
 
 
 PROPOSAL_MARKER = "\n<EXAMPOOL_PROPOSALS>\n"
+PROPOSAL_EVENT_MARKER = "\n<EXAMPOOL_PROPOSAL>\n"
 DEVELOPER_INSTRUCTIONS = """당신은 한국 중학교 과학 문항 제작을 돕는 대화형 조력자다.
 파일이나 도구를 사용하지 말고 사용자의 요청과 현재 문항 데이터만으로 답한다.
 문항 내용을 직접 저장하거나 반영했다고 말하지 않는다. 제안은 사용자가 버튼으로 선택 반영한다.
 먼저 사용자에게 보여 줄 자연스러운 한국어 답변을 간결하게 작성한다.
-마지막에는 반드시 새 줄에 <EXAMPOOL_PROPOSALS>를 쓰고, 그 다음 줄에 JSON 배열만 출력한다.
+자연스러운 답변 뒤에는 제안 시작을 알리는 <EXAMPOOL_PROPOSAL>을 새 줄에 단 한 번만 쓴다.
+그 다음 줄부터 제안 JSON 객체를 한 줄에 하나씩 연속 출력한다. 배열로 묶지 말고 마커도 반복하지 않는다.
+필요한 모든 제안 JSON을 출력할 때까지 첫 객체에서 응답을 끝내지 않는다.
 각 제안은 field, label, value를 가진다. field는 passage, ask, bogi_items, choices, answer, explanation, figure_plan 중 하나다.
+사용자가 주제나 상황을 제시하며 문항·문제의 제작, 생성, 작성, 설계 또는 출제를 요청하면
+"전체", "한 번에"라는 표현이 없어도 기본적으로 완성된 문항 전체를 제안한다. 일부 항목에서 멈추지 않는다.
+"발문만", "선지만", "해설만"처럼 범위를 명시한 경우에만 해당 항목만 제안한다. 정답형·합답형은
+passage(불필요하면 빈 문자열), ask, choices 5개, answer, explanation을 한 응답에서 모두 제안한다.
+그림이 필요한 요청이면 figure_plan도 같은 응답에 포함한다. 기존 필드가 채워져 있어도 전체 제작 요청이면
+완성된 문항 전체를 다시 제안한다.
+현재 문항 데이터의 _references는 사용자가 선택한 참고 자료다. usage가 content 또는 both인 자료의
+source_text는 문항 내용의 근거·맥락으로 활용하되 그대로 베끼지 않는다. usage가 image 또는 both인
+자료는 그림 설계의 의미 관계만 참고하고 원본 구도나 문자를 복제하지 않는다.
 bogi_items 값은 label, text를 가진 객체 배열이다. 제시문은 passage에만, 〈보기〉 문장은 bogi_items에만 넣고
 passage나 ask 문자열 안에 〈보기〉와 ㄱ·ㄴ·ㄷ 문장을 합쳐 넣지 않는다.
 choices 값은 ord, text, is_answer를 가진 객체 배열이다. 제안할 필드가 없으면 빈 배열을 출력한다.
@@ -166,14 +179,14 @@ electroscope만 허용한다. 검전기는 {"type":"apparatus","kind":"electrosc
 "y":-17,"w":22,"h":34,"leafSpread":0.55}처럼 쓴다.
 지원되지 않는 실험 기구가 핵심이면 objects를 비우고 blocked_reason에 필요한 전용 부품명을 적는다.
 선·도형을 여러 개 조합해 지원되지 않는 기구를 흉내 내지 않는다. 좌표 단위는 mm이며 원점은 중앙이다.
-마커 뒤에는 JSON 외의 문장을 쓰지 않는다."""
+첫 마커 뒤에는 마커와 JSON 객체 외의 문장을 쓰지 않는다."""
 
 
 class CodexLocalProvider:
     name = "codex_local"
     # 이 값이 바뀌면 기존 App Server 스레드는 최신 developerInstructions를 모르므로
     # ExamPool이 다음 요청에서 새 스레드를 시작한다. 저장된 대화·문항 초안은 유지된다.
-    protocol_version = "authoring-v4-figure-options-panels"
+    protocol_version = "authoring-v8-default-complete-question"
 
     def connection_state(self) -> dict:
         from .codex_app_server import CodexAppServerError, codex_app_server
@@ -205,9 +218,27 @@ class CodexLocalProvider:
             "choices", "answer", "explanation", "difficulty", "intent",
             "figure_plan",
             "_figure_options",
+            "_references",
         )}
+        compact = re.sub(r"\s+", "", message)
+        field_words = ("제시문", "발문", "보기", "선지", "정답", "해설", "그림", "도판")
+        explicit_partial = any(f"{field}만" in compact for field in field_words)
+        creation_request = (
+            "출제" in compact
+            or (any(noun in compact for noun in ("문항", "문제"))
+                and any(verb in compact for verb in ("만들", "제작", "생성", "작성", "설계", "내줘")))
+        )
+        if explicit_partial:
+            scope = "명시적으로 지정된 항목만 제안한다."
+        elif creation_request:
+            scope = (
+                "전체 문항 제작 요청이다. '전체'라는 단어가 없어도 제시문(없으면 빈 값), 발문, "
+                "선지 5개, 정답, 해설을 모두 제안하고 필요한 경우 그림 설계도 포함한다."
+            )
+        else:
+            scope = "새 문항 제작 맥락이면 전체 문항을, 특정 항목 수정 맥락이면 해당 항목을 제안한다."
         return (f"현재 문항 데이터:\n{json.dumps(current, ensure_ascii=False)}\n\n"
-                f"사용자 요청:\n{message.strip()}")
+                f"요청 범위 판정:\n{scope}\n\n사용자 요청:\n{message.strip()}")
 
     @staticmethod
     def _validated_proposals(value, figure_options: dict | None = None) -> list[dict]:
@@ -307,23 +338,55 @@ class CodexLocalProvider:
         def events():
             full = ""
             emitted = 0
-            marker_found = False
+            marker_found = ""
+            proposal_cursor = 0
+            proposals = []
+            decoder = json.JSONDecoder()
             for delta in raw_deltas:
                 full += delta
-                marker_at = full.find(PROPOSAL_MARKER)
+                event_at = full.find(PROPOSAL_EVENT_MARKER)
+                batch_at = full.find(PROPOSAL_MARKER)
+                candidates = [(event_at, "events", PROPOSAL_EVENT_MARKER),
+                              (batch_at, "batch", PROPOSAL_MARKER)]
+                candidates = [item for item in candidates if item[0] >= 0]
+                marker_at, marker_mode, marker_token = min(candidates, default=(-1, "", ""))
                 if marker_at >= 0:
                     if marker_at > emitted:
                         yield "delta", full[emitted:marker_at]
+                    if not marker_found:
+                        marker_found = marker_mode
+                        proposal_cursor = marker_at + len(marker_token)
                     emitted = marker_at
-                    marker_found = True
+                    if marker_found == "batch":
+                        continue
+                    while True:
+                        while (proposal_cursor < len(full) and full[proposal_cursor].isspace()
+                               and not full.startswith(PROPOSAL_EVENT_MARKER, proposal_cursor)):
+                            proposal_cursor += 1
+                        if full.startswith(PROPOSAL_EVENT_MARKER, proposal_cursor):
+                            proposal_cursor += len(PROPOSAL_EVENT_MARKER)
+                            continue
+                        try:
+                            raw_proposal, end = decoder.raw_decode(full, proposal_cursor)
+                        except json.JSONDecodeError:
+                            break
+                        proposal_cursor = end
+                        validated = self._validated_proposals(
+                            [raw_proposal], draft.get("_figure_options") or {}
+                        )
+                        if validated:
+                            proposals.extend(validated)
+                            yield "proposal", validated[0]
                     continue
                 if not marker_found:
-                    safe_end = max(emitted, len(full) - len(PROPOSAL_MARKER))
+                    marker_guard = max(len(PROPOSAL_MARKER), len(PROPOSAL_EVENT_MARKER))
+                    safe_end = max(emitted, len(full) - marker_guard)
                     if safe_end > emitted:
                         yield "delta", full[emitted:safe_end]
                         emitted = safe_end
-            proposals = []
-            if marker_found:
+            if marker_found == "events":
+                visible = full.split(PROPOSAL_EVENT_MARKER, 1)[0]
+            elif marker_found == "batch":
                 visible, raw_json = full.split(PROPOSAL_MARKER, 1)
                 try:
                     proposals = self._validated_proposals(
