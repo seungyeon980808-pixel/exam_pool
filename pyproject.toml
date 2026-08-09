@@ -12,6 +12,9 @@ dependencies = [
     "mcp>=1.26",
     "pydantic>=2.0",
     "httpx>=0.27",
+    "pyhwpx",
+    "olefile",
+    "pillow",
 ]
 
 [project.optional-dependencies]

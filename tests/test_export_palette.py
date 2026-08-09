@@ -67,8 +67,8 @@ class TestTemplateOutput(unittest.TestCase):
         out = ep.question_to_palette(hapdap(material="그림가.png, 그림나.png"), combos()).split("\n")
         self.assertEqual(out[0], "\\학교합답2사진5선지\\")
         self.assertEqual(len(out) - 1, 14)
-        self.assertEqual(out[3], "\\그림가.png\\")
-        self.assertEqual(out[4], "\\그림나.png\\")
+        self.assertEqual(out[3], "\\그림가\\")
+        self.assertEqual(out[4], "\\그림나\\")
         self.assertIn("고른 것은?", out[5])                    # 발문
         self.assertEqual(out[6], "3")                         # 점수
 
@@ -235,6 +235,30 @@ class TestLegacyGuard(unittest.TestCase):
         out = ep.question_to_palette(q, five("가", "나", "다", "라", "마"))
         self.assertNotIn("\n자료:", out)
         self.assertIn("자료 :", out)
+
+
+class TestSuneungPalette(unittest.TestCase):
+    def test_direct_question_uses_csat_pack(self):
+        q = jungdap(material="그래프.png", default_points=3)
+        out = ep.question_to_palette(
+            q, five("가", "나", "다", "라", "마"), layout_style="suneung"
+        ).split("\n")
+        self.assertEqual(out[0], "\\수능AI실제직접형\\")
+        self.assertEqual(len(out) - 1, 9)
+        self.assertIn("\\그래프\\", out[2])
+        self.assertEqual(out[4], "3")
+
+    def test_hapdap_question_puts_score_in_question(self):
+        q = hapdap(material="", default_points=3)
+        out = ep.question_to_palette(q, combos(), layout_style="suneung").split("\n")
+        self.assertEqual(out[0], "\\수능AI실제합답형\\")
+        self.assertEqual(len(out) - 1, 11)
+        self.assertTrue(out[3].endswith("[3점]"), out[3])
+
+    def test_set_style_is_forwarded_to_each_question(self):
+        md = ep.set_to_markdown([(jungdap(), five("가", "나", "다", "라", "마"))],
+                                layout_style="suneung")
+        self.assertTrue(md.startswith("\\수능AI실제직접형\\"))
 
 
 if __name__ == "__main__":

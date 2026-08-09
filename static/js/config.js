@@ -18,6 +18,7 @@
     S.cfgTrack = cur ? cur.track : (S.cfgTrack || TRACKS[0]);
     EP.renderCfg();
     EP.loadDocs();
+    EP.loadPalettes();
     EP.loadBackups();
   };
 
@@ -143,6 +144,76 @@
     EP.saveScope(units.length === all.length ? [] : units);
     alert(S.subject + " 범위를 저장했습니다.\n단원 " + (units.length || "전체") +
       " · 성취기준 " + (S.stdScope.length || "전체"));
+  };
+
+  /* ---------- 시험지 팔레트 ---------- */
+  const PAL_STYLE = { school: "학교", suneung: "수능" };
+
+  EP.loadPalettes = async function () {
+    const rows = $("palRows");
+    if (!rows) return;
+    try {
+      const data = await api("/api/integrations/hwppalette/palettes");
+      const active = data.active || {};
+      $("palStatus").innerHTML = "현재 적용 · 학교 <b>" + esc(active.school || "내장 기본") +
+        "</b> · 수능 <b>" + esc(active.suneung || "내장 기본") + "</b>" +
+        (active.school || active.suneung
+          ? ' <button class="nz-tb mini" onclick="EP.resetPalette(\'school\')">학교 기본값</button>' +
+            ' <button class="nz-tb mini" onclick="EP.resetPalette(\'suneung\')">수능 기본값</button>' : "");
+      rows.innerHTML = (data.packages || []).map((p) => {
+        const activeFor = p.active_for || [];
+        const badge = activeFor.length
+          ? activeFor.map((s) => `<b>${PAL_STYLE[s] || s}</b>`).join(", ") : "-";
+        const count = (p.items || []).length;
+        const note = p.note ? `<div class="nz-sub">${esc(p.note)}</div>` : "";
+        return `<tr><td><b>${esc(p.name)}</b>${note}<div class="nz-sub">${esc(p.filename || "")} · ${esc(p.id)}</div></td>` +
+          `<td>${count}개</td><td>${badge}</td><td>` +
+          `<button class="nz-tb mini" onclick="EP.activatePalette('${esc(p.id)}','school')">학교 적용</button> ` +
+          `<button class="nz-tb mini" onclick="EP.activatePalette('${esc(p.id)}','suneung')">수능 적용</button>` +
+          `</td></tr>`;
+      }).join("") || '<tr><td colspan="4" class="nz-sub">등록된 팔레트가 없습니다. 내장 기본 양식을 사용합니다.</td></tr>';
+    } catch (e) {
+      rows.innerHTML = `<tr><td colspan="4" class="r">팔레트 목록을 읽지 못했습니다: ${esc(e.message)}</td></tr>`;
+    }
+  };
+
+  EP.importPalette = async function (input) {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const style = $("palTarget").value;
+    try {
+      const url = "/api/integrations/hwppalette/palettes?filename=" +
+        encodeURIComponent(file.name) + "&target_style=" + encodeURIComponent(style);
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload.detail || `HTTP ${res.status}`);
+      }
+      const out = await res.json();
+      const contract = out.slot_contract || {};
+      alert(`${out.name} 팔레트를 ${PAL_STYLE[style]} 양식으로 등록했습니다.` +
+        (contract.ok ? "\n슬롯 계약도 정상입니다." : "\n일부 슬롯 계약을 확인해 주세요."));
+      await EP.loadPalettes();
+    } catch (e) {
+      alert("팔레트 등록 실패: " + e.message);
+    } finally {
+      input.value = "";
+    }
+  };
+
+  EP.activatePalette = async function (id, style) {
+    try {
+      await post(`/api/integrations/hwppalette/palettes/${id}/activate/${style}`, {});
+      await EP.loadPalettes();
+    } catch (e) { alert("팔레트 적용 실패: " + e.message); }
+  };
+
+  EP.resetPalette = async function (style) {
+    if (!confirm(`${PAL_STYLE[style]} 양식을 내장 기본값으로 되돌릴까요?`)) return;
+    try {
+      await EP.del(`/api/integrations/hwppalette/palettes/active/${style}`);
+      await EP.loadPalettes();
+    } catch (e) { alert("기본값 복원 실패: " + e.message); }
   };
 
   /* ---------- 백업 · 복구 ---------- */

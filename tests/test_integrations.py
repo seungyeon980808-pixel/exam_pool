@@ -15,6 +15,38 @@ from app.routes_question import ChoiceIn, QuestionIn
 
 
 class TestHwpPaletteContract(unittest.TestCase):
+    def test_embedded_runtime_contains_school_and_csat_contracts(self):
+        vendor = Path(__file__).resolve().parents[1] / "vendor" / "hwp_typesetter"
+        self.assertTrue((vendor / "hwp_palette" / "cli.py").is_file())
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch("app.integrations.hwppalette.data_dir", return_value=Path(tmp)):
+            provider = HwpPaletteProvider(vendor)
+            result = provider.validate_slot_contract({
+                "학교합답0사진5선지": 11,
+                "수능AI실제직접형": 9,
+                "수능AI실제합답형": 11,
+            })
+            child_env = provider._child_env()
+        self.assertTrue(result["ok"], result)
+        self.assertIn("HWPPAL_DATA_DIR", child_env)
+        self.assertIn(str(vendor), child_env["PYTHONPATH"])
+
+    def test_question_preview_crops_unused_page_area(self):
+        import fitz
+
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            pdf = folder / "question.pdf"
+            document = fitz.open()
+            page = document.new_page(width=595, height=842)
+            page.insert_text((52, 90), "1. compact question preview")
+            document.save(pdf)
+            document.close()
+            full = HwpPaletteProvider._render_pdf(pdf, folder, crop_content=False)[0]
+            cropped = HwpPaletteProvider._render_pdf(pdf, folder, crop_content=True)[0]
+        self.assertLess(cropped["width"], full["width"])
+        self.assertLess(cropped["height"], full["height"])
+
     def test_launcher_forces_utf8_output_for_detached_cli(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -81,7 +113,7 @@ class TestHwpPaletteContract(unittest.TestCase):
                 Path(args[args.index("--output-pdf") + 1]).write_bytes(b"pdf")
                 return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
-            def fake_render(_pdf, folder):
+            def fake_render(_pdf, folder, **_kwargs):
                 (folder / "page-1.png").write_bytes(b"png")
                 return [{"page_no": 1, "filename": "page-1.png", "width": 100, "height": 140}]
 
@@ -101,9 +133,38 @@ class TestHwpPaletteContract(unittest.TestCase):
         self.assertEqual(first["pages"][0]["image_url"],
                          f"/api/previews/{first['token']}/pages/1")
 
+    def test_suneung_preview_uses_exam_pool_form_runner_and_separate_cache(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "palette"
+            cache = Path(tmp) / "cache"
+            (root / "hwp_palette").mkdir(parents=True)
+            (root / "hwp_palette" / "cli.py").write_text("", encoding="utf-8")
+            provider = HwpPaletteProvider(root)
+
+            def fake_run(args, **kwargs):
+                Path(args[args.index("--output-hwp") + 1]).write_bytes(b"hwp")
+                Path(args[args.index("--output-pdf") + 1]).write_bytes(b"pdf")
+                return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+            def fake_render(_pdf, folder, **_kwargs):
+                (folder / "page-1.png").write_bytes(b"png")
+                return [{"page_no": 1, "filename": "page-1.png", "width": 100, "height": 140}]
+
+            with patch("app.integrations.hwppalette.data_dir", return_value=cache), \
+                 patch("app.integrations.hwppalette.subprocess.run", side_effect=fake_run) as run, \
+                 patch.object(provider, "_render_pdf", side_effect=fake_render):
+                school = provider.render_preview("\\template\\\n1", layout_style="school")
+                suneung = provider.render_preview("\\template\\\n1", layout_style="suneung")
+        args = run.call_args.args[0]
+        self.assertIn("hwppalette_runner.py", str(args[1]))
+        self.assertIn("suneung", args)
+        self.assertNotEqual(school["token"], suneung["token"])
+        self.assertEqual(suneung["layout_style"], "suneung")
+
     def test_question_preview_accepts_unsaved_editor_payload(self):
         payload = QuestionIn(
             ask="빛의 반사에 대한 설명으로 옳은 것은?",
+            layout_style="suneung",
             choices=[
                 ChoiceIn(ord=1, text="입사각과 반사각은 같다.", is_answer=True),
                 ChoiceIn(ord=2, text="반사각은 항상 0도이다."),
@@ -115,7 +176,9 @@ class TestHwpPaletteContract(unittest.TestCase):
         self.assertTrue(result["ok"])
         markdown = render.call_args.args[0]
         self.assertIn("빛의 반사", markdown)
+        self.assertIn("\\수능AI실제직접형\\", markdown)
         self.assertEqual(render.call_args.kwargs["scope"], "question")
+        self.assertEqual(render.call_args.kwargs["layout_style"], "suneung")
 
 
 class TestIntegrationRoutes(unittest.TestCase):

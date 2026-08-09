@@ -29,6 +29,7 @@
 
     // 만점은 세트마다 다르다 (지필 70 + 수행 30 같은 시험이 흔하다)
     $("setTotal").value = dash.target_points;
+    $("setLayoutStyle").value = (d.set && d.set.layout_style) || "school";
     const gap = dash.gap;
     const gapLabel = gap === 0 ? '<span class="g">딱 맞음</span>'
       : gap > 0 ? `<span class="r">+${gap}점 초과</span>` : `<span class="r">${gap}점 부족</span>`;
@@ -75,6 +76,11 @@
     if (!(v > 0)) return alert("만점은 0보다 커야 합니다.");
     await EP.patch(`/api/sets/${S.curSetId}`, { total_points: v });
     EP.loadSet();
+  };
+
+  EP.saveSetLayout = async function () {
+    if (!S.curSetId) return;
+    await EP.patch(`/api/sets/${S.curSetId}`, { layout_style: $("setLayoutStyle").value });
   };
 
   /** 세트 안에서만 배점 변경 — 문항 자체의 기본 배점은 건드리지 않는다 */

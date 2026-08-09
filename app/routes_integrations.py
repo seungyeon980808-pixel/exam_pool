@@ -4,11 +4,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from . import checklist, db, export_palette
 from .integrations.hwppalette import HwpPaletteError, hwppalette_provider
+from .integrations import palette_registry
 from .paths import data_dir
 from .routes_question import QuestionIn, _set_items
 
@@ -16,8 +17,13 @@ router = APIRouter(prefix="/api")
 
 
 def _active_slot_contract() -> dict[str, int]:
-    labels = set(export_palette.TEMPLATE_FOR.values())
-    return {label: export_palette.TEMPLATES[label]["slot_count"] for label in labels}
+    contract = {
+        label: export_palette.TEMPLATES[label]["slot_count"]
+        for label in set(export_palette.TEMPLATE_FOR.values())
+    }
+    contract.update({label: spec["slot_count"]
+                     for label, spec in export_palette.SUNEUNG_TEMPLATES.items()})
+    return contract
 
 
 def _evidence_summary(question: dict, choices: list[dict]) -> tuple[int, int]:
@@ -45,8 +51,56 @@ def integration_status():
             "root": str(hwppalette_provider.root),
             "photo_root": str(hwppalette_provider.photo_root()),
             "slot_contract": slot_contract,
+            "palettes": palette_registry.list_palettes(),
         }
     }
+
+
+@router.get("/integrations/hwppalette/palettes")
+def hwppalette_palettes():
+    return palette_registry.list_palettes()
+
+
+@router.post("/integrations/hwppalette/palettes")
+async def register_hwppalette(request: Request, filename: str,
+                              target_style: str | None = None):
+    """HwpPalette가 내보낸 .hwpal을 등록하고 선택한 조판 양식에 즉시 적용한다."""
+    declared = request.headers.get("content-length")
+    if declared:
+        try:
+            if int(declared) > palette_registry.MAX_ARCHIVE_BYTES:
+                raise HTTPException(413, "팔레트 파일은 32MB를 넘을 수 없습니다.")
+        except ValueError:
+            raise HTTPException(400, "Content-Length가 올바르지 않습니다.")
+    content = await request.body()
+    try:
+        result = palette_registry.install_hwpal(content, filename, target_style)
+        hwppalette_provider._data_root()  # 활성 팔레트를 즉시 실행 라이브러리에 반영
+        result["slot_contract"] = hwppalette_provider.validate_slot_contract(
+            _active_slot_contract())
+        return result
+    except (palette_registry.PalettePackageError, ValueError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.post("/integrations/hwppalette/palettes/{package_id}/activate/{style}")
+def activate_hwppalette(package_id: str, style: str):
+    try:
+        result = palette_registry.activate(package_id, style)
+        hwppalette_provider._data_root()
+        return result
+    except palette_registry.PalettePackageError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.delete("/integrations/hwppalette/palettes/active/{style}")
+def deactivate_hwppalette(style: str):
+    try:
+        result = palette_registry.deactivate(style)
+        hwppalette_provider._data_root()
+        return result
+    except palette_registry.PalettePackageError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.get("/integrations/hwppalette/slot-contract")
@@ -59,9 +113,14 @@ def preview_question(payload: QuestionIn):
     """Preview the current editor draft without saving it as a bank question."""
     question = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
     choices = question.pop("choices", [])
-    markdown = export_palette.question_to_palette(question, choices, num=1) + "\n"
+    layout_style = question.get("layout_style", "school")
+    markdown = export_palette.question_to_palette(
+        question, choices, num=1, layout_style=layout_style) + "\n"
     try:
-        return hwppalette_provider.render_preview(markdown, scope="question", exam_page=True)
+        return hwppalette_provider.render_preview(
+            markdown, scope="question", exam_page=True,
+            layout_style=layout_style,
+        )
     except HwpPaletteError as exc:
         raise HTTPException(503, str(exc)) from exc
 
@@ -79,11 +138,16 @@ def preview_set(sid: int):
     if not items:
         raise HTTPException(409, "미리 볼 문항이 없습니다.")
     issues = checklist.check_set(dict(set_row), items)
+    layout_style = dict(set_row).get("layout_style", "school")
     markdown = export_palette.set_to_markdown(
-        [(item["question"], item["choices"]) for item in items]
+        [(item["question"], item["choices"]) for item in items],
+        layout_style=layout_style,
     )
     try:
-        result = hwppalette_provider.render_preview(markdown, scope=f"set:{sid}", exam_page=True)
+        result = hwppalette_provider.render_preview(
+            markdown, scope=f"set:{sid}", exam_page=True,
+            layout_style=layout_style,
+        )
     except HwpPaletteError as exc:
         raise HTTPException(503, str(exc)) from exc
     result["count"] = len(items)
@@ -126,15 +190,19 @@ def typeset_set(sid: int):
     errors = [issue for issue in issues if issue["level"] == "error"]
     if errors:
         raise HTTPException(409, "세트 검토 오류를 먼저 해결하세요: " + errors[0]["message"])
+    layout_style = dict(set_row).get("layout_style", "school")
     markdown = export_palette.set_to_markdown(
-        [(item["question"], item["choices"]) for item in items]
+        [(item["question"], item["choices"]) for item in items],
+        layout_style=layout_style,
     )
     export_dir = data_dir() / "exports"
     export_dir.mkdir(parents=True, exist_ok=True)
     path = export_dir / f"set_{sid}.md"
     path.write_text(markdown, encoding="utf-8")
     try:
-        process = hwppalette_provider.launch(path, exam_page=True)
+        process = hwppalette_provider.launch(
+            path, exam_page=True, layout_style=layout_style,
+        )
     except HwpPaletteError as exc:
         raise HTTPException(503, str(exc)) from exc
     return {"ok": True, "pid": process.pid, "markdown_path": str(path), "count": len(items)}

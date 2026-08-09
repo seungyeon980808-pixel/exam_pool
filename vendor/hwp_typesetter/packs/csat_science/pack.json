@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "name": "csat_science",
+  "version": "0.1.0",
+  "form": {
+    "key": "first_page",
+    "name": "수능 AI 첫면 기본틀",
+    "label": "수능AI첫면틀",
+    "file": "fragments/first_page.hwp",
+    "slots": ["시험지머리문구", "영역과목명"]
+  },
+  "templates": [
+    {
+      "key": "direct",
+      "name": "수능 AI 실제 직접형",
+      "label": "수능AI실제직접형",
+      "file": "fragments/direct.hwp",
+      "slots": ["문항번호", "발문", "질문", "배점", "선지1", "선지2", "선지3", "선지4", "선지5"]
+    },
+    {
+      "key": "hapdap",
+      "name": "수능 AI 실제 합답형",
+      "label": "수능AI실제합답형",
+      "file": "fragments/hapdap.hwp",
+      "slots": ["문항번호", "발문", "질문", "보기ㄱ", "보기ㄴ", "보기ㄷ", "선지1", "선지2", "선지3", "선지4", "선지5"]
+    },
+    {
+      "key": "people",
+      "name": "수능 AI 실제 인물합답형",
+      "label": "수능AI실제인물합답형",
+      "file": "fragments/people.hwp",
+      "slots": ["문항번호", "발문", "질문", "발언1", "발언2", "발언3", "선지1", "선지2", "선지3", "선지4", "선지5"]
+    },
+    {
+      "key": "experiment",
+      "name": "수능 AI 실제 실험형",
+      "label": "수능AI실제실험형",
+      "file": "fragments/experiment.hwp",
+      "slots": ["문항번호", "실험과정", "질문", "발언1", "발언2", "발언3", "선지1", "선지2", "선지3", "선지4", "선지5"]
+    },
+    {
+      "key": "comparison",
+      "name": "수능 AI 실제 비교선지형",
+      "label": "수능AI실제비교선지형",
+      "file": "fragments/comparison.hwp",
+      "slots": ["문항번호", "발문", "질문", "표머리", "선지1", "선지2", "선지3", "선지4", "선지5"]
+    },
+    {
+      "key": "data_table",
+      "name": "수능 AI 실제 자료표형",
+      "label": "수능AI실제자료표형",
+      "file": "fragments/data_table.hwp",
+      "slots": ["문항번호", "자료표", "발문", "질문", "표머리", "선지1", "선지2", "선지3", "선지4", "선지5"]
+    },
+    {
+      "key": "diagram_hapdap",
+      "name": "수능 AI 실제 그림합답형",
+      "label": "수능AI실제그림합답형",
+      "file": "fragments/diagram_hapdap.hwp",
+      "slots": ["문항번호", "발문", "질문", "배점", "보기ㄱ", "보기ㄴ", "보기ㄷ", "선지1", "선지2", "선지3", "선지4", "선지5"]
+    }
+  ]
+}

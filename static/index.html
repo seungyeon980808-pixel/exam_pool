@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ExamPool</title>
   <link rel="icon" type="image/svg+xml" href="/assets/icon.svg" />
-  <link rel="stylesheet" href="/static/css/neis.css" />
+  <link rel="stylesheet" href="/static/css/neis.css?v=0.4.2-compact-chat" />
 </head>
 <body>
 
@@ -115,31 +115,32 @@
             <div class="au-grid">
               <!-- ChatGPT 대화는 문항 데이터와 분리되어 별도 작성 세션에 저장된다. -->
               <aside class="au-panel au-chat">
+                <button type="button" class="au-right-folded-label" onclick="EP.toggleAuthoringRight(false)">AI 채팅</button>
                 <div class="au-head">
                   <b>ChatGPT 대화</b>
                   <span id="auConnection" class="au-connection">확인 중</span>
                 </div>
                 <div id="auAccount" class="au-account">
                   <span id="auAccountText">ChatGPT 계정 연결을 확인하고 있습니다.</span>
+                </div>
+                <div class="au-chat-toolbar">
                   <span class="au-account-actions">
                     <button class="nz-tb mini blu hidden" id="auLogin" onclick="EP.authoringLogin()">ChatGPT 로그인</button>
                     <button class="nz-tb mini" id="auDemo" onclick="EP.authoringUseProvider('mock')">로컬 시연</button>
                     <button class="nz-tb mini hidden" id="auCodex" onclick="EP.authoringUseProvider('codex_local')">ChatGPT로 전환</button>
-                    <button class="nz-tb mini" onclick="EP.authoringRefreshConnection()">새로고침</button>
+                    <button class="nz-tb mini" onclick="EP.authoringRefreshConnection()" title="연결 상태 새로고침">↻</button>
                   </span>
-                </div>
-                <div class="au-settings">
-                  <label>작업 모드
+                  <label><span>작업</span>
                     <select class="nz-sel mini" id="auMode" onchange="EP.authoringChangeMode(this.value)">
                       <option value="quick">빠르게 작성</option>
                       <option value="precise">정밀하게 수정</option>
                       <option value="final">최종 검수</option>
                     </select>
                   </label>
-                  <label>모델
+                  <label><span>모델</span>
                     <select class="nz-sel mini" id="auModel" onchange="EP.authoringChangeModel()"></select>
                   </label>
-                  <label>추론
+                  <label><span>추론</span>
                     <select class="nz-sel mini" id="auEffort" onchange="EP.authoringChangeModel()"></select>
                   </label>
                 </div>
@@ -156,12 +157,16 @@
                 </div>
               </aside>
 
+              <div class="au-column-resizer" id="authoringRightDrag" role="separator"
+                   aria-orientation="vertical" tabindex="0" title="드래그해서 문항 편집과 미리보기 너비 조절"></div>
+
               <div class="au-current">
                 <div class="au-statebar">
                   <span class="au-state-label">작성 상태</span>
                   <span id="auStatus" class="au-status">텍스트 작성 중</span>
                   <span id="auSaved" class="au-saved"></span>
                   <span class="au-state-actions">
+                    <button class="nz-tb mini" onclick="EP.resetAuthoringPanelWidths()" title="좌·중·우 패널 너비를 기본값으로 돌립니다.">폭 초기화</button>
                     <button class="nz-tb mini danger" onclick="EP.authoringDiscard()">작성 폐기</button>
                     <button class="nz-tb mini" onclick="EP.authoringUndo()">반영 취소</button>
                     <button class="nz-tb mini" id="auUnconfirm" onclick="EP.authoringUnconfirm()">확정 해제</button>
@@ -182,9 +187,12 @@
             <div id="qCheckResult"></div>
 
             <!-- 관리 정보 (인쇄 안 됨) — 먼저 정하고 내용을 쓴다 -->
-            <div class="nz-meta">
-              <div class="nz-secbar meta">인쇄되지 않는 관리 정보</div>
-              <div class="nz-secbody tight">
+            <div class="nz-meta" id="questionSettingsSection">
+              <div class="nz-secbar meta">문항 설정
+                <span class="nz-section-summary" id="questionSettingsSummary">정답형 · 중 · 3점</span>
+                <button type="button" class="nz-tb mini nz-section-toggle" onclick="EP.toggleQuestionSection('settings')" aria-expanded="true">접기</button>
+              </div>
+              <div class="nz-secbody tight" id="questionSettingsBody">
                 <div class="nz-fr">
                   <label>유형</label>
                   <select id="qtype" style="max-width:96px" onchange="EP.onTypeChange()"><option>정답형</option><option>합답형</option><option>서술형</option></select>
@@ -225,7 +233,7 @@
                   </div>
                 </div>
                 <div class="nz-fr" style="align-items:flex-start">
-                  <label style="padding-top:4px">참고 기출</label>
+                  <label style="padding-top:4px">참고 자료</label>
                   <div class="nz-refbar" id="refBar"></div>
                 </div>
                 <div class="nz-fr"><label>출제 의도</label><textarea id="qintent" rows="2" placeholder="예: 오개념(속력 불변) 판별 · 엔터로 줄 추가"></textarea></div>
@@ -238,6 +246,77 @@
               <div class="nz-secbody tight">
                 <div class="nz-fr"><label>지문</label><textarea id="qpassage" rows="2" placeholder="다음은 ~에 대한 설명이다. (없으면 비움)"></textarea></div>
                 <div class="nz-fr"><label>자료</label><input id="qmaterial" placeholder="그림 파일명 (2개는 쉼표로)" /></div>
+                <div class="au-inline-figure-tools" id="auInlineFigureTools">
+                  <div class="au-inline-figure-head">
+                    <b>문항 그림</b>
+                    <span class="au-inline-figure-note">그림을 클릭하면 5E에서 편집합니다.</span>
+                    <span class="au-inline-figure-options">
+                      <label>생성
+                        <select id="auFigureProvider" onchange="EP.authoringFigureOptionsChanged()">
+                          <option value="fivee_assets">5E 자산</option>
+                          <option value="raster_image">이미지</option>
+                        </select>
+                      </label>
+                      <label>글자
+                        <select id="auFigureText" onchange="EP.authoringFigureOptionsChanged()">
+                          <option value="off">없음</option>
+                          <option value="on">포함</option>
+                        </select>
+                      </label>
+                      <label>구성
+                        <select id="auFigureComposition" onchange="EP.authoringFigureOptionsChanged()">
+                          <option value="auto">자동</option>
+                          <option value="combined">하나로</option>
+                          <option value="separate">각각 따로</option>
+                        </select>
+                      </label>
+                    </span>
+                  </div>
+                  <p class="au-inline-option-summary" id="auFigureOptionSummary"></p>
+                  <input class="hidden" type="file" id="auFigureReferenceFile" multiple accept="image/png,image/jpeg,image/webp" onchange="EP.authoringAddReferences(this.files)" />
+                  <div class="au-figure-workspace">
+                    <section class="au-figure-reference-pane">
+                      <div class="au-figure-pane-head"><b>참고 자료</b><i id="auFigureReferenceCount">최대 6개</i></div>
+                      <div class="au-reference-drop" id="auFigureReferenceDrop" onclick="document.getElementById('auFigureReferenceFile').click()">
+                        <b>+  이미지 추가</b>
+                        <span>드래그 앤 드롭 · 파일명으로 표시</span>
+                      </div>
+                      <div class="au-reference-list hidden" id="auFigureReferences"></div>
+                    </section>
+                    <section class="au-figure-result-pane">
+                      <div class="au-figure-pane-head"><b>생성 결과</b><span>클릭하면 5E 편집</span></div>
+                      <div class="au-figure-preview au-inline-figure-preview" id="auFigurePreview" onclick="EP.authoringOpenFigureEditor(event)" role="button" tabindex="0">
+                        <span class="au-figure-icon">▧</span>
+                        <img id="auFigureImage" class="hidden" alt="확정된 문항 그림" />
+                        <div id="auFigureAssets" class="au-figure-assets hidden"></div>
+                        <b>연결된 그림 없음</b>
+                        <p id="auFigureHelp">그림을 생성하면 문항에 바로 연결됩니다.</p>
+                      </div>
+                    </section>
+                  </div>
+                  <div class="au-figure-meta"><span>상태</span><b id="auFigureStatus">없음</b></div>
+                  <div class="au-figure-path hidden" id="auFigurePath"></div>
+                  <ol class="au-figure-steps">
+                    <li id="auFigureStepPlan">설계안 반영</li>
+                    <li id="auFigureStepEdit">그림 생성·선택적 5E 편집</li>
+                    <li id="auFigureStepConfirm">그림 확정·문항 연결</li>
+                  </ol>
+                  <div class="au-figure-progress hidden" id="auFigureProgress" role="status" aria-live="polite">
+                    <div><b id="auFigureProgressText">그림 생성 준비 중</b><span id="auFigureProgressPercent">0%</span></div>
+                    <span class="track"><i id="auFigureProgressBar"></i></span>
+                    <small>표시 값은 완료된 작업 단계를 기준으로 갱신됩니다.</small>
+                  </div>
+                  <div class="au-inline-figure-actions">
+                    <button class="nz-tb blu" id="auFigureCreate" onclick="EP.authoringFigure('create')">1단계 · 그림 설계 요청</button>
+                    <input class="hidden" type="file" id="auFigureImportFile" accept="image/png,image/jpeg,image/webp" onchange="EP.authoringImportImage(this.files[0])" />
+                    <button class="nz-tb blu hidden" id="auFigureImport" onclick="document.getElementById('auFigureImportFile').click()">생성 이미지 가져오기</button>
+                    <button class="nz-tb hidden" id="auFigureCopyPrompt" onclick="EP.authoringCopyImagePrompt()">이미지 생성 프롬프트 복사</button>
+                    <button class="nz-tb blu hidden" id="auFigureEdit" onclick="EP.authoringFigure('edit')">5E에서 편집</button>
+                    <button class="nz-tb blu hidden" id="auFigureSync" onclick="EP.authoringFigure('sync')">편집 내용 가져오기</button>
+                    <button class="nz-tb hidden" id="auFigureRevert" onclick="EP.authoringFigure('revert')">직전 반영으로 되돌리기</button>
+                    <button class="nz-tb hidden" id="auFigureConfirm" onclick="EP.authoringFigure('confirm')">그림 확정</button>
+                  </div>
+                </div>
                 <div class="nz-fr" style="align-items:flex-start">
                   <label style="padding-top:5px"><span class="req">*</span>발문</label>
                   <textarea id="qask" rows="2" placeholder="옳은 것만을 〈보기〉에서 있는 대로 고른 것은?"></textarea>
@@ -265,8 +344,7 @@
                   <div id="choiceRows"></div>
                   <div id="lenHint" class="nz-lenhint"></div>
                   <div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap;align-items:center">
-                    <button class="nz-tb mini" onclick="EP.addChoice()">＋ 선지</button>
-                    <span id="presetBox" class="hidden" style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+                    <span id="presetBox" class="nz-preset-wrap hidden">
                       <span class="nz-lb" style="margin-left:4px">프리셋</span><span id="presetBtns"></span>
                     </span>
                   </div>
@@ -279,16 +357,28 @@
             </div>
 
             <!-- 저장 전 확인 체크리스트 -->
-            <div class="nz-check">
-              <div class="nz-secbar chk">저장 전 확인</div>
-              <div class="nz-secbody tight" id="checkBox"></div>
+            <div class="nz-check collapsed" id="questionReviewSection">
+              <div class="nz-secbar chk">문항 검토
+                <span class="nz-section-summary" id="questionReviewSummary">필요할 때 확인</span>
+                <button type="button" class="nz-tb mini nz-section-toggle" onclick="EP.toggleQuestionSection('review')" aria-expanded="false">확인하기</button>
+              </div>
+              <div class="nz-secbody tight hidden" id="questionReviewBody"><div id="checkBox"></div></div>
             </div>
               </div><!-- /au-current -->
 
               <aside class="au-panel au-figure">
+                <button type="button" class="au-right-folded-label" onclick="EP.toggleAuthoringRight(false)">미리보기</button>
                 <div class="au-head">
                   <b>문항 미리보기</b>
+                  <label class="au-layout-picker">조판 양식
+                    <select id="auLayoutStyle" onchange="EP.authoringLayoutChanged(this.value)">
+                      <option value="school">학교 양식</option>
+                      <option value="suneung">수능 양식</option>
+                    </select>
+                  </label>
                   <span id="auLivePreviewStatus" class="au-live-status">입력 대기</span>
+                  <button type="button" class="nz-tb mini au-right-toggle" id="auPreviewToggle"
+                          onclick="EP.toggleAuthoringPreview()" aria-expanded="true" title="문항 미리보기 접기">접기</button>
                 </div>
                 <div class="au-live-preview" id="auLivePreview" aria-live="polite">
                   <div class="au-live-preview-empty" id="auLivePreviewEmpty">
@@ -299,6 +389,7 @@
                     <small id="auLivePreviewWorkHelp">입력 내용을 확인하고 있습니다.</small>
                     <span class="au-live-progress"><i></i></span>
                   </div>
+                  <div class="au-quick-preview hidden" id="auQuickPreview"></div>
                   <img class="hidden" id="auLivePreviewImage" alt="현재 문항 자동 조판 미리보기" />
                   <div class="au-live-preview-error hidden" id="auLivePreviewError"></div>
                 </div>
@@ -308,56 +399,12 @@
                   <button class="nz-tb mini blu" onclick="EP.previewQuestion()">크게 보기</button>
                 </div>
 
-                <div class="au-head au-subhead"><b>문항 그림</b></div>
-                <div class="au-figure-options">
-                  <label>생성 방식
-                    <select id="auFigureProvider" onchange="EP.authoringFigureOptionsChanged()">
-                      <option value="fivee_assets">5E 자산 이용</option>
-                      <option value="raster_image">이미지로 그리기</option>
-                    </select>
-                  </label>
-                  <label>글자 및 수치
-                    <select id="auFigureText" onchange="EP.authoringFigureOptionsChanged()">
-                      <option value="off">넣지 않기</option>
-                      <option value="on">넣기</option>
-                    </select>
-                  </label>
-                  <label>장면 구성
-                    <select id="auFigureComposition" onchange="EP.authoringFigureOptionsChanged()">
-                      <option value="auto">문항에 맞게 자동 판단</option>
-                      <option value="combined">하나에 그리기</option>
-                      <option value="separate">각각 따로 그리기</option>
-                    </select>
-                  </label>
-                  <p id="auFigureOptionSummary"></p>
-                </div>
-                <div class="au-figure-preview" id="auFigurePreview">
-                  <span class="au-figure-icon">▧</span>
-                  <img id="auFigureImage" class="hidden" alt="확정된 문항 그림" />
-                  <div id="auFigureAssets" class="au-figure-assets hidden"></div>
-                  <b>연결된 그림 없음</b>
-                  <p id="auFigureHelp">5E는 별도 앱으로 열리며 문항별 프로젝트 파일을 사용합니다.</p>
-                </div>
-                <div class="au-figure-meta">
-                  <span>상태</span><b id="auFigureStatus">없음</b>
-                </div>
-                <div class="au-figure-path hidden" id="auFigurePath"></div>
-                <ol class="au-figure-steps">
-                  <li id="auFigureStepPlan">설계안 반영</li>
-                  <li id="auFigureStepEdit">그림 생성·선택적 5E 편집</li>
-                  <li id="auFigureStepConfirm">그림 확정·문항 연결</li>
-                </ol>
-                <button class="nz-tb blu w100" id="auFigureCreate" onclick="EP.authoringFigure('create')">1단계 · 그림 설계 요청</button>
-                <input class="hidden" type="file" id="auFigureImportFile" accept="image/png,image/jpeg,image/webp" onchange="EP.authoringImportImage(this.files[0])" />
-                <button class="nz-tb blu w100 hidden" id="auFigureImport" onclick="document.getElementById('auFigureImportFile').click()">생성 이미지 가져오기</button>
-                <button class="nz-tb w100 hidden" id="auFigureCopyPrompt" onclick="EP.authoringCopyImagePrompt()">이미지 생성 프롬프트 복사</button>
-                <button class="nz-tb blu w100 hidden" id="auFigureEdit" onclick="EP.authoringFigure('edit')">5E 다시 열어 편집</button>
-                <button class="nz-tb blu w100 hidden" id="auFigureSync" onclick="EP.authoringFigure('sync')">편집 내용 가져오기</button>
-                <button class="nz-tb w100 hidden" id="auFigureRevert" onclick="EP.authoringFigure('revert')">직전 반영으로 되돌리기</button>
-                <button class="nz-tb w100 hidden" id="auFigureConfirm" onclick="EP.authoringFigure('confirm')">3단계 · 그림 확정</button>
               </aside>
             </div><!-- /au-grid -->
           </div>
+
+          <div class="au-column-resizer au-outer-resizer" id="authoringEvidenceDrag" role="separator"
+               aria-orientation="vertical" tabindex="0" title="드래그해서 근거 검색과 문항 작업대 너비 조절"></div>
 
           <!-- 오른쪽: 근거 검색 (펼치면 화면 절반) -->
           <aside class="nz-qside" id="qside">
@@ -365,7 +412,7 @@
                  패널은 탭에 따라 통째로 옮겨 다니므로 손잡이도 패널 안에 둔다 -->
             <div class="nz-drag outer sidefull" id="qsideDrag" title="드래그해서 폭 조절"></div>
             <div class="nz-sidehead">
-              <button class="foldbtn" id="evFoldBtn" onclick="EP.toggleSide()" title="접기/펴기">▶</button>
+              <button class="foldbtn" id="evFoldBtn" onclick="EP.toggleSide()" title="근거 열 접기/펴기">−</button>
               <b>근거 검색</b>
               <span class="nz-srcbtns sidefull">
                 <button class="nz-srcbtn on" data-src="" onclick="EP.setSrc('')">전체</button>
@@ -374,20 +421,30 @@
                 <button class="nz-srcbtn" data-src="기출" onclick="EP.setSrc('기출')">기출</button>
                 <button class="nz-srcbtn" data-src="수업" onclick="EP.setSrc('수업')">수업</button>
               </span>
-              <input class="nz-inp sidefull" id="evSearch" style="flex:1;min-width:0;margin-left:6px"
-                     placeholder="띄어쓰기로 여러 단어 (예: 빛 굴절)" oninput="EP.onEvInput()" />
             </div>
 
+            <div class="nz-evidence-searchbar sidefull">
+              <label for="evSearch">근거 검색어</label>
+              <div>
+                <input class="nz-inp" id="evSearch"
+                       placeholder="검색할 핵심어를 입력하세요 (예: 정전기 유도 금속박)"
+                       oninput="EP.onEvInput()" onkeydown="if(event.key==='Enter')EP.searchEvidence()" />
+                <button type="button" class="nz-tb blu" onclick="EP.searchEvidence()">검색</button>
+              </div>
+            </div>
             <div class="nz-termbar sidefull" id="termBar"></div>
             <div class="nz-evsplit sidefull">
               <div class="nz-evlist" id="evList">
                 <p class="nz-sub" style="padding:10px">키워드를 넣으면 교과서에서 근거를 찾습니다.</p>
               </div>
-              <div class="nz-drag" id="evDrag" title="드래그해서 결과 목록 폭 조절"></div>
+              <div class="nz-drag" id="evDrag" title="드래그해서 검색 결과와 원문 미리보기 높이 조절"></div>
               <div class="nz-evview">
                 <div class="nz-viewer-head">
                   <span id="evViewTitle">원문</span>
                   <span style="margin-left:auto;display:flex;gap:3px">
+                    <button class="nz-tb mini blu" id="evSelectStart" onclick="EP.startEvidenceReference()">영역 지정</button>
+                    <button class="nz-tb mini grn hidden" id="evSelectConfirm" onclick="EP.confirmEvidenceReference()">확인</button>
+                    <button class="nz-tb mini hidden" id="evSelectCancel" onclick="EP.cancelEvidenceReference()">취소</button>
                     <button class="nz-tb mini" onclick="EP.evViewPage(-1)">◀</button>
                     <button class="nz-tb mini" onclick="EP.evViewPage(1)">▶</button>
                     <button class="nz-tb mini" onclick="EP.evZoom()">확대</button>
@@ -470,6 +527,26 @@
           <tbody id="docRows"></tbody>
         </table>
 
+        <!-- ===== 시험지 팔레트 ===== -->
+        <div class="nz-h" style="margin-top:20px"><b>시험지 팔레트</b>
+          <span style="margin-left:auto;display:flex;gap:5px;align-items:center">
+            <select class="nz-sel" id="palTarget" style="min-width:112px">
+              <option value="school">학교 양식으로</option>
+              <option value="suneung">수능 양식으로</option>
+            </select>
+            <input id="palFile" type="file" accept=".hwpal" class="hidden" onchange="EP.importPalette(this)" />
+            <button class="nz-tb blu" onclick="document.getElementById('palFile').click()">.hwpal 등록</button>
+          </span>
+        </div>
+        <p class="nz-sub">HwpPalette에서 팔레트 하나를 내보내 등록합니다. 같은 호출 라벨의 양식만
+          교체되며, 포함되지 않은 내장 양식은 그대로 유지됩니다.</p>
+        <div id="palStatus" class="nz-sub" style="margin:6px 0"></div>
+        <table class="nz-t">
+          <thead><tr><th>팔레트</th><th style="width:92px">물감</th><th style="width:130px">현재 적용</th>
+            <th style="width:176px">관리</th></tr></thead>
+          <tbody id="palRows"></tbody>
+        </table>
+
         <!-- ===== 백업 · 복구 ===== -->
         <div class="nz-h" style="margin-top:20px"><b>백업 · 복구</b>
           <span style="margin-left:auto;display:flex;gap:5px">
@@ -546,6 +623,11 @@
           <span class="nz-lb">이 세트 만점</span>
           <input class="nz-inp" id="setTotal" type="number" step="0.5" min="1" value="100" style="max-width:80px" />
           <button class="nz-tb" onclick="EP.saveSetTotal()">만점 저장</button>
+          <span class="nz-lb">조판 양식</span>
+          <select class="nz-sel" id="setLayoutStyle" onchange="EP.saveSetLayout()" style="max-width:120px">
+            <option value="school">학교 양식</option>
+            <option value="suneung">수능 양식</option>
+          </select>
           <span class="nz-sub" style="margin:0">배점 합이 이 값과 맞는지 검토에서 확인합니다.</span>
         </div>
 
@@ -617,13 +699,13 @@
   </div>
 
   <!-- 화면 코드는 탭 단위로 나뉜다. core.js 가 공용 뼈대이므로 항상 먼저 온다. -->
-  <script src="/static/js/core.js"></script>
+  <script src="/static/js/core.js?v=0.3.7-workbench"></script>
   <script src="/static/js/bank.js"></script>
-  <script src="/static/js/question.js"></script>
-  <script src="/static/js/authoring.js"></script>
+  <script src="/static/js/question.js?v=0.4.2-preview-toggle"></script>
+  <script src="/static/js/authoring.js?v=0.4.2-compact-chat"></script>
   <script src="/static/js/qbank.js"></script>
   <script src="/static/js/set.js"></script>
-  <script src="/static/js/preview.js"></script>
+  <script src="/static/js/preview.js?v=0.3.9-compact-preview"></script>
   <script src="/static/js/blueprint.js"></script>
   <script src="/static/js/doc.js"></script>
   <script src="/static/js/lesson.js"></script>

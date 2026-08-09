@@ -75,6 +75,7 @@ class QuestionIn(BaseModel):
     origin: str = ""            # 직접 / AI초안 / 기출변형 — 처음 쓴 주체(사실)
     origin_note: str = ""       # 출처 메모 (기출 출처, 적재 스크립트 이름 등)
     choices: list[ChoiceIn] = []
+    layout_style: str = "school"  # 미리보기 전용; 문항은행 데이터에는 저장하지 않는다.
 
 
 def _load_question(conn, qid):
@@ -194,12 +195,14 @@ def check_question_api(qid: int):
 class SetIn(BaseModel):
     name: str
     total_points: float = 100.0
+    layout_style: str = "school"
 
 
 class SetPatch(BaseModel):
     name: str | None = None
     total_points: float | None = None
     status: str | None = None
+    layout_style: str | None = None
 
 
 class SetItemIn(BaseModel):
@@ -230,8 +233,9 @@ def list_sets():
 @router.post("/sets")
 def create_set(s: SetIn):
     with db.transaction() as conn:
-        cur = conn.execute("INSERT INTO exam_set (name, total_points) VALUES (?,?)",
-                           (s.name.strip(), s.total_points))
+        layout_style = "suneung" if s.layout_style == "suneung" else "school"
+        cur = conn.execute("INSERT INTO exam_set (name, total_points, layout_style) VALUES (?,?,?)",
+                           (s.name.strip(), s.total_points, layout_style))
         return {"id": cur.lastrowid}
 
 
@@ -245,6 +249,9 @@ def update_set(sid: int, p: SetPatch):
             conn.execute("UPDATE exam_set SET total_points=? WHERE id=?", (p.total_points, sid))
         if p.status is not None:
             conn.execute("UPDATE exam_set SET status=? WHERE id=?", (p.status.strip(), sid))
+        if p.layout_style is not None:
+            layout_style = "suneung" if p.layout_style == "suneung" else "school"
+            conn.execute("UPDATE exam_set SET layout_style=? WHERE id=?", (layout_style, sid))
         return {"ok": True}
 
 
@@ -385,22 +392,26 @@ def export_set(sid: int):
     """세트 → hwppalette 시험문제 문법 마크다운."""
     conn = db.connect()
     try:
+        set_row = conn.execute("SELECT layout_style FROM exam_set WHERE id=?", (sid,)).fetchone()
         items = _set_items(conn, sid)
         if not items:
             return {"markdown": "", "count": 0}
         pairs = [(it["question"], it["choices"]) for it in items]
-        return {"markdown": export_palette.set_to_markdown(pairs), "count": len(pairs)}
+        layout_style = dict(set_row).get("layout_style", "school") if set_row else "school"
+        return {"markdown": export_palette.set_to_markdown(
+            pairs, layout_style=layout_style), "count": len(pairs)}
     finally:
         conn.close()
 
 
 @router.get("/questions/{qid}/export")
-def export_question(qid: int):
+def export_question(qid: int, layout_style: str = "school"):
     conn = db.connect()
     try:
         q, ch = _load_question(conn, qid)
         if not q:
             raise HTTPException(404, "문항을 찾을 수 없습니다.")
-        return {"markdown": export_palette.question_to_palette(q, ch, num=1)}
+        return {"markdown": export_palette.question_to_palette(
+            q, ch, num=1, layout_style=layout_style)}
     finally:
         conn.close()
