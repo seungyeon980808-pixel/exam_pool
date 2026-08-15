@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 from . import checklist, db, export_palette
 from .integrations.hwppalette import HwpPaletteError, hwppalette_provider
@@ -16,13 +17,76 @@ from .routes_question import QuestionIn, _set_items
 router = APIRouter(prefix="/api")
 
 
+class PaintVerdictIn(BaseModel):
+    state: str
+    message: str = ""
+
+
+def _palette_test_photo() -> str | None:
+    """Find one already registered photo for checking a template's image slot."""
+    extensions = {".png", ".jpg", ".jpeg", ".bmp", ".gif"}
+    for folder in hwppalette_provider.photo_dirs():
+        if not folder.is_dir():
+            continue
+        try:
+            for path in folder.rglob("*"):
+                if path.is_file() and path.suffix.lower() in extensions:
+                    return path.stem
+        except OSError:
+            continue
+    return None
+
+
+def _paint_test_markdown(item: dict, photo_label: str | None = None) -> tuple[str, list[str]]:
+    """Build visible slot markers for one registered template paint."""
+    slots = list(item.get("slot_names") or [])
+    count = int(item.get("slot_count") or len(slots))
+    slots.extend(f"슬롯 {index + 1}" for index in range(len(slots), count))
+    has_bogi = any(str(name).strip() in {"ㄱ", "ㄴ", "ㄷ"} for name in slots)
+    combos = {"1": "ㄱ", "2": "ㄴ", "3": "ㄷ", "4": "ㄱ, ㄴ", "5": "ㄱ, ㄷ"}
+    warnings = []
+
+    def fill(raw_name: str) -> str:
+        name = str(raw_name or "").strip()
+        compact = name.replace(" ", "").lower()
+        if compact in {"문항번호", "번호", "num"}:
+            return "1"
+        if compact in {"문두", "지문", "passage"}:
+            return "그림은 물체의 운동을 나타낸 것이다."
+        if compact in {"발문", "질문", "ask"}:
+            return ("이에 대한 설명으로 옳은 것만을 <보기>에서 있는 대로 고른 것은?"
+                    if has_bogi else "물체의 운동 방향으로 옳은 것은?")
+        if compact in {"내용", "내용박스", "내용상자"}:
+            return "{[내용 상자 첫째 줄]\n[내용 상자 둘째 줄]}"
+        if compact.startswith("사진") or compact.startswith("photo"):
+            if photo_label:
+                return f"\\{photo_label}\\"
+            if "사진 시험용 그림을 찾지 못해 사진 슬롯을 비웠습니다." not in warnings:
+                warnings.append("사진 시험용 그림을 찾지 못해 사진 슬롯을 비웠습니다.")
+            return "-"
+        if name in {"ㄱ", "ㄴ", "ㄷ"}:
+            return {"ㄱ": "물체의 속력은 증가한다.",
+                    "ㄴ": "물체의 운동 방향은 일정하다.",
+                    "ㄷ": "물체에 작용하는 알짜힘은 0이다."}[name]
+        if compact in {"배점", "점수", "points"}:
+            return "3"
+        if name in {"1", "2", "3", "4", "5"}:
+            return combos[name] if has_bogi else f"선지 {name}"
+        return f"[{name or '이름 없는 슬롯'}]"
+
+    lines = [f"\\{item.get('label', '')}\\", *(fill(name) for name in slots[:count])]
+    return "\n".join(lines) + "\n", warnings
+
+
 def _active_slot_contract() -> dict[str, int]:
     contract = {
         label: export_palette.TEMPLATES[label]["slot_count"]
         for label in set(export_palette.TEMPLATE_FOR.values())
     }
+    active_labels = export_palette.active_suneung_labels()
     contract.update({label: spec["slot_count"]
-                     for label, spec in export_palette.SUNEUNG_TEMPLATES.items()})
+                     for label, spec in export_palette.SUNEUNG_TEMPLATES.items()
+                     if label != "수능합답1사진5선지" or label in active_labels})
     return contract
 
 
@@ -83,12 +147,104 @@ async def register_hwppalette(request: Request, filename: str,
         raise HTTPException(400, str(exc)) from exc
 
 
+@router.post("/integrations/hwppalette/templates")
+async def register_hwp_template(request: Request, filename: str, label: str,
+                                slot_names: str, target_style: str,
+                                name: str = "", category: str = "템플릿",
+                                base_package_id: str | None = None):
+    """Register one HWP directly and preserve the active palette as a prior revision."""
+    try:
+        slots = json.loads(slot_names)
+        if not isinstance(slots, list) or any(not isinstance(value, str) for value in slots):
+            raise ValueError
+    except (ValueError, TypeError, json.JSONDecodeError) as exc:
+        raise HTTPException(400, "슬롯 호출명 목록이 올바르지 않습니다.") from exc
+    content = await request.body()
+    try:
+        result = palette_registry.install_hwp_template(
+            content, filename, label=label, slot_names=slots,
+            target_style=target_style, name=name, category=category,
+            base_package_id=base_package_id,
+        )
+        hwppalette_provider._data_root()
+        result["slot_contract"] = hwppalette_provider.validate_slot_contract(
+            _active_slot_contract())
+        return result
+    except palette_registry.PalettePackageError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.post("/integrations/hwppalette/palettes/{package_id}/items/{item_index}/edit")
+def edit_palette_item(package_id: str, item_index: int):
+    """Start the minimal HwpPalette edit bridge with a non-destructive HWP copy."""
+    try:
+        session = palette_registry.start_edit_session(package_id, item_index)
+        hwppalette_provider.open_template_editor(Path(session["edit_file"]))
+        return {key: session[key] for key in
+                ("session_id", "package_id", "item_index", "item", "edit_file")}
+    except (palette_registry.PalettePackageError, HwpPaletteError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.post("/integrations/hwppalette/edit-sessions/{session_id}/save")
+def save_palette_edit(session_id: str, target_style: str):
+    """Import the saved edit copy as a new active palette revision."""
+    try:
+        result = palette_registry.save_edit_session(session_id, target_style)
+        hwppalette_provider._data_root()
+        result["slot_contract"] = hwppalette_provider.validate_slot_contract(
+            _active_slot_contract())
+        return result
+    except palette_registry.PalettePackageError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 @router.post("/integrations/hwppalette/palettes/{package_id}/activate/{style}")
 def activate_hwppalette(package_id: str, style: str):
     try:
         result = palette_registry.activate(package_id, style)
         hwppalette_provider._data_root()
         return result
+    except palette_registry.PalettePackageError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.post("/integrations/hwppalette/palettes/{package_id}/items/{item_index}/preview")
+def preview_palette_item(package_id: str, item_index: int, style: str = "suneung"):
+    """Render one active template paint with visible test values for visual verification."""
+    try:
+        package, item = palette_registry.package_item(package_id, item_index, style)
+        if item.get("category") != "템플릿":
+            raise palette_registry.PalettePackageError(
+                "양식 물감은 템플릿 미리보기에 함께 적용되어 검증됩니다.")
+        markdown, warnings = _paint_test_markdown(item, _palette_test_photo())
+        result = hwppalette_provider.render_preview(
+            markdown, scope="question", exam_page=True, layout_style=style,
+        )
+        key = f"{item.get('category', '')}:{item.get('label', '')}"
+        previous_state = (package.get("item_tests") or {}).get(key, {}).get("state")
+        # Reopening an unchanged preview must not erase a human pass/fail decision.
+        if previous_state not in {"passed", "failed"}:
+            palette_registry.save_item_test(package_id, item_index, "rendered")
+        return {**result, "item": item, "test_markdown": markdown, "warnings": warnings}
+    except palette_registry.PalettePackageError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except HwpPaletteError as exc:
+        try:
+            palette_registry.save_item_test(package_id, item_index, "failed", str(exc))
+        except palette_registry.PalettePackageError:
+            pass
+        raise HTTPException(503, str(exc)) from exc
+
+
+@router.post("/integrations/hwppalette/palettes/{package_id}/items/{item_index}/verdict")
+def verify_palette_item(package_id: str, item_index: int, body: PaintVerdictIn):
+    """Save the user's visual pass/fail decision after inspecting a rendered paint."""
+    try:
+        if body.state not in {"passed", "failed"}:
+            raise palette_registry.PalettePackageError("정상 또는 문제 있음으로 판정해 주세요.")
+        return palette_registry.save_item_test(
+            package_id, item_index, body.state, body.message)
     except palette_registry.PalettePackageError as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -114,8 +270,11 @@ def preview_question(payload: QuestionIn):
     question = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
     choices = question.pop("choices", [])
     layout_style = question.get("layout_style", "school")
+    reconstruction = (question.get("style_meta") or {}).get("reconstruction") or {}
+    source_number = reconstruction.get("item_number") if reconstruction.get("enabled") else None
+    number = int(source_number) if isinstance(source_number, int) and source_number > 0 else 1
     markdown = export_palette.question_to_palette(
-        question, choices, num=1, layout_style=layout_style) + "\n"
+        question, choices, num=number, layout_style=layout_style) + "\n"
     try:
         return hwppalette_provider.render_preview(
             markdown, scope="question", exam_page=True,

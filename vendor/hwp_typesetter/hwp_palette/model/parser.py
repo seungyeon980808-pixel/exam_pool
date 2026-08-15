@@ -343,6 +343,29 @@ def _try_label(text, i, lookup, warnings):
     return m.end(), ('text', m.group(0))
 
 
+def _try_formula(text, i, warnings):
+    r"""Read ``\수식{5E/LaTeX-like source}`` with balanced nested braces."""
+    prefix = r"\수식{"
+    if not text.startswith(prefix, i):
+        return None
+    start = i + len(prefix)
+    depth = 1
+    j = start
+    while j < len(text):
+        if text[j] == "{":
+            depth += 1
+        elif text[j] == "}":
+            depth -= 1
+            if depth == 0:
+                source = text[start:j].strip()
+                if not source:
+                    warnings.append("수식 원문이 비어 있습니다")
+                return j + 1, source
+        j += 1
+    warnings.append("수식을 닫는 } 가 없습니다")
+    return len(text), text[start:].strip()
+
+
 def _parse_inline(text, i, lookup, warnings, style, depth, stop_at_brace):
     r"""줄을 왼쪽부터 읽어 조각 목록으로 만든다.
 
@@ -361,6 +384,14 @@ def _parse_inline(text, i, lookup, warnings, style, depth, stop_at_brace):
     while i < len(text):
         ch = text[i]
         if ch == '\\':
+            formula = _try_formula(text, i, warnings)
+            if formula:
+                end, source = formula
+                flush()
+                segs.append({"text": "", "style": dict(style) if style else None,
+                             "formula": source})
+                i = end
+                continue
             nxt = text[i + 1:i + 2]
             if nxt == '\\':                 # \\ → 글자 그대로의 역슬래시
                 buf.append('\\')
@@ -406,7 +437,7 @@ def build_segments(line, lookup, warnings):
     """한 줄 → 조각 목록. 서식·사진이 없으면 조각 하나짜리 목록이 된다."""
     segs, _ = _parse_inline(line, 0, lookup, warnings, None, 0,
                             stop_at_brace=False)
-    return [s for s in segs if s["text"] or s.get("image")]
+    return [s for s in segs if s["text"] or s.get("image") or s.get("formula")]
 
 
 def _slot_value(line, lookup, warnings):
@@ -421,7 +452,7 @@ def _slot_value(line, lookup, warnings):
     넣으면 그 템플릿을 쓸 수가 없었다 — 사진이 템플릿 뒤로 빠져나갔다.
     """
     segs = build_segments(line, lookup, warnings)
-    if any(s.get("image") or s["style"] for s in segs):
+    if any(s.get("image") or s.get("formula") or s["style"] for s in segs):
         return segs
     return "".join(s["text"] for s in segs)
 
@@ -462,7 +493,12 @@ def _read_block(lines, start, lookup, warnings):
         s = lines[j].strip()
         if j == start:
             s = s[1:]                       # 여는 { 벗기기
-        if s.endswith('}') and not s.endswith('\\}'):
+        formula_owns_tail = False
+        formula_start = s.rfind(r"\수식{")
+        if formula_start >= 0:
+            parsed_formula = _try_formula(s, formula_start, warnings)
+            formula_owns_tail = bool(parsed_formula and parsed_formula[0] == len(s))
+        if s.endswith('}') and not s.endswith('\\}') and not formula_owns_tail:
             s = s[:-1]
             closed = True
         inner.append(s)
@@ -565,6 +601,98 @@ def split_selection_units(text):
     return units
 
 
+_SENTENCE_TERMINAL_RE = re.compile(r"[.!?。！？]")
+
+
+def _as_segments(value):
+    if isinstance(value, str):
+        return [{"text": value, "style": None}]
+    if isinstance(value, list):
+        return [dict(segment) for segment in value]
+    return None
+
+
+def _trim_segment_edges(segments):
+    while segments and not any(
+            segments[0].get(key) for key in ("text", "image", "formula")):
+        segments.pop(0)
+    while segments and not any(
+            segments[-1].get(key) for key in ("text", "image", "formula")):
+        segments.pop()
+    if segments and segments[0].get("text"):
+        segments[0]["text"] = segments[0]["text"].lstrip()
+    if segments and segments[-1].get("text"):
+        segments[-1]["text"] = segments[-1]["text"].rstrip()
+    return [segment for segment in segments if any(
+        segment.get(key) for key in ("text", "image", "formula")
+    )]
+
+
+def _segment_value(segments):
+    segments = _trim_segment_edges(segments)
+    if all(not segment.get("style") and not segment.get("image")
+           and not segment.get("formula") for segment in segments):
+        return "".join(segment.get("text", "") for segment in segments)
+    return segments
+
+
+def _place_complete_question_after_media(fills, slot_names):
+    r"""Move an unfinished final sentence in 문두 to 발문 after media slots.
+
+    Some recovered source lines place a photo between the last two visual lines
+    of one question sentence. The palette contract has separate 문두/사진/발문
+    slots, so a literal line-to-slot mapping would render half of that sentence
+    above the figure and half below it. Only relocate when 문두 has a completed
+    earlier sentence, its final sentence is unfinished, and joining it to 발문
+    produces a question. Complete questions and prose without a safe sentence
+    boundary remain untouched.
+    """
+    names = [str(name).strip() for name in (slot_names or [])]
+    try:
+        passage_at = names.index("문두")
+        ask_at = names.index("발문")
+    except ValueError:
+        return fills
+    if not (passage_at < ask_at and any(
+            name.startswith("사진") for name in names[passage_at + 1:ask_at])):
+        return fills
+    if max(passage_at, ask_at) >= len(fills):
+        return fills
+    passage = _as_segments(fills[passage_at])
+    ask = _as_segments(fills[ask_at])
+    if not passage or not ask:
+        return fills
+    passage_text = "".join(segment.get("text", "") for segment in passage).rstrip()
+    ask_text = "".join(segment.get("text", "") for segment in ask).strip()
+    if not ask_text or "?" not in ask_text or _SENTENCE_TERMINAL_RE.search(passage_text[-1:]):
+        return fills
+
+    split_segment = split_offset = None
+    for segment_index in range(len(passage) - 1, -1, -1):
+        matches = list(_SENTENCE_TERMINAL_RE.finditer(passage[segment_index].get("text", "")))
+        if matches:
+            split_segment = segment_index
+            split_offset = matches[-1].end()
+            break
+    if split_segment is None:
+        return fills
+    boundary = passage[split_segment]
+    prefix = passage[:split_segment] + [
+        {**boundary, "text": boundary.get("text", "")[:split_offset]}
+    ]
+    tail = [
+        {**boundary, "text": boundary.get("text", "")[split_offset:]}
+    ] + passage[split_segment + 1:]
+    tail = _trim_segment_edges(tail)
+    if not tail:
+        return fills
+    joined = [*tail, {"text": " ", "style": None}, *ask]
+    repaired = list(fills)
+    repaired[passage_at] = _segment_value(prefix)
+    repaired[ask_at] = _segment_value(joined)
+    return repaired
+
+
 def build_library_plan(text, lookup):
     r"""선택 텍스트 → 실행 계획.
 
@@ -609,6 +737,9 @@ def build_library_plan(text, lookup):
                     else:
                         fills.append(_slot_value(lines[j], lookup, warnings))
                         j += 1
+                fills = _place_complete_question_after_media(
+                    fills, item.get("slot_names") or [],
+                )
                 # 꾸러미(섞은 물감)면 **요소마다 하나씩** 펼친다 (2026-07-31).
                 # 사용자 기획: 물감 1·2·3 이 빈칸 2개씩일 때 \숫자\ 아래 여섯
                 # 줄을 쓰면 1↦(1,2) 2↦(3,4) 3↦(5,6) 으로 나뉘어 들어가고,

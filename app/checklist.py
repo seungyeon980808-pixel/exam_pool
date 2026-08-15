@@ -3,13 +3,16 @@
 한글 없이 도는 순수 함수. 검토 단계 오류 불안 해소가 목적.
 각 검사는 (level, code, message) 를 낸다. level: 'error' | 'warn'.
 """
+import json
+
+from .authoring.item_rules import validate_draft
 
 CHOICE_TYPES = ("정답형", "합답형")          # 선지를 갖는 유형
 VALID_QTYPES = CHOICE_TYPES + ("서술형",)   # 서술형은 선지·정답번호가 없다
 VALID_DIFF = ("상", "중", "하")
 
 # 출처 — 처음 쓴 주체. status(초안/검토중/완성)와 다른 축이다.
-VALID_ORIGINS = ("직접", "AI초안", "기출변형")
+VALID_ORIGINS = ("직접", "AI초안", "기출변형", "기출복원")
 AI_ORIGINS = ("AI초안",)          # 사람 확인 없이 시험에 내면 안 되는 출처
 
 # 발문이 부정형임을 알리는 말. '옳지 않은 것은?' 처럼 쓰인다.
@@ -67,10 +70,31 @@ def check_question(q: dict, choices: list[dict]) -> list[dict]:
                 ord_ = c.get("ord", "?")
                 err("choice_no_evidence", f"{ord_}번 선지에 근거가 없습니다. (명제·변형·직접 입력 중 하나 필요)")
 
+        # 합답형은 조합 선지보다 ㄱ·ㄴ·ㄷ 보기 각각의 사실 근거와 판단 과정이 핵심이다.
+        if q.get("qtype") == "합답형":
+            bogi_items = q.get("bogi_items") or []
+            if isinstance(bogi_items, str):
+                try:
+                    bogi_items = json.loads(bogi_items)
+                except (TypeError, ValueError):
+                    bogi_items = []
+            for index, item in enumerate(bogi_items if isinstance(bogi_items, list) else []):
+                if not isinstance(item, dict):
+                    continue
+                label = item.get("label") or index + 1
+                has_evidence = (
+                    item.get("proposition_id") or item.get("variant_id")
+                    or (item.get("evidence") or "").strip()
+                )
+                if not has_evidence:
+                    err("bogi_no_evidence", f"{label} 보기의 작성 근거가 없습니다.")
+                if not (item.get("explanation") or "").strip():
+                    err("bogi_no_explanation", f"{label} 보기의 근거 판단 해설이 없습니다.")
+
     # 출처
     origin = (q.get("origin") or "").strip()
     if not origin:
-        warn("no_origin", "출처가 지정되지 않았습니다. (직접 / AI초안 / 기출변형)")
+        warn("no_origin", "출처가 지정되지 않았습니다. (직접 / AI초안 / 기출변형 / 기출복원)")
     elif origin not in VALID_ORIGINS:
         warn("bad_origin", f"출처가 올바르지 않습니다: {origin}")
 
@@ -86,6 +110,14 @@ def check_question(q: dict, choices: list[dict]) -> list[dict]:
 
     issues += _check_negative_mark(q)
     issues += _check_answer_length(q, choices)
+    # The same runtime contract guards ChatGPT proposals, text confirmation,
+    # saved questions, and set review.  This prevents a style-valid draft from
+    # becoming invalid merely by moving to the Pool.
+    style_input = dict(q)
+    style_input["choices"] = choices
+    existing_codes = {item["code"] for item in issues}
+    issues.extend(item for item in validate_draft(style_input)
+                  if item["code"] not in existing_codes)
     return issues
 
 

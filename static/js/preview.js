@@ -11,8 +11,34 @@
   let liveStartedAt = 0;
   let liveElapsedTimer = null;
 
+  function publicText(value) {
+    const text = value && typeof value === "object" ? String(value.text || "") : String(value == null ? "" : value);
+    return text.trim().toLowerCase() === "[object object]" ? "" : text;
+  }
+
   function fingerprint(question) {
     return JSON.stringify(question);
+  }
+
+  function previewNumber(question) {
+    const reconstruction = question.style_meta && question.style_meta.reconstruction;
+    const sourceNumber = reconstruction && reconstruction.enabled ? Number(reconstruction.item_number) : 0;
+    return Number.isInteger(sourceNumber) && sourceNumber > 0 ? sourceNumber : 1;
+  }
+
+  function formulaPreview(text) {
+    const greek = { theta: "θ", lambda: "λ", mu: "μ", pi: "π", Delta: "Δ", alpha: "α", beta: "β", gamma: "γ", omega: "ω", times: "×" };
+    return publicText(text).replace(/\[\[formula:(.+?)\]\]/gs, (_, raw) => {
+      let value = raw.trim();
+      for (let i = 0; i < 8; i += 1) {
+        const next = value.replace(/\\?frac\{([^{}]+)\}\{([^{}]+)\}/g, "($1)/($2)");
+        if (next === value) break;
+        value = next;
+      }
+      value = value.replace(/\\([A-Za-z]+)/g, (_, name) => greek[name] || name);
+      return value.replace(/_([0-9])/g, (_, n) => "₀₁₂₃₄₅₆₇₈₉"[Number(n)])
+        .replace(/\^([0-9])/g, (_, n) => "⁰¹²³⁴⁵⁶⁷⁸⁹"[Number(n)]);
+    });
   }
 
   function collectPreviewQuestion() {
@@ -31,18 +57,25 @@
     return message;
   }
 
-  function showLoading(title) {
+  function showLoading(title, includeQuickPreview) {
     const modal = EP.modal("typesetPreviewModal");
+    const quick = includeQuickPreview ? document.getElementById("auQuickPreview") : null;
+    const provisional = quick && quick.innerHTML.trim()
+      ? `<div class="nz-preview-provisional">
+          <div class="nz-preview-provisional-label">수능형 배치 즉시 확인 · 실제 HWP 결과로 자동 교체됩니다.</div>
+          <div class="au-quick-preview">${quick.innerHTML}</div>
+        </div>` : "";
     modal.innerHTML = `<div class="nz-modal-box nz-preview-modal">
       <div class="nz-modal-head">
         <b>${esc(title)}</b>
         <button class="nz-tb" style="margin-left:auto" onclick="EP.closeModal('typesetPreviewModal')">닫기</button>
       </div>
       <div class="nz-modal-body nz-preview-body">
-        <div class="nz-preview-loading"><span class="nz-preview-spinner"></span>
+        <div class="nz-preview-loading ${provisional ? "with-quick" : ""}"><span class="nz-preview-spinner"></span>
           한글에서 실제 시험지 양식으로 조판하고 있습니다.<br>
           <small>첫 미리보기는 수십 초가 걸릴 수 있습니다.</small>
         </div>
+        ${provisional}
       </div>
     </div>`;
     return modal;
@@ -92,25 +125,55 @@
   function renderQuickPreview(question) {
     const el = liveElements();
     if (!el.quick) return;
-    if (!question.ask.trim()) {
+    const ask = publicText(question.ask);
+    const passage = publicText(question.passage);
+    if (!ask.trim()) {
       el.quick.innerHTML = "";
       el.quick.classList.add("hidden");
       return;
     }
     const circled = ["①", "②", "③", "④", "⑤"];
-    const choices = (question.choices || []).map((choice, index) =>
-      `<li value="${index + 1}">${esc(circled[index] || `${index + 1}.`)}&nbsp; ${esc(choice.text || "")}</li>`
+    const comboFallback = [["ㄱ"], ["ㄴ"], ["ㄱ", "ㄴ"], ["ㄱ", "ㄷ"], ["ㄱ", "ㄴ", "ㄷ"]];
+    const choices = (question.choices || []).map((choice, index) => {
+      const combo = Array.isArray(choice.combo) ? choice.combo.join(", ") : publicText(choice.combo);
+      const value = question.qtype === "합답형" ? (combo || (comboFallback[index] || []).join(", ")) : publicText(choice.text);
+      return `<li value="${index + 1}">${esc(circled[index] || `${index + 1}.`)}&nbsp; ${esc(formulaPreview(value))}</li>`;
+    }
     ).join("");
+    const bogi = question.qtype === "합답형" && (question.bogi_items || []).length
+      ? `<div class="au-quick-bogi">${question.bogi_items.map((item, index) =>
+        `<p><b>${esc(item.label || "ㄱㄴㄷㄹㅁ"[index] || index + 1)}.</b> ${esc(publicText(item.text))}</p>`).join("")}</div>` : "";
+    // A separate-photo palette owns one image per slot.  The old selector
+    // silently used only the first image (사진 1) in the immediate preview.
+    const figures = Array.from(document.querySelectorAll("#auFigureAssets img"));
+    if (!figures.length) {
+      const primary = document.querySelector("#auFigureImage:not(.hidden)");
+      if (primary) figures.push(primary);
+    }
+    const figureHtmlMultiple = figures.map((image, index) => {
+      const src = image.getAttribute("src");
+      if (!src) return "";
+      const label = figures.length > 1 ? `사진 ${index + 1}` : "문항 그림";
+      return `<figure class="au-quick-material-figure"><img class="au-quick-material" src="${esc(src)}" alt="${label}"><figcaption>${figures.length > 1 ? label : ""}</figcaption></figure>`;
+    }).join("");
     const figure = document.querySelector("#auFigureAssets img, #auFigureImage:not(.hidden)");
     const figureHtml = figure && figure.getAttribute("src")
       ? `<img class="au-quick-material" src="${esc(figure.getAttribute("src"))}" alt="문항 그림">` : "";
     const styleName = question.layout_style === "suneung" ? "수능 양식" : "학교 양식";
+    const score = question.default_points
+      ? `<span class="au-quick-score">(${esc(question.default_points)}점)</span>` : "";
     el.quick.innerHTML = `
-      <div class="au-quick-badge">즉시 미리보기 · ${styleName} · 정밀 조판은 백그라운드 갱신</div>
-      ${question.passage ? `<div class="au-quick-passage">${esc(question.passage).replace(/\n/g, "<br>")}</div>` : ""}
-      ${figureHtml}
-      <div class="au-quick-ask">1. ${esc(question.ask).replace(/\n/g, "<br>")} ${question.default_points ? `(${esc(question.default_points)}점)` : ""}</div>
-      ${choices ? `<ol>${choices}</ol>` : ""}`;
+      <div class="au-quick-badge">즉시 미리보기 · ${styleName}</div>
+      <div class="au-quick-item ${question.layout_style === "suneung" ? "suneung" : "school"}">
+        <div class="au-quick-number" aria-label="문항 번호 ${previewNumber(question)}">${previewNumber(question)}.</div>
+        <div class="au-quick-content">
+          ${passage ? `<div class="au-quick-passage">${esc(formulaPreview(passage)).replace(/\n/g, "<br>")}</div>` : ""}
+          ${figureHtmlMultiple || figureHtml ? `<div class="au-quick-materials">${figureHtmlMultiple || figureHtml}</div>` : ""}
+          <div class="au-quick-ask">${esc(formulaPreview(ask)).replace(/\n/g, "<br>")} ${score}</div>
+          ${bogi}
+          ${choices ? `<ol class="${question.qtype === "합답형" ? "combo" : ""}">${choices}</ol>` : ""}
+        </div>
+      </div>`;
     el.quick.classList.remove("hidden");
   }
 
@@ -156,13 +219,18 @@
       el.meta.textContent = "입력이 멈추면 자동 갱신";
       el.image.removeAttribute("src");
       if (el.quick) el.quick.innerHTML = "";
+    } else if (state === "quick") {
+      el.status.textContent = "내용 즉시 반영";
+      el.work.textContent = "빠른 미리보기";
+      el.workHelp.textContent = "입력 내용은 즉시 반영됩니다. 실제 HWP 조판은 새로고침 버튼을 누를 때 실행합니다.";
+      el.meta.textContent = "정밀 조판은 수동 실행";
     } else if (state === "queued") {
       el.status.textContent = liveRunning ? "새 변경 감지" : "변경 감지 · 준비 중";
       el.work.textContent = liveRunning ? "최신 변경 사항 대기 중" : "자동 조판 준비 중";
       el.workHelp.textContent = liveRunning
         ? "현재 조판이 끝나면 변경된 내용으로 다시 조판합니다."
-        : "즉시 미리보기는 반영됐고, 정밀 조판은 입력이 멈추면 시작합니다.";
-      el.meta.textContent = liveRunning ? "현재 작업 완료 후 다시 갱신" : "즉시 미리보기 반영 완료";
+        : "현재 보이는 화면은 내용 확인용이며, 실제 양식은 입력이 멈춘 뒤 적용됩니다.";
+      el.meta.textContent = liveRunning ? "현재 작업 완료 후 다시 갱신" : "내용만 반영 · 양식 조판 대기";
     } else if (state === "loading") {
       el.meta.textContent = "HwpPalette에 현재 문항을 전달했습니다.";
     } else if (state === "ready") {
@@ -211,8 +279,13 @@
         livePending = true;
       }
     } catch (error) {
-      if (fingerprint(collectPreviewQuestion()) === currentFingerprint) {
-        setLiveState("error", errorMessage(error));
+      const message = errorMessage(error);
+      const busy = message.includes("조판하는 중") || message.includes("조판을 정리하는 중");
+      if (busy) {
+        livePending = true;
+        setLiveState("queued");
+      } else if (fingerprint(collectPreviewQuestion()) === currentFingerprint) {
+        setLiveState("error", message);
       } else {
         livePending = true;
       }
@@ -239,12 +312,27 @@
       return;
     }
     setLiveState("queued");
-    liveTimer = setTimeout(() => renderLivePreview(false), delay == null ? 3200 : delay);
+    liveTimer = setTimeout(() => renderLivePreview(false), Math.max(700, delay || 900));
+    // HWP 조판은 수 초~수십 초가 걸리므로 타이핑 때마다 실행하지 않는다.
+    // 사용자가 새로고침/크게 보기로 요청할 때만 정밀 조판한다.
   };
 
   EP.refreshQuestionPreview = function () {
     clearTimeout(liveTimer);
     renderLivePreview(true);
+  };
+
+  EP.invalidateQuestionPreview = function () {
+    clearTimeout(liveTimer);
+    lastFingerprint = "";
+    lastResult = null;
+    const el = liveElements();
+    if (el.image) {
+      el.image.removeAttribute("src");
+      el.image.classList.add("hidden");
+      el.image.classList.remove("stale");
+    }
+    if (el.meta) el.meta.textContent = "양식 변경 · 새 조판 대기";
   };
 
   EP.previewQuestion = async function () {
@@ -255,7 +343,7 @@
       showResult(modal, lastResult, "현재 문항 출력 미리보기");
       return;
     }
-    const modal = showLoading("현재 문항 출력 미리보기");
+    const modal = showLoading("현재 문항 출력 미리보기", true);
     try {
       const result = await EP.post("/api/previews/question", question);
       lastFingerprint = fingerprint(question);

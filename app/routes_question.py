@@ -2,11 +2,16 @@
 import json
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from . import checklist, db, export_palette, reports
 
 router = APIRouter(prefix="/api")
+
+QUESTION_SORTS = {
+    "created", "updated", "status", "review", "usage", "standard",
+    "difficulty", "qtype", "origin", "points",
+}
 
 # 합답형 선지 프리셋 (2022~2026 수능 물리학Ⅰ 74블록 실측 — 상위 2개가 90%)
 #
@@ -60,6 +65,7 @@ class QuestionIn(BaseModel):
     image_choices: bool = False
     status: str = "초안"
     review_note: str = "{}"
+    style_meta: dict = {}
     is_negative: bool = False
     passage: str = ""
     material: str = ""
@@ -77,6 +83,23 @@ class QuestionIn(BaseModel):
     choices: list[ChoiceIn] = []
     layout_style: str = "school"  # 미리보기 전용; 문항은행 데이터에는 저장하지 않는다.
 
+    @field_validator("title", "passage", "material", "ask", "answer", "intent", "explanation", "origin_note")
+    @classmethod
+    def reject_javascript_object_literal(cls, value: str) -> str:
+        if value.strip().lower() == "[object object]":
+            raise ValueError("내부 객체 문자열은 문항 내용으로 사용할 수 없습니다.")
+        return value
+
+
+def _validate_complete(qin: QuestionIn) -> None:
+    if qin.status != "완성":
+        return
+    q = qin.model_dump(exclude={"choices", "layout_style"})
+    choices = [choice.model_dump() for choice in qin.choices]
+    errors = [item for item in checklist.check_question(q, choices) if item["level"] == "error"]
+    if errors:
+        raise HTTPException(409, {"message": "완성 문항 검사를 통과하지 못했습니다.", "issues": errors})
+
 
 def _load_question(conn, qid):
     q = conn.execute("SELECT * FROM question WHERE id = ?", (qid,)).fetchone()
@@ -87,23 +110,59 @@ def _load_question(conn, qid):
 
 
 @router.get("/questions")
-def list_questions(standard: str = "", q: str = "", status: str = ""):
+def list_questions(standard: str = "", q: str = "", status: str = "",
+                   sort: str = "created", direction: str = "desc"):
     sql = """
-        SELECT q.*, (SELECT COUNT(*) FROM choice c WHERE c.question_id = q.id) AS choice_count
+        SELECT q.*,
+               (SELECT COUNT(*) FROM choice c WHERE c.question_id = q.id) AS choice_count,
+               (SELECT COUNT(*) FROM set_item si WHERE si.question_id = q.id) AS usage_count
         FROM question q WHERE 1=1
     """
     args = []
     if standard:
         sql += " AND q.standard_code = ?"; args.append(standard)
     if q:
-        sql += " AND (q.ask LIKE ? OR q.passage LIKE ? OR q.title LIKE ?)"
-        args += [f"%{q}%", f"%{q}%", f"%{q}%"]
+        like = f"%{q}%"
+        sql += (" AND (CAST(q.id AS TEXT) LIKE ? OR q.ask LIKE ? OR q.passage LIKE ? "
+                "OR q.title LIKE ? OR q.standard_code LIKE ? OR q.origin_note LIKE ?)")
+        args += [like] * 6
     if status:
         sql += " AND q.status = ?"; args.append(status)
-    sql += " ORDER BY q.id DESC"
     conn = db.connect()
     try:
-        return [dict(r) for r in conn.execute(sql, args).fetchall()]
+        rows = [dict(r) for r in conn.execute(sql, args).fetchall()]
+        ids = [row["id"] for row in rows]
+        choices_by_question = {qid: [] for qid in ids}
+        if ids:
+            marks = ",".join("?" for _ in ids)
+            for choice in conn.execute(
+                    f"SELECT * FROM choice WHERE question_id IN ({marks}) ORDER BY ord", ids):
+                choices_by_question[choice["question_id"]].append(dict(choice))
+        for row in rows:
+            review = checklist.summarize(
+                checklist.check_question(row, choices_by_question[row["id"]])
+            )
+            row["review_error_count"] = review["error_count"]
+            row["review_warn_count"] = review["warn_count"]
+
+        status_rank = {"초안": 0, "검토중": 1, "완성": 2}
+        difficulty_rank = {"하": 0, "중": 1, "상": 2}
+        key_name = sort if sort in QUESTION_SORTS else "created"
+        key_funcs = {
+            "created": lambda row: row.get("created_at") or "",
+            "updated": lambda row: row.get("updated_at") or row.get("created_at") or "",
+            "status": lambda row: status_rank.get(row.get("status"), -1),
+            "review": lambda row: row["review_error_count"] * 100 + row["review_warn_count"],
+            "usage": lambda row: row["usage_count"],
+            "standard": lambda row: row.get("standard_code") or "",
+            "difficulty": lambda row: difficulty_rank.get(row.get("difficulty"), -1),
+            "qtype": lambda row: row.get("qtype") or "",
+            "origin": lambda row: row.get("origin") or "",
+            "points": lambda row: row.get("default_points") or 0,
+        }
+        reverse = direction.lower() != "asc"
+        rows.sort(key=lambda row: (key_funcs[key_name](row), row["id"]), reverse=reverse)
+        return rows
     finally:
         conn.close()
 
@@ -116,6 +175,7 @@ def get_question(qid: int):
         if not q:
             raise HTTPException(404, "문항을 찾을 수 없습니다.")
         q["bogi_items"] = json.loads(q["bogi_items"] or "[]")
+        q["style_meta"] = json.loads(q.get("style_meta") or "{}")
         for c in ch:
             c["combo"] = json.loads(c["combo"]) if c["combo"] else None
         return {"question": q, "choices": ch}
@@ -125,13 +185,15 @@ def get_question(qid: int):
 
 @router.post("/questions")
 def create_question(qin: QuestionIn):
+    _validate_complete(qin)
     with db.transaction() as conn:
         cur = conn.execute(
-            "INSERT INTO question (title, qtype, image_choices, status, review_note, is_negative, "
+            "INSERT INTO question (title, qtype, image_choices, status, review_note, style_meta, is_negative, "
             " passage, material, ask, bogi_items, answer, default_points, difficulty, standard_code, "
             " intent, explanation, behavior, origin, origin_note) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (qin.title.strip(), qin.qtype, int(qin.image_choices), qin.status, qin.review_note, int(qin.is_negative), qin.passage.strip(), qin.material.strip(),
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (qin.title.strip(), qin.qtype, int(qin.image_choices), qin.status, qin.review_note,
+             json.dumps(qin.style_meta, ensure_ascii=False), int(qin.is_negative), qin.passage.strip(), qin.material.strip(),
              qin.ask.strip(), json.dumps(qin.bogi_items, ensure_ascii=False), qin.answer,
              qin.default_points, qin.difficulty, qin.standard_code, qin.intent.strip(), qin.explanation.strip(),
              qin.behavior.strip(), qin.origin.strip(), qin.origin_note.strip()))
@@ -142,15 +204,18 @@ def create_question(qin: QuestionIn):
 
 @router.put("/questions/{qid}")
 def update_question(qid: int, qin: QuestionIn):
+    _validate_complete(qin)
     with db.transaction() as conn:
         exists = conn.execute("SELECT 1 FROM question WHERE id = ?", (qid,)).fetchone()
         if not exists:
             raise HTTPException(404, "문항을 찾을 수 없습니다.")
         conn.execute(
-            "UPDATE question SET title=?, qtype=?, image_choices=?, status=?, review_note=?, is_negative=?, "
+            "UPDATE question SET title=?, qtype=?, image_choices=?, status=?, review_note=?, style_meta=?, is_negative=?, "
             " passage=?, material=?, ask=?, bogi_items=?, answer=?, default_points=?, difficulty=?, "
-            " standard_code=?, intent=?, explanation=?, behavior=?, origin=?, origin_note=? WHERE id=?",
-            (qin.title.strip(), qin.qtype, int(qin.image_choices), qin.status, qin.review_note, int(qin.is_negative), qin.passage.strip(), qin.material.strip(),
+            " standard_code=?, intent=?, explanation=?, behavior=?, origin=?, origin_note=?, "
+            " updated_at=datetime('now','localtime') WHERE id=?",
+            (qin.title.strip(), qin.qtype, int(qin.image_choices), qin.status, qin.review_note,
+             json.dumps(qin.style_meta, ensure_ascii=False), int(qin.is_negative), qin.passage.strip(), qin.material.strip(),
              qin.ask.strip(), json.dumps(qin.bogi_items, ensure_ascii=False), qin.answer,
              qin.default_points, qin.difficulty, qin.standard_code, qin.intent.strip(), qin.explanation.strip(),
              qin.behavior.strip(), qin.origin.strip(), qin.origin_note.strip(), qid))
@@ -175,6 +240,7 @@ def delete_question(qid: int):
         exists = conn.execute("SELECT 1 FROM question WHERE id = ?", (qid,)).fetchone()
         if not exists:
             raise HTTPException(404, "문항을 찾을 수 없습니다.")
+        conn.execute("DELETE FROM exam_ref WHERE question_id = ?", (qid,))
         conn.execute("DELETE FROM question WHERE id = ?", (qid,))
         return {"ok": True}
 
@@ -308,6 +374,11 @@ def get_set(sid: int):
 @router.post("/sets/{sid}/items")
 def add_set_item(sid: int, item: SetItemIn):
     with db.transaction() as conn:
+        if conn.execute(
+            "SELECT 1 FROM set_item WHERE set_id = ? AND question_id = ?",
+            (sid, item.question_id),
+        ).fetchone():
+            raise HTTPException(409, "이미 이 세트에 들어 있는 문항입니다.")
         row = conn.execute("SELECT COALESCE(MAX(ord),0) AS m FROM set_item WHERE set_id = ?",
                            (sid,)).fetchone()
         conn.execute("INSERT INTO set_item (set_id, question_id, ord, points) VALUES (?,?,?,?)",
@@ -319,6 +390,13 @@ def add_set_item(sid: int, item: SetItemIn):
 def remove_set_item(sid: int, item_id: int):
     with db.transaction() as conn:
         conn.execute("DELETE FROM set_item WHERE id = ? AND set_id = ?", (item_id, sid))
+        rows = conn.execute(
+            "SELECT id FROM set_item WHERE set_id = ? ORDER BY ord, id",
+            (sid,),
+        ).fetchall()
+        for index, row in enumerate(rows, start=1):
+            conn.execute("UPDATE set_item SET ord = ? WHERE id = ?", (-index, row["id"]))
+        conn.execute("UPDATE set_item SET ord = -ord WHERE set_id = ?", (sid,))
         return {"ok": True}
 
 
@@ -338,6 +416,17 @@ def set_item_points(sid: int, item_id: int, body: ItemPointsIn):
 def reorder_set(sid: int, body: ReorderIn):
     """드래그 배열 결과 저장 — question_ids 순서대로 ord 재부여."""
     with db.transaction() as conn:
+        current = [
+            row["question_id"]
+            for row in conn.execute(
+                "SELECT question_id FROM set_item WHERE set_id = ? ORDER BY ord, id",
+                (sid,),
+            ).fetchall()
+        ]
+        requested = body.question_ids
+        if len(requested) != len(set(requested)) or set(requested) != set(current):
+            raise HTTPException(409, "세트의 모든 문항을 중복 없이 한 번씩 보내야 합니다.")
+        conn.execute("UPDATE set_item SET ord = -ord WHERE set_id = ?", (sid,))
         for i, qid in enumerate(body.question_ids, start=1):
             conn.execute("UPDATE set_item SET ord = ? WHERE set_id = ? AND question_id = ?",
                          (i, sid, qid))

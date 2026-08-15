@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from app import db, routes_authoring as ra
 from unittest.mock import patch
@@ -17,8 +18,10 @@ from app.authoring.providers import (
 )
 from app.authoring.codex_app_server import CodexAppServerClient
 from app.authoring.figures import (
-    FiveELocalProvider, RasterImageProvider, StubFigureProvider, get_figure_provider,
+    FigureProviderError, FiveELocalProvider, RasterImageProvider,
+    StubFigureProvider, get_figure_provider, required_figure_count,
 )
+from app.routes_question import QuestionIn
 
 
 class TestAuthoring(unittest.TestCase):
@@ -103,6 +106,38 @@ class TestAuthoring(unittest.TestCase):
         self.assertEqual(result["status"], "text_drafting")
         self.assertEqual(result["review_flags"], ["answer", "explanation"])
 
+    def test_context_first_confirmation_keeps_style_and_reference_checks_advisory(self):
+        sid, session = self._new()
+        draft = session["draft"]
+        draft.update({
+            "passage": "검전기 두 개의 상태를 비교하였다.",
+            "ask": "이에 대한 설명으로 옳은 것은?",
+            "choices": [{"ord": index + 1, "text": f"선지 {index + 1}", "is_answer": index == 0}
+                        for index in range(5)],
+        })
+        ra.update_draft(sid, ra.DraftIn(draft=draft))
+        conn = db.connect()
+        try:
+            conn.execute("UPDATE authoring_session SET provider='codex_local' WHERE id=?", (sid,))
+            conn.commit()
+        finally:
+            conn.close()
+        confirmed = ra.confirm_text(sid)
+        self.assertEqual(confirmed["status"], "text_confirmed")
+        codes = {item["code"] for item in confirmed["advisories"]}
+        self.assertIn("style_frame_unattested", codes)
+        self.assertIn("reference_missing", codes)
+        self.assertIn("standard_missing", codes)
+
+    def test_standard_is_inferred_from_context_and_propositions(self):
+        conn = db.connect()
+        try:
+            candidates = ra._standard_candidates(conn, "검전기 정전기 유도 문항을 만들어줘")
+        finally:
+            conn.close()
+        self.assertTrue(candidates)
+        self.assertEqual(candidates[0]["code"], "[9과14-01]")
+
     def test_apply_is_explicit_and_undo_restores(self):
         sid, session = self._new()
         proposal = {"id": "p1", "field": "ask", "label": "발문", "value": "제안 발문"}
@@ -121,6 +156,72 @@ class TestAuthoring(unittest.TestCase):
         self.assertEqual(applied["draft"]["ask"], "제안 발문")
         undone = ra.undo_apply(sid)
         self.assertEqual(undone["draft"]["ask"], "")
+
+    def test_old_metadata_envelope_proposal_applies_only_public_text(self):
+        sid, _ = self._new()
+        proposal = {
+            "id": "old-envelope", "field": "ask", "label": "발문",
+            "value": {"text": "속력은?", "frame_id": "ASK_VALUE",
+                      "style_sources": ["2025 수능 1번"]},
+            "frame_id": "ASK_VALUE", "style_sources": ["2025 수능 1번"],
+        }
+        conn = db.connect()
+        try:
+            mid = conn.execute(
+                "INSERT INTO authoring_message(session_id,role,content,proposals_json) VALUES(?,?,?,?)",
+                (sid, "assistant", "제안", json.dumps([proposal], ensure_ascii=False)),
+            ).lastrowid
+            conn.commit()
+        finally:
+            conn.close()
+        applied = ra.apply_proposal(sid, ra.ApplyIn(message_id=mid, proposal_id="old-envelope"))
+        self.assertEqual(applied["draft"]["ask"], "속력은?")
+        self.assertIsInstance(applied["draft"]["ask"], str)
+        self.assertEqual(applied["draft"]["style_meta"]["ask"]["frame_id"], "ASK_VALUE")
+
+    def test_database_repair_unwraps_drafts_messages_and_revisions(self):
+        sid, _ = self._new()
+        envelope = {"text": "다음은 현상에 대한 설명이다.", "frame_id": "INTRO_DESC",
+                    "style_sources": ["2024 수능 2번"]}
+        conn = db.connect()
+        try:
+            malformed = {"passage": envelope, "ask": "[object Object]", "style_meta": {}}
+            conn.execute(
+                "UPDATE authoring_session SET draft_json=?,confirmed_json=? WHERE id=?",
+                (json.dumps(malformed, ensure_ascii=False), json.dumps(malformed, ensure_ascii=False), sid),
+            )
+            mid = conn.execute(
+                "INSERT INTO authoring_message(session_id,role,content,proposals_json) VALUES(?,?,?,?)",
+                (sid, "assistant", "제안", json.dumps([
+                    {"id": "p", "field": "passage", "value": envelope}
+                ], ensure_ascii=False)),
+            ).lastrowid
+            conn.execute(
+                "INSERT INTO authoring_revision(session_id,message_id,before_json,after_json) VALUES(?,?,?,?)",
+                (sid, mid, json.dumps(malformed, ensure_ascii=False), json.dumps(malformed, ensure_ascii=False)),
+            )
+            db._repair_authoring_text_envelopes(conn)
+            conn.commit()
+            repaired = json.loads(conn.execute(
+                "SELECT draft_json FROM authoring_session WHERE id=?", (sid,)
+            ).fetchone()["draft_json"])
+            proposals = json.loads(conn.execute(
+                "SELECT proposals_json FROM authoring_message WHERE id=?", (mid,)
+            ).fetchone()["proposals_json"])
+            revision = json.loads(conn.execute(
+                "SELECT after_json FROM authoring_revision WHERE message_id=?", (mid,)
+            ).fetchone()["after_json"])
+        finally:
+            conn.close()
+        self.assertEqual(repaired["passage"], envelope["text"])
+        self.assertEqual(repaired["ask"], "")
+        self.assertEqual(repaired["style_meta"]["passage"]["frame_id"], "INTRO_DESC")
+        self.assertEqual(proposals[0]["value"], envelope["text"])
+        self.assertEqual(revision["passage"], envelope["text"])
+
+    def test_question_input_rejects_javascript_object_literal(self):
+        with self.assertRaises(ValidationError):
+            QuestionIn(ask="[object Object]")
 
     def test_figure_plan_is_explicit_and_undoable(self):
         sid, _ = self._new()
@@ -159,6 +260,50 @@ class TestAuthoring(unittest.TestCase):
         self.assertEqual(session["figure"]["options"], {
             "provider": "raster_image", "include_text": True, "composition": "separate",
         })
+
+    def test_two_photo_palette_forces_separate_figure_slots(self):
+        sid, session = self._new()
+        draft = dict(session["draft"])
+        draft["style_meta"] = {"palette_template": "수능합답2소사진5선지"}
+        updated = ra.update_draft(sid, ra.DraftIn(draft=draft))
+        self.assertEqual(required_figure_count(updated["draft"]), 2)
+        self.assertEqual(updated["figure"]["options"]["composition"], "separate")
+
+    def test_raster_two_photo_palette_replans_exactly_two_panels(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = RasterImageProvider()
+            source = Path(tmp) / "source.png"
+            import fitz
+            pixmap = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 2, 2), False)
+            pixmap.clear_with(255)
+            pixmap.save(str(source))
+            output = Path(tmp) / "photos"
+            output.mkdir()
+            draft = {
+                "passage": "전동기의 구조와 작동 원리를 나타낸다.",
+                "style_meta": {"palette_template": "수능합답2소사진5선지"},
+                "figure_plan": {"summary": "전동기", "panels": [
+                    {"id": "one", "image_prompt": "전동기 한 장"},
+                ]},
+            }
+            planned = [
+                {"id": "structure", "summary": "구조", "image_prompt": "전동기 구조"},
+                {"id": "operation", "summary": "작동", "image_prompt": "전동기 작동"},
+            ]
+            with (
+                patch.object(provider, "_folder", return_value=Path(tmp)),
+                patch("app.authoring.figures.codex_app_server.plan_image_panels", return_value=planned) as planner,
+                patch("app.authoring.figures.codex_app_server.generate_image", return_value={"savedPath": str(source)}),
+                patch("app.authoring.figures.hwppalette_provider.photo_dir", return_value=output),
+                patch("app.authoring.figures.hwppalette_provider.register_photo_dir"),
+            ):
+                result = provider.create(99, draft, {
+                    "options": {"provider": "raster_image", "include_text": False, "composition": "auto"},
+                    "figure_name": "draft_99",
+                })
+            self.assertEqual(len(result["assets"]), 2)
+            self.assertEqual(planner.call_args.kwargs["required_count"], 2)
+            self.assertEqual(result["material"], "draft_99_01,draft_99_02")
 
     def test_figure_plan_removes_text_when_option_is_off(self):
         proposals = CodexLocalProvider._validated_proposals([{
@@ -208,6 +353,77 @@ class TestAuthoring(unittest.TestCase):
                 "draft_99_01", "draft_99_02",
             ])
             self.assertIn("plus/minus signs", result["assets"][0]["image_prompt"])
+
+    def test_raster_provider_keeps_generated_base_text_free_when_final_labels_are_enabled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = RasterImageProvider()
+            source = Path(tmp) / "source.png"
+            import fitz
+            pixmap = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 20, 10), False)
+            pixmap.clear_with(255)
+            pixmap.save(str(source))
+            output = Path(tmp) / "photos"
+            output.mkdir()
+            plan = {"version": 2, "summary": "경사면", "panels": [{
+                "id": "a", "summary": "높이 7/2h",
+                "image_prompt": "높이 7/2h와 A를 원본처럼 표시한다.",
+                "artboard": {"w": 100, "h": 70},
+                "overlay_objects": [
+                    {"type": "text", "x": -10, "y": 20, "text": "A"},
+                    {"type": "formula", "x": -30, "y": 0, "source": "\\frac{7}{2}h"},
+                ],
+            }]}
+            with (
+                patch.object(provider, "_folder", return_value=Path(tmp)),
+                patch("app.authoring.figures.codex_app_server.generate_image",
+                      return_value={"savedPath": str(source)}) as generator,
+                patch("app.authoring.figures.hwppalette_provider.photo_dir", return_value=output),
+                patch("app.authoring.figures.hwppalette_provider.register_photo_dir"),
+            ):
+                result = provider.create(99, {"figure_plan": plan}, {
+                    "options": {"include_text": True}, "figure_name": "draft_99",
+                })
+
+            self.assertIn("Do not draw any letters", generator.call_args.args[0])
+            project = json.loads(Path(result["fivee_project_path"]).read_text(encoding="utf-8"))
+            objects = project["pages"][0]["objects"]
+            self.assertEqual([obj["type"] for obj in objects], ["image", "text", "formula"])
+            self.assertEqual(objects[2]["source"], "\\frac{7}{2}h")
+            self.assertEqual(project["pages"][0]["artboard"], {"w": 100.0, "h": 70.0})
+            self.assertEqual(result["assets"][0]["status"], "overlay_pending")
+            self.assertEqual(result["material"], "")
+            with self.assertRaises(FigureProviderError):
+                provider.confirm(99, {}, {
+                    "rendered_image_path": result["rendered_image_path"],
+                    "assets": result["assets"],
+                })
+
+    def test_confirming_reconstruction_promotes_formulas_before_hwp_export(self):
+        sid, session = self._new()
+        with db.transaction() as conn:
+            conn.execute(
+                "UPDATE authoring_session SET purpose_mode='reconstruct' WHERE id=?", (sid,)
+            )
+        draft = dict(session["draft"])
+        draft.update({
+            "passage": "질량이 m인 물체를 높이 9h인 지점에 놓는다.",
+            "ask": "H는?",
+            "choices": [
+                {"ord": index + 1, "text": f"{index * 2 + 5}/17h", "is_answer": index == 0}
+                for index in range(5)
+            ],
+        })
+        ra.update_draft(sid, ra.DraftIn(draft=draft))
+
+        confirmed = ra.confirm_text(sid)
+
+        self.assertIn("[[formula:m]]", confirmed["confirmed"]["passage"])
+        self.assertIn("[[formula:9h]]", confirmed["confirmed"]["passage"])
+        self.assertEqual(confirmed["confirmed"]["ask"], "[[formula:H]]는?")
+        self.assertEqual(
+            confirmed["confirmed"]["choices"][0]["text"],
+            "[[formula:\\frac{5}{17}h]]",
+        )
 
     def test_explanation_column_is_additive(self):
         conn = db.connect()
@@ -374,6 +590,30 @@ class TestAuthoring(unittest.TestCase):
         self.assertEqual(updated["effective_model"], "gpt-5.6-sol")
         self.assertEqual(updated["effective_reasoning_effort"], "high")
 
+    def test_reconstruction_purpose_is_persisted_per_session(self):
+        sid, session = self._new()
+        self.assertEqual(session["purpose_mode"], "create")
+        updated = ra.update_settings(sid, ra.SettingsIn(purpose_mode="reconstruct"))
+        self.assertEqual(updated["purpose_mode"], "reconstruct")
+        self.assertEqual(ra.get_session(sid)["session"]["purpose_mode"], "reconstruct")
+
+    def test_reconstruction_prompt_contract_is_explicit(self):
+        prompt = CodexLocalProvider._prompt("그대로 복원해줘", {
+            "_purpose_mode": "reconstruct",
+            "_references": [{"reference_id": 7, "source_text": "선택한 기출 원문"}],
+        })
+        self.assertIn('\"_purpose_mode\": \"reconstruct\"', prompt)
+        self.assertIn("선택한 기출 원문", prompt)
+        self.assertIn("_purpose_mode가 reconstruct이면", DEVELOPER_INSTRUCTIONS)
+
+    def test_reconstruction_requires_exactly_one_reference(self):
+        sid, _ = self._new()
+        ra.update_settings(sid, ra.SettingsIn(purpose_mode="reconstruct"))
+        with self.assertRaises(HTTPException) as raised:
+            ra.send_message(sid, ra.MessageIn(content="그대로 복원해줘"))
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertIn("한 문항만", str(raised.exception.detail))
+
     def test_app_server_model_catalog_is_reduced_to_safe_fields(self):
         client = CodexAppServerClient()
         with patch.object(client, "request", return_value={"data": [{
@@ -425,6 +665,32 @@ class TestAuthoring(unittest.TestCase):
         restart.assert_called_once_with()
         self.assertTrue(result["alreadySignedIn"])
         start_login.assert_not_called()
+
+    def test_app_server_offers_browser_and_device_code_login(self):
+        client = CodexAppServerClient()
+        with patch.object(client, "request", return_value={"authUrl": "https://example.test"}) as request:
+            client.start_login()
+        request.assert_called_once_with("account/login/start", {
+            "type": "chatgpt", "useHostedLoginSuccessPage": True, "appBrand": "codex",
+        }, timeout=30)
+        with patch.object(client, "request", return_value={
+            "verificationUrl": "https://auth.openai.com/codex/device", "userCode": "ABCD-1234",
+        }) as request:
+            result = client.start_device_login()
+        request.assert_called_once_with(
+            "account/login/start", {"type": "chatgptDeviceCode"}, timeout=30,
+        )
+        self.assertEqual(result["userCode"], "ABCD-1234")
+
+    def test_device_login_route_starts_device_flow(self):
+        with patch.object(ra.codex_app_server, "restart"), patch.object(
+            ra.codex_app_server, "account_state", return_value={"signed_in": False, "account": None},
+        ), patch.object(ra.codex_app_server, "start_device_login", return_value={
+            "verificationUrl": "https://auth.openai.com/codex/device", "userCode": "ABCD-1234",
+        }) as start_device:
+            result = ra.device_login()
+        start_device.assert_called_once_with()
+        self.assertEqual(result["userCode"], "ABCD-1234")
 
     def test_app_server_interrupts_the_active_turn(self):
         client = CodexAppServerClient()
@@ -517,6 +783,24 @@ class TestAuthoring(unittest.TestCase):
         ])
         self.assertEqual(proposals[0]["value"], "①")
 
+    def test_codex_unwraps_public_text_and_lifts_metadata(self):
+        proposals = CodexLocalProvider._validated_proposals([{
+            "field": "ask", "label": "발문",
+            "value": {"text": "값은?", "frame_id": "ASK_VALUE",
+                      "style_sources": ["2025 수능 4번"]},
+        }])
+        self.assertEqual(proposals[0]["value"], "값은?")
+        self.assertIsInstance(proposals[0]["value"], str)
+        self.assertEqual(proposals[0]["frame_id"], "ASK_VALUE")
+        self.assertEqual(proposals[0]["style_sources"], ["2025 수능 4번"])
+
+    def test_codex_rejects_object_values_for_other_visible_scalar_fields(self):
+        proposals = CodexLocalProvider._validated_proposals([
+            {"field": "answer", "value": {"text": "①"}},
+            {"field": "explanation", "value": {"text": "내부 객체"}},
+        ])
+        self.assertEqual(proposals, [])
+
     def test_codex_accepts_figure_plan_proposal(self):
         proposals = CodexLocalProvider._validated_proposals([{
             "field": "figure_plan", "label": "그림 설계안",
@@ -525,22 +809,57 @@ class TestAuthoring(unittest.TestCase):
         self.assertEqual(proposals[0]["field"], "figure_plan")
         self.assertEqual(proposals[0]["value"]["blocked_reason"], "electroscope")
 
+    def test_codex_normalizes_artboard_aliases_for_fivee(self):
+        proposals = CodexLocalProvider._validated_proposals([{
+            "field": "figure_plan", "label": "그림 설계안",
+            "value": {
+                "summary": "검전기 비교", "panels": [{
+                    "id": "before", "summary": "금속박이 닫힌 상태",
+                    "artboard": {"width": 90, "height": 70},
+                    "objects": [{"type": "apparatus", "kind": "electroscope"}],
+                }],
+            },
+        }])
+        self.assertEqual(proposals[0]["value"]["panels"][0]["artboard"], {"w": 90, "h": 70})
+
+    def test_fivee_artboard_normalizer_repairs_invalid_dimensions(self):
+        self.assertEqual(
+            FiveELocalProvider._normalize_artboard({"width": 80, "height": 50}),
+            {"w": 80, "h": 50},
+        )
+        self.assertEqual(
+            FiveELocalProvider._normalize_artboard({"w": 0, "h": "bad"}),
+            {"w": 90, "h": 60},
+        )
+
     def test_codex_accepts_bogi_as_a_separate_proposal(self):
         proposals = CodexLocalProvider._validated_proposals([{
             "field": "bogi_items", "label": "보기 전체",
-            "value": [{"label": "ㄱ", "text": "전자 일부가 검전기로 이동한다."},
-                      {"label": "ㄴ", "text": "금속박의 벌어짐이 줄어든다."}],
+            "value": [{"label": "ㄱ", "text": "전자 일부가 검전기로 이동한다.",
+                       "evidence": "교과서 p.42 전자 이동", "explanation": "전자 이동 방향과 일치한다."},
+                      {"label": "ㄴ", "text": "금속박의 벌어짐이 줄어든다.",
+                       "evidence": "교과서 p.43 금속박 관찰", "explanation": "전하량 감소로 벌어짐이 줄어든다."}],
         }])
         self.assertEqual(proposals[0]["field"], "bogi_items")
         self.assertEqual(proposals[0]["value"][1]["label"], "ㄴ")
+        self.assertEqual(proposals[0]["value"][1]["evidence"], "교과서 p.43 금속박 관찰")
         self.assertIn("bogi_items", DEVELOPER_INSTRUCTIONS)
+        self.assertIn("evidence와 explanation", DEVELOPER_INSTRUCTIONS)
         self.assertIn("figure_plan", DEVELOPER_INSTRUCTIONS)
+
+    def test_codex_rejects_bogi_without_evidence_or_explanation(self):
+        proposals = CodexLocalProvider._validated_proposals([{
+            "field": "bogi_items", "label": "보기 전체",
+            "value": [{"label": "ㄱ", "text": "근거 없는 보기"}],
+        }])
+        self.assertEqual(proposals, [])
 
     def test_authoring_protocol_column_is_additive(self):
         conn = db.connect()
         try:
             cols = {r["name"] for r in conn.execute("PRAGMA table_info(authoring_session)")}
             self.assertIn("provider_protocol", cols)
+            self.assertIn("purpose_mode", cols)
         finally:
             conn.close()
 
@@ -728,6 +1047,48 @@ class TestAuthoring(unittest.TestCase):
                 "set_artboard", "add_objects", "read_app",
             ])
             self.assertEqual(result["status"], "editing")
+
+    def test_fivee_preview_preserves_original_error_when_playwright_stops(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = FiveELocalProvider(root=Path(tmp), port=18192)
+            client = unittest.mock.MagicMock()
+            browser = unittest.mock.MagicMock()
+            page = unittest.mock.MagicMock()
+            browser.new_page.return_value = page
+            page.goto.side_effect = RuntimeError("5E page load failed")
+
+            stopped = {"value": False}
+
+            def close_browser():
+                if stopped["value"]:
+                    raise RuntimeError("Event loop is closed! Is Playwright already stopped?")
+
+            browser.close.side_effect = close_browser
+            playwright = unittest.mock.MagicMock()
+            playwright.chromium.launch.return_value = browser
+
+            class PlaywrightContext:
+                def __enter__(self):
+                    return playwright
+
+                def __exit__(self, exc_type, exc_value, traceback):
+                    stopped["value"] = True
+
+            with patch(
+                "playwright.sync_api.sync_playwright", return_value=PlaywrightContext()
+            ), patch(
+                "app.authoring.figures.hwppalette_provider.photo_dir", return_value=Path(tmp)
+            ), patch("app.authoring.figures.hwppalette_provider.register_photo_dir"):
+                with self.assertRaises(FigureProviderError) as raised:
+                    provider._render_preview(
+                        client, 9, {"ask": "test"}, {}, Path(tmp) / "figure.5e.json",
+                        {"artboard": {"w": 90, "h": 60}, "objects": []},
+                    )
+
+            message = str(raised.exception)
+            self.assertIn("5E page load failed", message)
+            self.assertNotIn("Event loop is closed", message)
+            browser.close.assert_not_called()
 
 
 if __name__ == "__main__":

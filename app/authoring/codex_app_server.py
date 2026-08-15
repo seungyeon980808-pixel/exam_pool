@@ -14,7 +14,7 @@ from collections import deque
 from pathlib import Path
 from typing import Iterator
 
-from ..paths import BASE_DIR
+from ..paths import BASE_DIR, data_dir
 
 
 class CodexAppServerError(RuntimeError):
@@ -47,17 +47,54 @@ class CodexAppServerClient:
                 return [found, "app-server"]
         raise CodexAppServerError("Codex CLI를 찾을 수 없습니다. Codex를 먼저 설치하세요.")
 
+    @staticmethod
+    def _child_environment() -> dict[str, str]:
+        """Give ExamPool an isolated Codex state directory with usable auth."""
+        env = os.environ.copy()
+        if os.name != "nt":
+            return env
+
+        # The desktop host can provide a sandbox-only Codex home, while sharing
+        # the desktop home makes its SQLite runtime files contend with this child.
+        # Keep state separate and copy only the local credential record.
+        user_profile = os.environ.get("USERPROFILE") or str(Path.home())
+        source_auth = Path(user_profile) / ".codex" / "auth.json"
+        child_home = data_dir() / "codex_app_server_home"
+        child_home.mkdir(parents=True, exist_ok=True)
+        target_auth = child_home / "auth.json"
+        if source_auth.is_file():
+            try:
+                if (not target_auth.exists() or
+                        source_auth.stat().st_mtime_ns > target_auth.stat().st_mtime_ns):
+                    shutil.copy2(source_auth, target_auth)
+            except OSError:
+                pass
+        env["CODEX_HOME"] = str(child_home)
+
+        # The bundled Rust client rejects the current OpenAI chain on this
+        # Windows installation unless it receives a current PEM root bundle.
+        if not env.get("CODEX_CA_CERTIFICATE"):
+            try:
+                import certifi
+                ca_bundle = Path(certifi.where())
+                if ca_bundle.is_file():
+                    env["CODEX_CA_CERTIFICATE"] = str(ca_bundle)
+            except (ImportError, OSError):
+                pass
+        return env
+
     def _ensure_started(self) -> None:
         with self._start_lock:
             if self._process and self._process.poll() is None:
                 return
             creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
             try:
+                child_env = self._child_environment()
                 self._process = subprocess.Popen(
                     self._command(), cwd=str(BASE_DIR), stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                     encoding="utf-8", errors="replace", bufsize=1,
-                    creationflags=creationflags,
+                    creationflags=creationflags, env=child_env,
                 )
             except (OSError, ValueError) as exc:
                 raise CodexAppServerError(f"Codex App Server를 시작하지 못했습니다: {exc}") from exc
@@ -247,7 +284,7 @@ class CodexAppServerClient:
         finally:
             self._subscribers.discard(notifications)
 
-    def plan_image_panels(self, question_context: str) -> list[dict]:
+    def plan_image_panels(self, question_context: str, required_count: int | None = None) -> list[dict]:
         """Split a question into independently printable figure panels without UI steps."""
         instructions = (
             "You split Korean middle-school science questions into independently printable figures. "
@@ -256,6 +293,12 @@ class CodexAppServerClient:
             "distinct states, times, cases, experiments, or diagrams that must be inserted separately. "
             "Do not merge distinct figures into one canvas. Maximum six items."
         )
+        if required_count:
+            instructions += (
+                f" The selected print template has exactly {required_count} separate image slots. "
+                f"Return exactly {required_count} items, splitting the question into complementary "
+                "structure, state, process, result, or comparison views as appropriate."
+            )
         _, deltas = self.stream_turn(
             None,
             "Analyze this question and return its figure panels:\n" + question_context,
@@ -284,6 +327,10 @@ class CodexAppServerClient:
             })
         if not panels:
             raise CodexAppServerError("생성할 그림 장면을 찾지 못했습니다.")
+        if required_count and len(panels) != required_count:
+            raise CodexAppServerError(
+                f"그림 {required_count}개가 필요하지만 장면 분석 결과는 {len(panels)}개입니다."
+            )
         return panels
 
     def default_model(self) -> str | None:
@@ -329,7 +376,13 @@ class CodexAppServerClient:
         return models
 
     def start_login(self) -> dict:
-        return self.request("account/login/start", {"type": "chatgpt"}, timeout=30)
+        return self.request("account/login/start", {
+            "type": "chatgpt", "useHostedLoginSuccessPage": True, "appBrand": "codex",
+        }, timeout=30)
+
+    def start_device_login(self) -> dict:
+        """Use Codex's device-code flow when the localhost browser callback is brittle."""
+        return self.request("account/login/start", {"type": "chatgptDeviceCode"}, timeout=30)
 
     def _start_or_resume_thread(self, thread_id: str | None, developer_instructions: str,
                                 model: str | None = None,
@@ -366,7 +419,8 @@ class CodexAppServerClient:
 
     def stream_turn(self, thread_id: str | None, message: str,
                     developer_instructions: str, model: str | None = None,
-                    reasoning_effort: str | None = None) -> tuple[str, Iterator[str]]:
+                    reasoning_effort: str | None = None,
+                    local_image_paths: list[str] | None = None) -> tuple[str, Iterator[str]]:
         account = self.account_state().get("account")
         if not account:
             raise CodexAppServerError("ChatGPT 로그인이 필요합니다.")
@@ -378,9 +432,14 @@ class CodexAppServerClient:
         notifications: queue.Queue = queue.Queue()
         self._subscribers.add(notifications)
         try:
+            turn_input = [{"type": "text", "text": message}]
+            for raw_path in local_image_paths or []:
+                path = Path(raw_path).resolve()
+                if path.is_file():
+                    turn_input.append({"type": "localImage", "path": str(path), "detail": "high"})
             turn_params = {
                 "threadId": active_thread_id,
-                "input": [{"type": "text", "text": message}],
+                "input": turn_input,
                 "cwd": str(Path(BASE_DIR).resolve()),
                 "approvalPolicy": "never",
             }

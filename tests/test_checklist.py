@@ -37,6 +37,28 @@ class TestChecklist(unittest.TestCase):
         codes = [i["code"] for i in cl.check_question(q, good_choices())]
         self.assertIn("no_ask", codes)
 
+    def test_hapdap_bogi_requires_evidence_and_explanation(self):
+        q = {"qtype": "합답형", "ask": "옳은 것만 고른 것은?", "difficulty": "중",
+             "default_points": 3.0, "bogi_items": [
+                 {"label": "ㄱ", "text": "보기", "evidence": "교과서 p.10"},
+             ]}
+        choices = [{"ord": 1, "combo": '["ㄱ"]', "is_answer": True},
+                   {"ord": 2, "combo": '["ㄴ"]', "is_answer": False}]
+        codes = [i["code"] for i in cl.check_question(q, choices)]
+        self.assertNotIn("bogi_no_evidence", codes)
+        self.assertIn("bogi_no_explanation", codes)
+
+    def test_hapdap_bogi_accepts_linked_proposition_and_explanation(self):
+        q = {"qtype": "합답형", "ask": "옳은 것만 고른 것은?", "difficulty": "중",
+             "default_points": 3.0, "bogi_items": [
+                 {"label": "ㄱ", "text": "보기", "proposition_id": 7, "explanation": "근거와 일치한다."},
+             ]}
+        choices = [{"ord": 1, "combo": '["ㄱ"]', "is_answer": True},
+                   {"ord": 2, "combo": '["ㄴ"]', "is_answer": False}]
+        codes = [i["code"] for i in cl.check_question(q, choices)]
+        self.assertNotIn("bogi_no_evidence", codes)
+        self.assertNotIn("bogi_no_explanation", codes)
+
     def test_set_points_mismatch_warns(self):
         q = {"qtype": "정답형", "ask": "?", "difficulty": "중", "default_points": 3.0,
              "standard_code": "[9과10-01]"}

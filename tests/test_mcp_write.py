@@ -4,6 +4,7 @@ import unittest
 
 from app import db
 from app import mcp_server as m
+from app import routes_question
 
 MARK = "MCP쓰기테스트"
 
@@ -110,6 +111,40 @@ class TestMcpWrite(unittest.TestCase):
             conn.close()
         with self.assertRaises(ValueError):
             m.update_question(qid, ask="바꿔치기")
+
+    def test_question_pool_sort_and_updated_at(self):
+        older_id = self._create()
+        newer_id = self._create()
+        conn = db.connect()
+        try:
+            conn.execute(
+                "UPDATE question SET created_at=?, updated_at=? WHERE id=?",
+                ("2025-01-01 09:00:00", "2025-01-01 09:00:00", older_id),
+            )
+            conn.execute(
+                "UPDATE question SET created_at=?, updated_at=? WHERE id=?",
+                ("2025-02-01 09:00:00", "2025-02-01 09:00:00", newer_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        newest_first = routes_question.list_questions(q=MARK, sort="created", direction="desc")
+        oldest_first = routes_question.list_questions(q=MARK, sort="created", direction="asc")
+        self.assertEqual([r["id"] for r in newest_first], [newer_id, older_id])
+        self.assertEqual([r["id"] for r in oldest_first], [older_id, newer_id])
+        self.assertIn("review_error_count", newest_first[0])
+        self.assertIn("usage_count", newest_first[0])
+
+        m.update_question(older_id, ask="수정 시각 확인용 발문")
+        conn = db.connect()
+        try:
+            updated_at = conn.execute(
+                "SELECT updated_at FROM question WHERE id=?", (older_id,)
+            ).fetchone()["updated_at"]
+        finally:
+            conn.close()
+        self.assertGreater(updated_at, "2025-01-01 09:00:00")
 
     def test_blueprint_and_attach(self):
         bp = m.get_blueprint(self.set_id)

@@ -167,6 +167,7 @@ class RefIn(BaseModel):
     note: str = ""
     tags: str = ""
     question_id: int | None = None
+    authoring_session_id: int | None = None
 
 
 class RefPatch(BaseModel):
@@ -176,7 +177,11 @@ class RefPatch(BaseModel):
 
 
 @router.get("/exam-refs")
-def list_refs(q: str = ""):
+def list_refs(
+    q: str = "",
+    question_id: int | None = None,
+    authoring_session_id: int | None = None,
+):
     conn = db.connect()
     try:
         sql = "SELECT * FROM exam_ref WHERE 1=1"
@@ -184,6 +189,12 @@ def list_refs(q: str = ""):
         if q:
             sql += " AND (doc_title LIKE ? OR note LIKE ? OR tags LIKE ?)"
             args += [f"%{q}%"] * 3
+        if question_id is not None:
+            sql += " AND question_id = ?"
+            args.append(question_id)
+        if authoring_session_id is not None:
+            sql += " AND authoring_session_id = ? AND question_id IS NULL"
+            args.append(authoring_session_id)
         sql += " ORDER BY id DESC"
         return [dict(r) for r in conn.execute(sql, args).fetchall()]
     finally:
@@ -194,18 +205,22 @@ def list_refs(q: str = ""):
 def create_ref(r: RefIn):
     """이미 담은 문항이면 메모만 갱신한다(중복 방지)."""
     with db.transaction() as conn:
+        if r.question_id is None and r.authoring_session_id is None:
+            raise HTTPException(409, "참고 자료를 연결할 문항 또는 작성 세션이 필요합니다.")
         old = conn.execute(
-            "SELECT id FROM exam_ref WHERE document_id=? AND page_no=? AND item_num=?",
-            (r.document_id, r.page_no, r.item_num)).fetchone()
+            "SELECT id FROM exam_ref WHERE document_id=? AND page_no=? AND item_num=? "
+            "AND question_id IS ? AND authoring_session_id IS ?",
+            (r.document_id, r.page_no, r.item_num, r.question_id, r.authoring_session_id),
+        ).fetchone()
         if old:
             if r.note.strip():
                 conn.execute("UPDATE exam_ref SET note=? WHERE id=?", (r.note.strip(), old["id"]))
             return {"id": old["id"], "existed": True}
         cur = conn.execute(
-            "INSERT INTO exam_ref (document_id, doc_title, page_no, item_num, note, tags, question_id) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO exam_ref (document_id, doc_title, page_no, item_num, note, tags, "
+            "question_id, authoring_session_id) VALUES (?,?,?,?,?,?,?,?)",
             (r.document_id, r.doc_title.strip(), r.page_no, r.item_num,
-             r.note.strip(), r.tags.strip(), r.question_id))
+             r.note.strip(), r.tags.strip(), r.question_id, r.authoring_session_id))
         return {"id": cur.lastrowid, "existed": False}
 
 
@@ -216,8 +231,11 @@ def update_ref(ref_id: int, p: RefPatch):
             conn.execute("UPDATE exam_ref SET note=? WHERE id=?", (p.note.strip(), ref_id))
         if p.tags is not None:
             conn.execute("UPDATE exam_ref SET tags=? WHERE id=?", (p.tags.strip(), ref_id))
-        if p.question_id is not None:
-            conn.execute("UPDATE exam_ref SET question_id=? WHERE id=?", (p.question_id, ref_id))
+        if "question_id" in p.model_fields_set:
+            conn.execute(
+                "UPDATE exam_ref SET question_id=?, authoring_session_id=NULL WHERE id=?",
+                (p.question_id, ref_id),
+            )
         return {"ok": True}
 
 

@@ -5,7 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ExamPool</title>
   <link rel="icon" type="image/svg+xml" href="/assets/icon.svg" />
-  <link rel="stylesheet" href="/static/css/neis.css?v=0.4.2-compact-chat" />
+  <link rel="stylesheet" href="/static/css/neis.css?v=0.5.3-responsive-a11y" />
+  <link rel="stylesheet" href="/static/css/authoring-apple.css?v=0.7.2-control-fix" />
+  <link rel="stylesheet" href="/static/css/pdf-hwp.css?v=0.1.0" />
 </head>
 <body>
 
@@ -13,27 +15,35 @@
     <span class="nz-logo"><img src="/assets/icon.svg" alt="" />ExamPool</span>
     <span class="muted">박승연 (physics0808)</span>
     <span class="spacer muted" id="subjectLabel">—</span>
+    <button type="button" class="nz-top-action hidden" id="questionFullscreenBtn"
+            onclick="EP.toggleQuestionFullscreen()" aria-pressed="false" title="문항 설계 전체화면">⛶ 전체화면</button>
   </div>
 
   <div class="nz-nav">
-    <button class="nz-navi on" data-tab="bank">명제 Pool</button>
+    <button class="nz-navi on" data-tab="bank" aria-current="page">명제 Pool</button>
     <button class="nz-navi" data-tab="question">문항 설계</button>
     <button class="nz-navi" data-tab="qbank">문항 Pool</button>
     <button class="nz-navi" data-tab="set">세트 관리</button>
+    <button class="nz-navi" data-tab="pdf-hwp">PDF→HWP</button>
     <button class="nz-navi" data-tab="lesson">수업 기록</button>
     <button class="nz-navi" data-tab="config">환경설정</button>
   </div>
 
+  <div id="appStatus" class="nz-app-status hidden" role="status" aria-live="polite"></div>
+
   <div class="nz-wrap">
 
-    <div class="nz-menu">
+    <div class="nz-menu folded">
       <div class="nz-mh">
-        <button class="foldbtn" onclick="EP.foldMenu()" title="접기/펴기">◧</button>
+        <button class="foldbtn" id="stdMenuToggle" onclick="EP.foldMenu()" title="성취기준 펼치기"
+                aria-expanded="false" aria-controls="stdMenuContent" aria-label="성취기준 펼치기">›</button>
         <span>성취기준</span>
         <button class="nz-tb mini" style="margin-left:auto" onclick="EP.openStdTable()">전체보기</button>
       </div>
-      <input class="nz-treefilter" id="treeFilter" placeholder="단원·성취기준 검색" oninput="EP.filterTree()" />
-      <div id="tree"></div>
+      <div id="stdMenuContent">
+        <input class="nz-treefilter" id="treeFilter" placeholder="단원·성취기준 검색" oninput="EP.filterTree()" />
+        <div id="tree"></div>
+      </div>
     </div>
 
     <div class="nz-main">
@@ -58,6 +68,17 @@
       <!-- ============ 명제 Pool ============ -->
       <section id="tab-bank">
         <div class="nz-scopebar"></div>
+        <section class="nz-first-run hidden" id="firstRunGuide" data-first-run aria-labelledby="firstRunTitle">
+          <div>
+            <b id="firstRunTitle">처음 시작하기</b>
+            <span>출제 범위를 고르고, 근거 PDF를 등록한 뒤 첫 명제를 만드세요.</span>
+          </div>
+          <ol>
+            <li><button type="button" class="nz-tb" onclick="EP.openScope()">1. 출제 범위 선택</button></li>
+            <li><button type="button" class="nz-tb" onclick="EP.openTab('config')">2. 근거 PDF 등록·색인</button></li>
+            <li><button type="button" class="nz-tb blu" onclick="EP.toggleForm(true)">3. 첫 명제 작성</button></li>
+          </ol>
+        </section>
         <div class="nz-qlayout">
         <div class="nz-qmain">
         <div class="nz-h"><b>명제 Pool 조회</b></div>
@@ -119,6 +140,8 @@
                 <div class="au-head">
                   <b>ChatGPT 대화</b>
                   <span id="auConnection" class="au-connection">확인 중</span>
+                  <button type="button" class="nz-tb mini au-column-toggle" onclick="EP.toggleAuthoringRight(true)"
+                          aria-label="보조 패널 접기" title="미리보기와 ChatGPT 패널 접기">›</button>
                 </div>
                 <div id="auAccount" class="au-account">
                   <span id="auAccountText">ChatGPT 계정 연결을 확인하고 있습니다.</span>
@@ -126,21 +149,34 @@
                 <div class="au-chat-toolbar">
                   <span class="au-account-actions">
                     <button class="nz-tb mini blu hidden" id="auLogin" onclick="EP.authoringLogin()">ChatGPT 로그인</button>
+                    <button class="nz-tb mini hidden" id="auDeviceLogin" onclick="EP.authoringDeviceLogin()">기기 코드 로그인</button>
                     <button class="nz-tb mini" id="auDemo" onclick="EP.authoringUseProvider('mock')">로컬 시연</button>
                     <button class="nz-tb mini hidden" id="auCodex" onclick="EP.authoringUseProvider('codex_local')">ChatGPT로 전환</button>
                     <button class="nz-tb mini" onclick="EP.authoringRefreshConnection()" title="연결 상태 새로고침">↻</button>
                   </span>
-                  <label><span>작업</span>
+                  <label class="au-chat-field au-chat-field-workflow"><span>진행 방식</span>
+                    <select class="nz-sel mini" id="auWorkflowMode" onchange="EP.authoringChangeWorkflow(this.value)">
+                      <option value="auto">알아서 완성</option>
+                      <option value="dialogue">대화로 설계</option>
+                    </select>
+                  </label>
+                  <label class="au-chat-field au-chat-field-purpose"><span>제작 목적</span>
+                    <select class="nz-sel mini" id="auPurposeMode" onchange="EP.authoringChangePurpose(this.value)">
+                      <option value="create">새 문항 출제</option>
+                      <option value="reconstruct">기출 원본 복원</option>
+                    </select>
+                  </label>
+                  <label class="au-chat-field au-chat-field-mode"><span>작업 강도</span>
                     <select class="nz-sel mini" id="auMode" onchange="EP.authoringChangeMode(this.value)">
                       <option value="quick">빠르게 작성</option>
                       <option value="precise">정밀하게 수정</option>
                       <option value="final">최종 검수</option>
                     </select>
                   </label>
-                  <label><span>모델</span>
+                  <label class="au-chat-field au-chat-field-model"><span>모델</span>
                     <select class="nz-sel mini" id="auModel" onchange="EP.authoringChangeModel()"></select>
                   </label>
-                  <label><span>추론</span>
+                  <label class="au-chat-field au-chat-field-effort"><span>추론</span>
                     <select class="nz-sel mini" id="auEffort" onchange="EP.authoringChangeModel()"></select>
                   </label>
                 </div>
@@ -161,6 +197,10 @@
                    aria-orientation="vertical" tabindex="0" title="드래그해서 문항 편집과 미리보기 너비 조절"></div>
 
               <div class="au-current">
+                <div class="au-draftbar" aria-label="열린 문항 작업">
+                  <div class="au-draft-tabs" id="auDraftTabs"></div>
+                  <button type="button" class="au-draft-new" onclick="EP.authoringNew()" title="새 문항을 별도 탭에서 설계">＋ 새 문항</button>
+                </div>
                 <div class="au-statebar">
                   <span class="au-state-label">작성 상태</span>
                   <span id="auStatus" class="au-status">텍스트 작성 중</span>
@@ -187,40 +227,31 @@
             <div id="qCheckResult"></div>
 
             <!-- 관리 정보 (인쇄 안 됨) — 먼저 정하고 내용을 쓴다 -->
-            <div class="nz-meta" id="questionSettingsSection">
+            <div class="nz-meta collapsed" id="questionSettingsSection">
               <div class="nz-secbar meta">문항 설정
                 <span class="nz-section-summary" id="questionSettingsSummary">정답형 · 중 · 3점</span>
-                <button type="button" class="nz-tb mini nz-section-toggle" onclick="EP.toggleQuestionSection('settings')" aria-expanded="true">접기</button>
+                <button type="button" class="nz-tb mini nz-section-toggle" onclick="EP.toggleQuestionSection('settings')" aria-expanded="false" aria-controls="questionSettingsBody" aria-label="문항 설정 펼치기">⌄</button>
               </div>
-              <div class="nz-secbody tight" id="questionSettingsBody">
-                <div class="nz-fr">
-                  <label>유형</label>
-                  <select id="qtype" style="max-width:96px" onchange="EP.onTypeChange()"><option>정답형</option><option>합답형</option><option>서술형</option></select>
-                  <label class="inline"><input type="checkbox" id="isNeg" /> 부정 발문</label>
-                  <label class="inline hidden" id="imgChoiceBox"><input type="checkbox" id="imgChoices" onchange="EP.renderChoices()" /> 그림 선지</label>
-                  <label class="inline">완성도</label>
-                  <select id="qstatus" style="max-width:84px"><option>초안</option><option>검토중</option><option>완성</option></select>
-                  <label class="inline">난이도</label>
-                  <select id="qdiff" style="max-width:64px"><option>상</option><option selected>중</option><option>하</option></select>
-                  <label class="inline">배점</label>
-                  <input id="qpoints" value="3" style="max-width:56px" />
-                  <!-- 이원목적분류표에 그대로 들어간다 (2022 개정 세 범주) -->
-                  <label class="inline">행동영역</label>
-                  <select id="qbehavior" style="max-width:104px">
-                    <option value="">미지정</option>
-                    <option>지식·이해</option><option>과정·기능</option><option>가치·태도</option>
-                  </select>
+              <div class="nz-secbody tight hidden" id="questionSettingsBody" aria-hidden="true" inert>
+                <div class="nz-section-content">
+                <div class="nz-settings-grid">
+                  <label class="nz-setting-field"><span>답안 구조</span><select id="qtype" onchange="EP.onTypeChange()"><option>정답형</option><option>합답형</option><option>서술형</option></select></label>
+                  <label class="nz-setting-field nz-setting-field-palette"><span>조판 물감</span><select id="qpalette" onchange="EP.onPaletteTemplateChange()"><option value="">자동 선택</option></select></label>
+                  <label class="nz-setting-check"><input type="checkbox" id="isNeg" /><span>부정 발문</span></label>
+                  <label class="nz-setting-check hidden" id="imgChoiceBox"><input type="checkbox" id="imgChoices" onchange="EP.renderChoices()" /><span>그림 선지</span></label>
+                  <label class="nz-setting-field"><span>완성도</span><select id="qstatus"><option>초안</option><option>검토중</option><option>완성</option></select></label>
+                  <label class="nz-setting-field nz-setting-field-short"><span>난이도</span><select id="qdiff"><option>상</option><option selected>중</option><option>하</option></select></label>
+                  <label class="nz-setting-field nz-setting-field-short"><span>배점</span><input id="qpoints" value="3" /></label>
+                  <label class="nz-setting-field"><span>행동영역</span><select id="qbehavior"><option value="">미지정</option><option>지식·이해</option><option>과정·기능</option><option>가치·태도</option></select></label>
                 </div>
                 <!-- 출처: '처음 누가 썼나'라는 바뀌지 않는 사실. 완성도(초안/검토중/완성)와 다른 축이다.
                      경계는 '첫 줄을 누가 썼나'로 고정하고, 애매하면 AI초안으로 남긴다. -->
-                <div class="nz-fr">
-                  <label>출처</label>
-                  <select id="qorigin" style="max-width:104px">
+                <div class="nz-settings-source">
+                  <label class="nz-setting-field"><span>출처</span><select id="qorigin">
                     <option value="">미지정</option>
-                    <option>직접</option><option>AI초안</option><option>기출변형</option>
-                  </select>
-                  <label class="inline">출처 메모</label>
-                  <input id="qoriginNote" placeholder="기출 출처, 적재 스크립트 이름 등" style="flex:1" />
+                    <option>직접</option><option>AI초안</option><option>기출변형</option><option>기출복원</option>
+                  </select></label>
+                  <label class="nz-setting-field nz-setting-field-wide"><span>출처 메모</span><input id="qoriginNote" placeholder="기출 출처, 적재 스크립트 이름 등" /></label>
                 </div>
                 <div class="nz-fr" style="align-items:flex-start">
                   <label style="padding-top:5px">성취기준</label>
@@ -237,6 +268,7 @@
                   <div class="nz-refbar" id="refBar"></div>
                 </div>
                 <div class="nz-fr"><label>출제 의도</label><textarea id="qintent" rows="2" placeholder="예: 오개념(속력 불변) 판별 · 엔터로 줄 추가"></textarea></div>
+                </div>
               </div>
             </div>
 
@@ -244,7 +276,7 @@
             <div class="nz-print">
               <div class="nz-secbar print">시험지에 인쇄되는 내용</div>
               <div class="nz-secbody tight">
-                <div class="nz-fr"><label>지문</label><textarea id="qpassage" rows="2" placeholder="다음은 ~에 대한 설명이다. (없으면 비움)"></textarea></div>
+                <div class="nz-fr"><label>지문</label><textarea id="qpassage" class="nz-autogrow nz-passage-autogrow" rows="1" data-max-height="420" oninput="EP.autoGrow(this)" placeholder="다음은 ~에 대한 설명이다. (없으면 비움)"></textarea></div>
                 <div class="nz-fr"><label>자료</label><input id="qmaterial" placeholder="그림 파일명 (2개는 쉼표로)" /></div>
                 <div class="au-inline-figure-tools" id="auInlineFigureTools">
                   <div class="au-inline-figure-head">
@@ -275,32 +307,34 @@
                   <p class="au-inline-option-summary" id="auFigureOptionSummary"></p>
                   <input class="hidden" type="file" id="auFigureReferenceFile" multiple accept="image/png,image/jpeg,image/webp" onchange="EP.authoringAddReferences(this.files)" />
                   <div class="au-figure-workspace">
-                    <section class="au-figure-reference-pane">
-                      <div class="au-figure-pane-head"><b>참고 자료</b><i id="auFigureReferenceCount">최대 6개</i></div>
+                    <section class="au-figure-reference-pane collapsed">
+                      <button type="button" class="au-figure-pane-head au-figure-reference-toggle"
+                              onclick="EP.toggleFigureReferences()" aria-expanded="false"
+                              aria-controls="auFigureReferenceBody">
+                        <b>참고 자료</b><i id="auFigureReferenceCount">최대 6개</i><span aria-hidden="true">⌄</span>
+                      </button>
+                      <div class="au-figure-reference-body" id="auFigureReferenceBody" aria-hidden="true" inert>
                       <div class="au-reference-drop" id="auFigureReferenceDrop" onclick="document.getElementById('auFigureReferenceFile').click()">
                         <b>+  이미지 추가</b>
                         <span>드래그 앤 드롭 · 파일명으로 표시</span>
                       </div>
+                      <button class="nz-tb mini au-auto-reference" id="auFigureAutoReferences" onclick="EP.authoringAutoReferences(event)">기출·교과서에서 3개 자동 찾기</button>
                       <div class="au-reference-list hidden" id="auFigureReferences"></div>
+                      </div>
                     </section>
                     <section class="au-figure-result-pane">
                       <div class="au-figure-pane-head"><b>생성 결과</b><span>클릭하면 5E 편집</span></div>
-                      <div class="au-figure-preview au-inline-figure-preview" id="auFigurePreview" onclick="EP.authoringOpenFigureEditor(event)" role="button" tabindex="0">
+                      <div class="au-figure-preview au-inline-figure-preview" id="auFigurePreview" onclick="EP.authoringOpenFigureEditor(event)" onkeydown="EP.activateOnKey(event, () => EP.authoringOpenFigureEditor(event))" role="button" tabindex="0">
                         <span class="au-figure-icon">▧</span>
                         <img id="auFigureImage" class="hidden" alt="확정된 문항 그림" />
                         <div id="auFigureAssets" class="au-figure-assets hidden"></div>
                         <b>연결된 그림 없음</b>
-                        <p id="auFigureHelp">그림을 생성하면 문항에 바로 연결됩니다.</p>
+                        <p id="auFigureHelp" class="hidden"></p>
                       </div>
                     </section>
                   </div>
                   <div class="au-figure-meta"><span>상태</span><b id="auFigureStatus">없음</b></div>
                   <div class="au-figure-path hidden" id="auFigurePath"></div>
-                  <ol class="au-figure-steps">
-                    <li id="auFigureStepPlan">설계안 반영</li>
-                    <li id="auFigureStepEdit">그림 생성·선택적 5E 편집</li>
-                    <li id="auFigureStepConfirm">그림 확정·문항 연결</li>
-                  </ol>
                   <div class="au-figure-progress hidden" id="auFigureProgress" role="status" aria-live="polite">
                     <div><b id="auFigureProgressText">그림 생성 준비 중</b><span id="auFigureProgressPercent">0%</span></div>
                     <span class="track"><i id="auFigureProgressBar"></i></span>
@@ -308,6 +342,7 @@
                   </div>
                   <div class="au-inline-figure-actions">
                     <button class="nz-tb blu" id="auFigureCreate" onclick="EP.authoringFigure('create')">1단계 · 그림 설계 요청</button>
+                    <button class="nz-tb" id="auFigureDraw" onclick="EP.authoringFigure('draw')">빈 5E에서 직접 그리기</button>
                     <input class="hidden" type="file" id="auFigureImportFile" accept="image/png,image/jpeg,image/webp" onchange="EP.authoringImportImage(this.files[0])" />
                     <button class="nz-tb blu hidden" id="auFigureImport" onclick="document.getElementById('auFigureImportFile').click()">생성 이미지 가져오기</button>
                     <button class="nz-tb hidden" id="auFigureCopyPrompt" onclick="EP.authoringCopyImagePrompt()">이미지 생성 프롬프트 복사</button>
@@ -349,10 +384,11 @@
                     </span>
                   </div>
                 </div>
-                <div class="nz-fr" style="align-items:flex-start;margin-top:9px">
-                  <label style="padding-top:5px">해설</label>
-                  <textarea id="qexplanation" rows="5" placeholder="정답이 성립하는 이유와 오답이 성립하지 않는 이유"></textarea>
-                </div>
+                <details class="nz-inline-disclosure">
+                  <summary>해설</summary>
+                  <textarea id="qexplanation" rows="4"
+                            placeholder="정답이 성립하는 이유와 오답이 성립하지 않는 이유"></textarea>
+                </details>
               </div>
             </div>
 
@@ -360,9 +396,9 @@
             <div class="nz-check collapsed" id="questionReviewSection">
               <div class="nz-secbar chk">문항 검토
                 <span class="nz-section-summary" id="questionReviewSummary">필요할 때 확인</span>
-                <button type="button" class="nz-tb mini nz-section-toggle" onclick="EP.toggleQuestionSection('review')" aria-expanded="false">확인하기</button>
+                <button type="button" class="nz-tb mini nz-section-toggle" onclick="EP.toggleQuestionSection('review')" aria-expanded="false" aria-controls="questionReviewBody" aria-label="문항 검토 펼치기">⌄</button>
               </div>
-              <div class="nz-secbody tight hidden" id="questionReviewBody"><div id="checkBox"></div></div>
+              <div class="nz-secbody tight hidden" id="questionReviewBody" aria-hidden="true" inert><div class="nz-section-content" id="checkBox"></div></div>
             </div>
               </div><!-- /au-current -->
 
@@ -377,8 +413,17 @@
                     </select>
                   </label>
                   <span id="auLivePreviewStatus" class="au-live-status">입력 대기</span>
+                  <span class="au-preview-size-controls" aria-label="미리보기 용지 확대·축소">
+                    <button type="button" class="ui-icon-button" id="auPreviewSmaller"
+                            onclick="EP.resizeAuthoringPreview(-1)" aria-label="미리보기 축소" title="미리보기 축소">−</button>
+                    <button type="button" class="ui-icon-button" id="auPreviewLarger"
+                            onclick="EP.resizeAuthoringPreview(1)" aria-label="미리보기 확대" title="미리보기 확대">＋</button>
+                    <output id="auPreviewZoomLabel" aria-live="polite">100%</output>
+                  </span>
                   <button type="button" class="nz-tb mini au-right-toggle" id="auPreviewToggle"
-                          onclick="EP.toggleAuthoringPreview()" aria-expanded="true" title="문항 미리보기 접기">접기</button>
+                          onclick="EP.toggleAuthoringPreview()" aria-expanded="true" aria-label="문항 미리보기 접기" title="문항 미리보기 접기">⌄</button>
+                  <button type="button" class="nz-tb mini au-column-toggle" onclick="EP.toggleAuthoringRight(true)"
+                          aria-label="보조 패널 접기" title="미리보기와 ChatGPT 패널 접기">›</button>
                 </div>
                 <div class="au-live-preview" id="auLivePreview" aria-live="polite">
                   <div class="au-live-preview-empty" id="auLivePreviewEmpty">
@@ -394,9 +439,10 @@
                   <div class="au-live-preview-error hidden" id="auLivePreviewError"></div>
                 </div>
                 <div class="au-live-preview-actions">
-                  <span id="auLivePreviewMeta">입력이 멈추면 자동 갱신</span>
-                  <button class="nz-tb mini" onclick="EP.refreshQuestionPreview()">새로고침</button>
-                  <button class="nz-tb mini blu" onclick="EP.previewQuestion()">크게 보기</button>
+                  <span id="auLivePreviewMeta">빠른 배치 미리보기</span>
+                  <button type="button" class="ui-icon-button" onclick="EP.refreshQuestionPreview()"
+                          aria-label="미리보기 새로고침" title="미리보기 새로고침">↻</button>
+                  <button class="nz-tb mini blu" id="auPrecisePreviewBtn" onclick="EP.previewQuestion()">학교 정밀 조판 보기</button>
                 </div>
 
               </aside>
@@ -412,9 +458,10 @@
                  패널은 탭에 따라 통째로 옮겨 다니므로 손잡이도 패널 안에 둔다 -->
             <div class="nz-drag outer sidefull" id="qsideDrag" title="드래그해서 폭 조절"></div>
             <div class="nz-sidehead">
-              <button class="foldbtn" id="evFoldBtn" onclick="EP.toggleSide()" title="근거 열 접기/펴기">−</button>
+              <button class="foldbtn ui-icon-button" id="evFoldBtn" onclick="EP.toggleSide()" title="근거 검색 접기"
+                      aria-label="근거 검색 접기" aria-expanded="true" aria-controls="qsideContent">›</button>
               <b>근거 검색</b>
-              <span class="nz-srcbtns sidefull">
+              <span class="nz-srcbtns">
                 <button class="nz-srcbtn on" data-src="" onclick="EP.setSrc('')">전체</button>
                 <button class="nz-srcbtn" data-src="교과서" onclick="EP.setSrc('교과서')">교과서</button>
                 <button class="nz-srcbtn" data-src="교육과정" onclick="EP.setSrc('교육과정')">교육과정</button>
@@ -423,7 +470,8 @@
               </span>
             </div>
 
-            <div class="nz-evidence-searchbar sidefull">
+            <div class="nz-qside-content sidefull" id="qsideContent">
+            <div id="evEvidenceContent" class="nz-evidence-searchbar sidefull">
               <label for="evSearch">근거 검색어</label>
               <div>
                 <input class="nz-inp" id="evSearch"
@@ -455,8 +503,9 @@
                 </div>
               </div>
             </div>
+            </div>
 
-            <div class="nz-sidefolded">근거 검색</div>
+            <button type="button" class="nz-sidefolded" onclick="EP.toggleSide()" aria-label="근거 검색 펼치기">근거 검색</button>
           </aside>
         </div>
       </section>
@@ -470,21 +519,97 @@
           <select class="nz-sel" id="qbStatus" style="min-width:90px" onchange="EP.loadQuestions()">
             <option value="">전체 완성도</option><option>초안</option><option>검토중</option><option>완성</option>
           </select>
-          <input class="nz-inp" id="qbSearch" placeholder="이름·발문 검색" onkeydown="if(event.key==='Enter')EP.loadQuestions()" />
+          <select class="nz-sel" id="qbSort" style="min-width:118px" onchange="EP.changeQuestionSort()">
+            <option value="created">생성일</option><option value="updated">수정일</option>
+            <option value="status">완성도</option><option value="review">검토 필요</option>
+            <option value="usage">사용 횟수</option><option value="standard">성취기준</option>
+            <option value="difficulty">난도</option><option value="qtype">문항 유형</option>
+            <option value="origin">출처</option><option value="points">배점</option>
+          </select>
+          <button class="nz-tb qb-sort-dir" id="qbSortDir" onclick="EP.toggleQuestionSort()" title="정렬 방향 바꾸기">최신순 ↓</button>
+          <input class="nz-inp" id="qbSearch" placeholder="ID·이름·발문·출처 검색" onkeydown="if(event.key==='Enter')EP.loadQuestions()" />
           <span class="nz-cnt" style="margin:0 0 0 auto">Total <b id="qcnt">0</b></span>
         </div>
         <div class="nz-statbar" id="qbStats"></div>
+        <div class="qb-scope-note" id="qbScopeNote" hidden></div>
         <table class="nz-t">
           <thead><tr>
-            <th style="width:28px">#</th><th style="width:64px">완성도</th><th style="width:160px">문제 이름</th>
+            <th style="width:48px">문항 ID</th><th style="width:70px">생성일</th>
+            <th style="width:64px">완성도</th><th style="width:145px">문제 이름</th>
             <th style="width:54px">유형</th><th>발문</th>
             <th style="width:78px">성취기준</th><th style="width:70px">행동영역</th>
             <th style="width:62px">출처</th>
             <th style="width:36px">난도</th><th style="width:34px">점</th>
+            <th style="width:68px">자동 검토</th><th style="width:42px">사용</th>
             <th style="width:112px">관리</th>
           </tr></thead>
           <tbody id="qRows"></tbody>
         </table>
+      </section>
+
+      <!-- ============ PDF → HWP ============ -->
+      <section id="tab-pdf-hwp" class="ph-page" aria-labelledby="pdfHwpTitle" hidden>
+        <header class="ph-heading">
+          <div>
+            <p class="ph-eyebrow">문항 원본 변환</p>
+            <h1 id="pdfHwpTitle">PDF에서 편집 가능한 HWP 만들기</h1>
+            <p>시험지 PDF를 올리면 문항을 찾고, 원본 배치를 살린 <span class="ph-keep">HWP와 확인용 PDF를 만듭니다.</span></p>
+          </div>
+          <button type="button" class="nz-tb" id="pdfHwpRefresh" onclick="EP.pdfHwpRefresh()">작업 새로고침</button>
+        </header>
+
+        <div class="ph-workspace">
+          <form class="ph-panel ph-upload-panel" id="pdfHwpForm" onsubmit="EP.pdfHwpStart(event)">
+            <div class="ph-step-label"><span aria-hidden="true">01</span> 원본과 양식</div>
+            <label class="ph-file-field" for="pdfHwpFile">
+              <span class="ph-file-title">PDF 파일 선택</span>
+              <span class="ph-file-help">한 개의 PDF를 선택하세요. <span class="ph-keep">선택한 파일은 오류가 나도 유지됩니다.</span></span>
+              <input id="pdfHwpFile" name="file" type="file" accept="application/pdf,.pdf" required />
+              <span class="ph-file-action" aria-hidden="true">내 PC에서 PDF 찾기</span>
+              <span class="ph-file-name" id="pdfHwpFileName">선택된 파일 없음</span>
+            </label>
+            <label class="ph-field" for="pdfHwpName">
+              <span>작업 이름 <small>선택</small></span>
+              <input class="nz-inp" id="pdfHwpName" name="name" maxlength="100" placeholder="예: 2024년 11월 과학 20번" />
+            </label>
+            <fieldset class="ph-layout-choice">
+              <legend>출력 양식</legend>
+              <label><input type="radio" name="layoutStyle" value="school" checked /><span>학교 시험지</span></label>
+              <label><input type="radio" name="layoutStyle" value="suneung" /><span>수능형 시험지</span></label>
+            </fieldset>
+            <button type="submit" class="nz-tb blu ph-primary" id="pdfHwpStart">변환 시작</button>
+          </form>
+
+          <section class="ph-panel ph-progress-panel" aria-labelledby="pdfHwpProgressTitle">
+            <div class="ph-step-label"><span aria-hidden="true">02</span> 진행 상황</div>
+            <h2 id="pdfHwpProgressTitle">현재 작업</h2>
+            <div class="ph-status" id="pdfHwpStatus" role="status" aria-live="polite" aria-atomic="true" data-tone="idle">
+              <span class="ph-status-mark" aria-hidden="true"></span>
+              <div><strong>변환할 PDF를 선택하세요</strong><p>파일을 올리기 전에는 <span class="ph-keep">서버에 작업을 만들지 않습니다.</span></p></div>
+            </div>
+            <ol class="ph-steps" id="pdfHwpSteps" aria-label="변환 단계">
+              <li data-step="upload">PDF 업로드</li>
+              <li data-step="detect">문항 검출</li>
+              <li data-step="convert">HWP 변환</li>
+              <li data-step="complete">결과 확인</li>
+            </ol>
+            <div class="ph-current-details" id="pdfHwpCurrent"></div>
+            <div class="ph-actions">
+              <button type="button" class="nz-tb blu hidden" id="pdfHwpTypeset" onclick="EP.pdfHwpTypeset()">검토한 문항으로 HWP 만들기</button>
+              <button type="button" class="nz-tb hidden" id="pdfHwpRetry" onclick="EP.pdfHwpRetry()">실패 단계 다시 시도</button>
+            </div>
+          </section>
+        </div>
+
+        <section class="ph-history" aria-labelledby="pdfHwpHistoryTitle">
+          <div class="ph-history-head">
+            <div><p class="ph-eyebrow">최근 기록</p><h2 id="pdfHwpHistoryTitle">변환 작업</h2></div>
+            <p>완료된 파일은 기록된 결과에서 다시 받을 수 있습니다.</p>
+          </div>
+          <div class="ph-jobs" id="pdfHwpJobs">
+            <div class="ph-empty"><strong>아직 변환 작업이 없습니다</strong><span>위에서 PDF를 선택해 첫 작업을 시작하세요.</span></div>
+          </div>
+        </section>
       </section>
 
       <!-- ============ 환경설정 ============ -->
@@ -532,14 +657,16 @@
           <span style="margin-left:auto;display:flex;gap:5px;align-items:center">
             <select class="nz-sel" id="palTarget" style="min-width:112px">
               <option value="school">학교 양식으로</option>
-              <option value="suneung">수능 양식으로</option>
+              <option value="suneung" selected>수능 양식으로</option>
             </select>
             <input id="palFile" type="file" accept=".hwpal" class="hidden" onchange="EP.importPalette(this)" />
             <button class="nz-tb blu" onclick="document.getElementById('palFile').click()">.hwpal 등록</button>
+            <input id="palHwpFile" type="file" accept=".hwp" class="hidden" onchange="EP.openHwpTemplateRegistration(this)" />
+            <button class="nz-tb" onclick="document.getElementById('palHwpFile').click()">HWP 템플릿 직접 등록</button>
           </span>
         </div>
-        <p class="nz-sub">HwpPalette에서 팔레트 하나를 내보내 등록합니다. 같은 호출 라벨의 양식만
-          교체되며, 포함되지 않은 내장 양식은 그대로 유지됩니다.</p>
+        <p class="nz-sub">HwpPalette에서 내보낸 <code>.hwpal</code>을 등록한 뒤, 포함된 템플릿 물감을
+          하나씩 실제 HWP로 조판하여 정상 여부를 확인합니다. 양식 물감은 템플릿 시험에 함께 적용됩니다.</p>
         <div id="palStatus" class="nz-sub" style="margin:6px 0"></div>
         <table class="nz-t">
           <thead><tr><th>팔레트</th><th style="width:92px">물감</th><th style="width:130px">현재 적용</th>
@@ -699,16 +826,17 @@
   </div>
 
   <!-- 화면 코드는 탭 단위로 나뉜다. core.js 가 공용 뼈대이므로 항상 먼저 온다. -->
-  <script src="/static/js/core.js?v=0.3.7-workbench"></script>
-  <script src="/static/js/bank.js"></script>
-  <script src="/static/js/question.js?v=0.4.2-preview-toggle"></script>
-  <script src="/static/js/authoring.js?v=0.4.2-compact-chat"></script>
-  <script src="/static/js/qbank.js"></script>
+  <script src="/static/js/core.js?v=0.5.0-workbench-refresh"></script>
+  <script src="/static/js/bank.js?v=0.4.3-bogi-evidence"></script>
+  <script src="/static/js/question.js?v=0.7.0-form-density"></script>
+  <script src="/static/js/authoring.js?v=0.7.0-form-density"></script>
+  <script src="/static/js/qbank.js?v=0.4.6-palette-selector"></script>
   <script src="/static/js/set.js"></script>
-  <script src="/static/js/preview.js?v=0.3.9-compact-preview"></script>
+  <script src="/static/js/preview.js?v=0.5.1-suneung-preview"></script>
   <script src="/static/js/blueprint.js"></script>
   <script src="/static/js/doc.js"></script>
   <script src="/static/js/lesson.js"></script>
-  <script src="/static/js/config.js"></script>
+  <script src="/static/js/config.js?v=0.5.1-palette-editor"></script>
+  <script src="/static/js/pdf-hwp.js?v=0.1.0"></script>
 </body>
 </html>

@@ -11,7 +11,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import (backup, db, routes_authoring, routes_bank, routes_blueprint,
-               routes_config, routes_doc, routes_integrations, routes_lesson, routes_question)
+               routes_config, routes_doc, routes_integrations, routes_lesson, routes_pdf_hwp,
+               routes_question)
 from .paths import BASE_DIR, STATIC_DIR
 
 
@@ -65,6 +66,7 @@ app.include_router(routes_config.router)
 app.include_router(routes_blueprint.router)
 app.include_router(routes_authoring.router)
 app.include_router(routes_integrations.router)
+app.include_router(routes_pdf_hwp.router)
 
 
 # ===== 성취기준 트리 =====

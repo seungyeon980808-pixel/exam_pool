@@ -5,12 +5,15 @@ import json
 import hashlib
 import os
 import re
+import signal
 import subprocess
 import sys
 import threading
 import shutil
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Protocol
 
 from ..paths import BASE_DIR, data_dir
 from . import palette_registry
@@ -18,6 +21,98 @@ from . import palette_registry
 
 class HwpPaletteError(RuntimeError):
     pass
+
+
+@contextmanager
+def _thread_preview_lock(lock: threading.Lock, timeout_seconds: int):
+    acquired = lock.acquire(timeout=max(1, timeout_seconds))
+    if not acquired:
+        raise HwpPaletteError(
+            "다른 문항을 정밀 조판하는 중입니다. 현재 탭은 최신 내용으로 자동 재시도합니다."
+        )
+    try:
+        yield
+    finally:
+        lock.release()
+
+
+@contextmanager
+def _system_preview_lock(timeout_seconds: int):
+    """Serialize HWP automation across duplicate/restarting ExamPool servers."""
+    if os.name != "nt":
+        yield
+        return
+
+    import ctypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateMutexW.argtypes = (ctypes.c_void_p, ctypes.c_bool, ctypes.c_wchar_p)
+    kernel32.CreateMutexW.restype = ctypes.c_void_p
+    kernel32.WaitForSingleObject.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
+    kernel32.WaitForSingleObject.restype = ctypes.c_uint32
+    kernel32.ReleaseMutex.argtypes = (ctypes.c_void_p,)
+    kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
+    handle = kernel32.CreateMutexW(None, False, "Local\\ExamPool_HwpPalette_Preview_v1")
+    if not handle:
+        raise HwpPaletteError("한글 조판 잠금을 만들지 못했습니다.")
+    wait = kernel32.WaitForSingleObject(handle, max(1, timeout_seconds) * 1000)
+    # WAIT_OBJECT_0 and WAIT_ABANDONED both grant ownership.
+    if wait not in (0x00000000, 0x00000080):
+        kernel32.CloseHandle(handle)
+        raise HwpPaletteError(
+            "이전 한글 조판을 정리하는 중입니다. 잠시 후 최신 내용으로 다시 시도합니다."
+        )
+    try:
+        yield
+    finally:
+        kernel32.ReleaseMutex(handle)
+        kernel32.CloseHandle(handle)
+
+
+def _terminate_process_id(pid: int) -> None:
+    """Terminate one previously recorded automation process without broad matching."""
+    if pid <= 0:
+        return
+    try:
+        os.kill(pid, signal.SIGTERM)
+        return
+    except (OSError, ProcessLookupError):
+        pass
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/F"], capture_output=True,
+                creationflags=subprocess.CREATE_NO_WINDOW, timeout=5,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
+
+class _TimedOutProcess(Protocol):
+    pid: int
+
+    def kill(self) -> None: ...
+
+    def wait(self, timeout: float | None = None) -> int: ...
+
+
+def _cleanup_timed_out_process(
+    process: _TimedOutProcess, hwp_pid_path: Path, *, is_windows: bool,
+) -> None:
+    """Clean up one timed-out runner and its recorded Windows HWP child."""
+    if is_windows:
+        try:
+            hwp_pid = int(hwp_pid_path.read_text(encoding="ascii").strip())
+        except (OSError, ValueError):
+            hwp_pid = 0
+        _terminate_process_id(hwp_pid)
+        _terminate_process_id(process.pid)
+    else:
+        process.kill()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
 
 
 class HwpPaletteProvider:
@@ -40,6 +135,7 @@ class HwpPaletteProvider:
         self.embedded = self.root == embedded
         self._processes: dict[int, tuple[subprocess.Popen, int]] = {}
         self._preview_lock = threading.Lock()
+        self._authoritative_photo_dirs: tuple[Path, ...] = ()
 
     def available(self) -> bool:
         return (self.root / "hwp_palette" / "cli.py").is_file()
@@ -136,7 +232,7 @@ class HwpPaletteProvider:
         return result
 
     def resolve_photo(self, material: str) -> Path | None:
-        """Resolve the first legacy question material to an existing image."""
+        """Resolve one unambiguous image, preferring the current conversion dirs."""
         name = str(material or "").split(",", 1)[0].strip().strip("\\/")
         if not name or Path(name).name != name:
             return None
@@ -144,12 +240,28 @@ class HwpPaletteProvider:
         names = [name] if candidate.suffix else [
             f"{name}.png", f"{name}.jpg", f"{name}.jpeg", f"{name}.webp",
         ]
-        for folder in self.photo_dirs():
+        authoritative_matches: list[Path] = []
+        for folder in self._authoritative_photo_dirs:
             for filename in names:
                 path = folder / filename
                 if path.is_file():
-                    return path.resolve()
-        return None
+                    authoritative_matches.append(path.resolve())
+        if len(authoritative_matches) == 1:
+            return authoritative_matches[0]
+        if len(authoritative_matches) > 1:
+            return None
+        authoritative_keys = {
+            str(path).casefold() for path in self._authoritative_photo_dirs
+        }
+        fallback_matches: list[Path] = []
+        for folder in self.photo_dirs():
+            if str(folder).casefold() in authoritative_keys:
+                continue
+            for filename in names:
+                path = folder / filename
+                if path.is_file():
+                    fallback_matches.append(path.resolve())
+        return fallback_matches[0] if len(fallback_matches) == 1 else None
 
     def validate_slot_contract(self, expected: dict[str, int]) -> dict:
         """Compare ExamPool's active template contract with hwpPalette metadata."""
@@ -189,20 +301,48 @@ class HwpPaletteProvider:
         }
 
     def register_photo_dir(self, folder: Path) -> None:
+        self.register_photo_dirs((folder,))
+
+    def register_photo_dirs(self, folders: tuple[Path, ...]) -> None:
+        """Make current conversion folders authoritative for the next render."""
         if not self.available():
             raise HwpPaletteError("hwpPalette 설치 위치를 찾지 못했습니다.")
-        code = (
-            "from hwp_palette.core import settings; settings.add_photo_dir("
-            + json.dumps(str(folder), ensure_ascii=False) + ")"
+        current: list[Path] = []
+        seen: set[str] = set()
+        for folder in folders:
+            path = folder.resolve()
+            key = str(path).casefold()
+            if key not in seen:
+                seen.add(key)
+                current.append(path)
+        fallback = [
+            path for path in self.photo_dirs()
+            if str(path).casefold() not in seen
+        ]
+        config = self._config()
+        ordered = [str(path) for path in (*current, *fallback)]
+        config["photo_dirs"] = ordered
+        config["photo_dir"] = ordered[0] if ordered else ""
+        config_path = self._data_root() / "config.json"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = config_path.with_suffix(".json.tmp")
+        temporary.write_text(
+            json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8",
         )
-        flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-        result = subprocess.run(
-            [sys.executable, "-c", code], cwd=str(self.root), capture_output=True,
-            text=True, encoding="utf-8", timeout=15, creationflags=flags,
-            env=self._child_env(),
-        )
-        if result.returncode:
-            raise HwpPaletteError(result.stderr.strip() or "사진 폴더 등록에 실패했습니다.")
+        temporary.replace(config_path)
+        self._authoritative_photo_dirs = tuple(current)
+
+    def open_template_editor(self, path: Path) -> None:
+        """Open an isolated HWP revision in the user's associated Hancom editor."""
+        target = path.resolve()
+        if not target.is_file() or target.suffix.lower() != ".hwp":
+            raise HwpPaletteError("수정할 HWP 템플릿 파일을 찾을 수 없습니다.")
+        if os.name != "nt" or not hasattr(os, "startfile"):
+            raise HwpPaletteError("템플릿 직접 편집은 Windows 한글 환경에서 사용할 수 있습니다.")
+        try:
+            os.startfile(str(target))
+        except OSError as exc:
+            raise HwpPaletteError(f"한글 편집기를 열지 못했습니다: {exc}") from exc
 
     def launch(self, markdown_path: Path, exam_page: bool = True,
                layout_style: str = "school") -> subprocess.Popen:
@@ -244,7 +384,9 @@ class HwpPaletteProvider:
             self._data_root() / "library.json",
             self._data_root() / "config.json",
             self.root / "hwp_palette" / "cli.py",
+            self.root / "hwp_palette" / "hwp" / "engine_library.py",
             self.root / "UPSTREAM.json",
+            Path(__file__).with_name("hwppalette_runner.py"),
         ]
         for path in paths:
             relative = str(path)
@@ -253,13 +395,30 @@ class HwpPaletteProvider:
                 dependencies.append((relative, stat.st_size, stat.st_mtime_ns))
             except OSError:
                 dependencies.append((relative, None, None))
+        # A stable photo call name is deliberately overwritten when a figure is
+        # regenerated. Include the current image file in the cache fingerprint;
+        # otherwise precise preview keeps serving the old drawing indefinitely.
+        photo_paths: set[Path] = set()
+        for label in re.findall(r"\\([^\\\r\n]+)\\", markdown):
+            resolved = self.resolve_photo(label)
+            if resolved:
+                photo_paths.add(resolved)
+        for path in sorted(photo_paths, key=lambda item: str(item).casefold()):
+            try:
+                stat = path.stat()
+                dependencies.append((str(path), stat.st_size, stat.st_mtime_ns))
+            except OSError:
+                dependencies.append((str(path), None, None))
         payload = json.dumps({
             "markdown": markdown,
             "scope": scope,
             "exam_page": exam_page,
             "layout_style": layout_style,
             "dependencies": dependencies,
-            "preview_version": 2,
+            # v5: palette edit revisions now stay in their declared layout
+            # family, so stale previews made from the pre-edit package must not
+            # be reused.
+            "preview_version": 7,
         }, ensure_ascii=False, sort_keys=True).encode("utf-8")
         return hashlib.sha256(payload).hexdigest()
 
@@ -268,28 +427,50 @@ class HwpPaletteProvider:
 
     @staticmethod
     def _content_clip(page):
-        """Return the visible question bounds, excluding the unused A4 page area."""
+        """Return only the question bounds, excluding the exam-page furniture."""
         import fitz
 
-        boxes = []
+        text_boxes = []
+        question_tops = []
         for block in page.get_text("blocks"):
-            if len(block) >= 5 and str(block[4] or "").strip():
-                boxes.append(fitz.Rect(block[:4]))
+            text = str(block[4] or "").strip() if len(block) >= 5 else ""
+            if not text:
+                continue
+            box = fitz.Rect(block[:4])
+            text_boxes.append(box)
+            # The single-question preview always starts with an Arabic question
+            # number.  The CSAT page header also contains a page number, but no
+            # trailing dot, so it must not expand the crop to the whole sheet.
+            if re.match(r"^\s*\d{1,3}\s*\.\s*\S", text):
+                question_tops.append(box.y0)
+
+        question_top = min(question_tops) if question_tops else None
+        body_floor = page.rect.height * 0.20
+        boxes = [
+            box for box in text_boxes
+            if (question_top is not None and box.y1 >= question_top - 1)
+            or (question_top is None and box.y0 >= body_floor)
+        ]
         for image in page.get_image_info():
             bbox = image.get("bbox")
             if bbox:
-                boxes.append(fitz.Rect(bbox))
+                box = fitz.Rect(bbox)
+                if (question_top is not None and box.y1 >= question_top - 1) or (
+                    question_top is None and box.y0 >= body_floor
+                ):
+                    boxes.append(box)
         if not boxes:
-            return page.rect
+            return None
         content = boxes[0]
         for box in boxes[1:]:
             content |= box
-        padding = 22
+        side_padding = 14
+        top_padding = 6
         return fitz.Rect(
-            max(page.rect.x0, content.x0 - padding),
-            max(page.rect.y0, content.y0 - padding),
-            min(page.rect.x1, content.x1 + padding),
-            min(page.rect.y1, content.y1 + padding),
+            max(page.rect.x0, content.x0 - side_padding),
+            max(page.rect.y0, content.y0 - top_padding),
+            min(page.rect.x1, content.x1 + side_padding),
+            min(page.rect.y1, content.y1 + side_padding),
         )
 
     @staticmethod
@@ -311,6 +492,8 @@ class HwpPaletteProvider:
             matrix = fitz.Matrix(1.65, 1.65)
             for index, page in enumerate(document):
                 clip = HwpPaletteProvider._content_clip(page) if crop_content else None
+                if crop_content and clip is None:
+                    continue
                 pixmap = page.get_pixmap(matrix=matrix, alpha=False, clip=clip)
                 filename = f"page-{index + 1}.png"
                 pixmap.save(target_dir / filename)
@@ -353,7 +536,7 @@ class HwpPaletteProvider:
     def render_preview(
         self, markdown: str, *, scope: str = "question", exam_page: bool = True,
         layout_style: str = "school",
-        timeout: int = 150,
+        timeout: int = 30,
     ) -> dict:
         """Typeset markdown in an isolated hidden HWP process and cache its pages."""
         if not self.available():
@@ -363,7 +546,10 @@ class HwpPaletteProvider:
         layout_style = "suneung" if layout_style == "suneung" else "school"
         token = self._preview_token(markdown, scope, exam_page, layout_style)
 
-        with self._preview_lock:
+        # Do not queue stale editor snapshots behind a slow HWP job.  The browser
+        # already retains an instant preview and can retry the newest fingerprint.
+        with _thread_preview_lock(self._preview_lock, min(2, timeout)), \
+             _system_preview_lock(min(2, timeout)):
             cached = self._cached_preview(token)
             if cached:
                 return cached
@@ -375,31 +561,32 @@ class HwpPaletteProvider:
             pdf_path = folder / "preview.pdf"
             markdown_path.write_text(markdown, encoding="utf-8")
 
-            if layout_style == "suneung":
-                runner = Path(__file__).with_name("hwppalette_runner.py")
-                args = [
-                    sys.executable, str(runner), "--markdown-file", str(markdown_path),
-                    "--layout-style", layout_style, "--output-hwp", str(hwp_path),
-                    "--output-pdf", str(pdf_path), "--hidden",
-                ]
-            else:
-                args = [
-                    sys.executable, "-m", "hwp_palette.cli",
-                    "--markdown-file", str(markdown_path),
-                    "--output-hwp", str(hwp_path),
-                    "--output-pdf", str(pdf_path), "--hidden",
-                ]
-                if exam_page:
-                    args.append("--exam-page")
+            runner = Path(__file__).with_name("hwppalette_runner.py")
+            hwp_pid_path = folder / "hwp.pid"
+            hwp_pid_path.unlink(missing_ok=True)
+            args = [
+                sys.executable, str(runner), "--markdown-file", str(markdown_path),
+                "--layout-style", layout_style, "--output-hwp", str(hwp_path),
+                "--output-pdf", str(pdf_path), "--hwp-pid-file", str(hwp_pid_path),
+                "--hidden",
+            ]
             flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
             child_env = self._child_env()
+            process = subprocess.Popen(
+                args, cwd=str(self.root), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, encoding="utf-8", creationflags=flags, env=child_env,
+            )
             try:
-                result = subprocess.run(
-                    args, cwd=str(self.root), capture_output=True, text=True,
-                    encoding="utf-8", timeout=timeout, creationflags=flags, env=child_env,
-                )
+                stdout, stderr = process.communicate(timeout=timeout)
             except subprocess.TimeoutExpired as exc:
-                raise HwpPaletteError("HWP 미리보기 조판 시간이 초과되었습니다.") from exc
+                _cleanup_timed_out_process(
+                    process, hwp_pid_path, is_windows=os.name == "nt",
+                )
+                raise HwpPaletteError(
+                    f"한글 정밀 조판이 {timeout}초 안에 끝나지 않아 해당 작업을 정리했습니다. "
+                    "빠른 미리보기는 계속 사용할 수 있습니다."
+                ) from exc
+            result = subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
             if result.returncode:
                 detail = (result.stderr or result.stdout or "알 수 없는 오류").strip()[-1800:]
                 raise HwpPaletteError(f"HWP 미리보기 조판에 실패했습니다.\n{detail}")

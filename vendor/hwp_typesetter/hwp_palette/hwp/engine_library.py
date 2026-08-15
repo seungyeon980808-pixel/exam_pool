@@ -17,6 +17,7 @@ import time
 import pathlib
 import shutil
 import uuid
+from typing import Final
 
 from hwp_palette.core import applog
 from hwp_palette.model import form_fill                    # 채울 자리 토큰 규칙(이름표 \학년\) 한 벌로
@@ -27,6 +28,10 @@ from hwp_palette.hwp import preview                      # 미리보기 그림 �
 from hwp_palette.hwp.hwp_engine import (
     delete_selection, find_text, has_selection, insert_plain,
 )
+
+
+INLINE_EQUATION_BASE_UNIT: Final = 1150
+FRACTION_EQUATION_BASE_UNIT: Final = 1200
 
 
 def _h():
@@ -143,6 +148,75 @@ def auto_select_table_if_inside():
         applog.exc("표 선택 실패", e)
         return False
     return has_selection()
+
+
+def delete_table_containing_text(text):
+    """Delete the table that contains ``text``, leaving non-table matches intact."""
+    hwp = _h()
+    hwp.HAction.Run("MoveDocBegin")
+    if not find_text(text):
+        return False
+    try:
+        ctrl = hwp.ParentCtrl
+        if ctrl is None or str(getattr(ctrl, "CtrlID", "")) != "tbl":
+            hwp.HAction.Run("Cancel")
+            return False
+        hwp.delete_ctrl(ctrl)
+        return True
+    except Exception as exc:
+        applog.exc("표 삭제 실패", exc)
+        return False
+
+
+def set_paragraph_word_boundary_wrap(text, character_ratio=85):
+    """Prevent Korean words in the paragraph containing ``text`` from splitting."""
+    hwp = _h()
+    hwp.HAction.Run("MoveDocBegin")
+    if not find_text(text):
+        return False
+    hwp.HAction.Run("Cancel")
+    act, ps = hwp.HAction, hwp.HParameterSet
+    act.GetDefault("ParagraphShape", ps.HParaShape.HSet)
+    ps.HParaShape.BreakNonLatinWord = 0
+    # KICE paragraphs keep words intact but tighten inter-word spacing enough
+    # to retain the source line measure. HWP expresses the lower bound as a
+    # percentage of the normal word-space width.
+    ps.HParaShape.Condense = 20
+    act.Execute("ParagraphShape", ps.HParaShape.HSet)
+    hwp.MoveParaBegin()
+    hwp.MoveSelParaEnd()
+    hwp.set_font(Ratio=character_ratio)
+    act.Run("Cancel")
+    return True
+
+
+def _set_current_paragraph_word_boundary_wrap():
+    """Keep Korean eojeol intact in the paragraph at the insertion cursor."""
+    hwp = _h()
+    act, ps = hwp.HAction, hwp.HParameterSet
+    act.GetDefault("ParagraphShape", ps.HParaShape.HSet)
+    ps.HParaShape.BreakNonLatinWord = 0
+    ps.HParaShape.Condense = 20
+    act.Execute("ParagraphShape", ps.HParaShape.HSet)
+
+
+def delete_trailing_csat_form_page():
+    """Remove an unused trailing page retained by the CSAT form."""
+    hwp = _h()
+    try:
+        page_count = int(hwp.PageCount)
+        if page_count < 2:
+            return False
+        # pyhwpx GetPageText is zero-based, unlike goto_page. Passing PageCount
+        # itself probes beyond the document and can stall HWP on large sets.
+        text = str(hwp.get_page_text(page_count - 1) or "")
+        if any(token in text for token in ("20.", "그림", "①", "②", "③", "④", "⑤")):
+            return False
+        hwp.goto_page(page_count)
+        return bool(hwp.DeletePage())
+    except Exception as exc:
+        applog.exc("빈 수능 양식 뒷쪽 삭제 실패", exc)
+        return False
 
 
 def capture_fragment(dest_path):
@@ -268,12 +342,103 @@ def _image_size_mm(path):
         return None
 
 
+def _fit_picture_size_mm(width_mm, height_mm):
+    """Fit a picture to the configured print frame without changing its aspect."""
+    layout = hwp_engine.S.get("layout", {})
+    frame_width = float(layout.get("figure_frame_width_mm") or 0)
+    target_ratio = float(layout.get("figure_target_ratio") or 0)
+    if frame_width > 0 and 0 < target_ratio <= 1:
+        limit = frame_width * target_ratio
+    else:
+        limit = hwp_engine._col_width_mm()
+    if limit and width_mm > limit:
+        scale = limit / width_mm
+        return limit, height_mm * scale
+    return width_mm, height_mm
+
+
+def _contain_picture_size_mm(
+    width_mm, height_mm, max_width_mm, max_height_mm, *, allow_upscale=False,
+):
+    """Fit a picture inside both bounds with one aspect-preserving scale."""
+    if width_mm <= 0 or height_mm <= 0:
+        return width_mm, height_mm
+    scale = min(max_width_mm / width_mm, max_height_mm / height_mm)
+    if not allow_upscale:
+        scale = min(1.0, scale)
+    return width_mm * scale, height_mm * scale
+
+
+GRAPHICAL_CHOICE_LABEL_CELL_WIDTH_MM = 4.0
+GRAPHICAL_CHOICE_IMAGE_CELL_WIDTH_MM = 33.333
+
+
+def _is_graphical_choice_picture_cell(hwp):
+    """Recognize the three-choice row by its live HWP cell geometry."""
+    width_mm = float(hwp.get_col_width())
+    height_mm = float(hwp.get_row_height())
+    return (
+        (hwp.get_row_num(), hwp.get_col_num()) == (1, 3)
+        and 28.5 <= width_mm <= 33.6
+        and 19.5 <= height_mm <= 20.5
+    )
+
+
+def _is_one_small_picture_cell(hwp):
+    """Recognize the registered 43-by-29 mm one-small picture cell."""
+    return (
+        (hwp.get_row_num(), hwp.get_col_num()) == (1, 1)
+        and 42.5 <= float(hwp.get_col_width()) <= 43.5
+        and 28.5 <= float(hwp.get_row_height()) <= 30.5
+    )
+
+
+def _prepare_graphical_choice_grid_cell(hwp):
+    """Give each picture in the fixed 3-by-2 answer grid its print-width budget."""
+    if not _is_graphical_choice_picture_cell(hwp):
+        return False
+    position = hwp.get_pos()
+    hwp.TableLeftCell()
+    hwp.set_col_width(GRAPHICAL_CHOICE_LABEL_CELL_WIDTH_MM, as_="mm")
+    hwp.set_cell_margin(0.0, 0.0, 0.5, 0.5, as_="mm")
+    hwp.TableRightCell()
+    hwp.set_col_width(GRAPHICAL_CHOICE_IMAGE_CELL_WIDTH_MM, as_="mm")
+    hwp.set_cell_margin(0.1, 0.1, 0.5, 0.5, as_="mm")
+    hwp.set_pos(*position)
+    return True
+
+
+def _table_picture_bounds_mm(hwp):
+    """Return the current cell's usable content box, excluding inner margins."""
+    width_mm = float(hwp.get_col_width())
+    height_mm = float(hwp.get_row_height())
+    margins = hwp.get_cell_margin()
+    if isinstance(margins, dict):
+        width_mm -= float(margins.get("left", 0.0) or 0.0)
+        width_mm -= float(margins.get("right", 0.0) or 0.0)
+        height_mm -= float(margins.get("top", 0.0) or 0.0)
+        height_mm -= float(margins.get("bottom", 0.0) or 0.0)
+    column_count = hwp.get_col_num()
+    if (
+        isinstance(column_count, int)
+        and column_count > 1
+        and not _is_graphical_choice_picture_cell(hwp)
+    ):
+        # HWP can paint ordinary paired panels beyond the printable column even
+        # when their declared width fits.  The fixed 3-choice-per-row grid is
+        # different: each picture already owns a bounded cell, so inheriting
+        # the pair-table inset would discard most of its readable width.
+        width_mm -= 7.0
+    return max(width_mm, 0.1), max(height_mm, 0.1)
+
+
 def _insert_picture_sized(hwp, path):
     r"""그림 삽입. 셀 밖이면 PNG 에 새겨진 실제 크기로, 셀 안이면 셀에 맞춘다.
 
-    셀 안은 예전 그대로 sizeoption=3 (셀 크기에 맞춰 비율 유지) — 자료 상자에
-    꽉 차게 들어가는 것이 시험지에서 맞다. 셀 밖에서는 한글이 그림을 **판면 폭까지
-    늘려서** 넣기 때문에(실측: 80mm 도판이 150mm 로) 실제 크기를 되돌려 준다.
+    셀 안에서는 원본 전체를 삽입한 뒤 셀 폭과 높이에 contain-fit 한다. 한글의
+    sizeoption=3은 일부 표에서 그림을 셀 비율로 잘라 버리므로 사용하지 않는다.
+    셀 밖에서는 한글이 그림을 **판면 폭까지 늘려서** 넣기 때문에(실측: 80mm
+    도판이 150mm 로) 실제 크기를 되돌려 준다.
 
     InsertPicture 의 Width/Height 인자는 이 버전에서 무시된다(실측) — 넣은 뒤
     개체 속성으로 지정해야 먹는다. 판면보다 넓은 그림은 비율을 지켜 줄인다.
@@ -282,6 +447,7 @@ def _insert_picture_sized(hwp, path):
     """
     exam_style = hwp_engine.S.get("exam_image_style", "")
     actual_path = path
+    source_size = _image_size_mm(path)
     if exam_style and pathlib.Path(path).suffix.lower() != ".hwp":
         try:
             from hwp_palette.hwp import exam_image
@@ -292,25 +458,47 @@ def _insert_picture_sized(hwp, path):
         except Exception as e:
             applog.exc(f"시험지 스타일 변환 실패 ({exam_style}) — 원본 그대로 삽입", e)
             actual_path = path
-    ctrl = hwp.insert_picture(str(actual_path), treat_as_char=True, embedded=True,
-                              sizeoption=3)
-    size = None if hwp_engine.in_table() else _image_size_mm(actual_path)
+    size = _image_size_mm(actual_path)
+    if actual_path != path and source_size and size:
+        source_ratio = source_size[0] / source_size[1]
+        converted_ratio = size[0] / size[1]
+        if abs(converted_ratio - source_ratio) / source_ratio > 0.02:
+            pathlib.Path(actual_path).unlink(missing_ok=True)
+            actual_path = path
+            size = source_size
+    in_table = hwp_engine.in_table()
+    table_picture_size = None
+    if in_table and size:
+        _prepare_graphical_choice_grid_cell(hwp)
+        table_picture_size = _contain_picture_size_mm(
+            *size, *_table_picture_bounds_mm(hwp),
+            allow_upscale=_is_one_small_picture_cell(hwp),
+        )
+        width_mm, height_mm = table_picture_size
+        if hwp.get_col_num() == 1 and hwp.get_row_num() == 1:
+            hwp.set_row_height(min(float(hwp.get_row_height()), height_mm + 2.0))
+    if in_table and table_picture_size:
+        ctrl = hwp.insert_picture(
+            str(actual_path), treat_as_char=True, embedded=True, sizeoption=0,
+        )
+    else:
+        ctrl = hwp.insert_picture(str(actual_path), treat_as_char=True, embedded=True,
+                                  sizeoption=3)
     if exam_style and actual_path != path:
         try:
-            import os; os.unlink(actual_path)
-        except Exception:
-            pass
+            pathlib.Path(actual_path).unlink(missing_ok=True)
+        except OSError as e:
+            applog.exc(f"임시 시험지 스타일 그림 삭제 실패 ({actual_path})", e)
     if not size or ctrl is None:
         return
-    w_mm, h_mm = size
-    limit = hwp_engine._col_width_mm()
-    if limit and w_mm > limit:
-        h_mm *= limit / w_mm
-        w_mm = limit
+    if in_table:
+        w_mm, h_mm = table_picture_size
+    else:
+        w_mm, h_mm = _fit_picture_size_mm(*size)
     try:
         pset = ctrl.Properties
-        pset.SetItem("Width", hwp.MiliToHwpUnit(round(w_mm, 1)))
-        pset.SetItem("Height", hwp.MiliToHwpUnit(round(h_mm, 1)))
+        pset.SetItem("Width", hwp.MiliToHwpUnit(round(w_mm, 2)))
+        pset.SetItem("Height", hwp.MiliToHwpUnit(round(h_mm, 2)))
         ctrl.Properties = pset
     except Exception as e:
         applog.exc(f"그림 크기 지정 실패 ({path}) — 한글이 넣은 크기로 둔다", e)
@@ -504,7 +692,41 @@ def strip_slot_markers(anchor_pos, end_para=None, max_delete=None):
         act.Run("Delete")
 
 
-def fill_slots(anchor, fills, end_para=None, slot_count=None):
+def _named_slot_candidates(name):
+    """Return exact markers for a declared palette slot name."""
+    token = f"\\{name}\\"
+    # 자간맞춤 is authoring syntax, not text that should remain in the output.
+    return [f"\\자간맞춤{{{token}}}", token]
+
+
+def _is_panel_caption_slot(name):
+    return str(name or "").strip() in {
+        "(가)", "(나)", "(다)", "(라)", "(마)", "(바)", "(사)", "(아)",
+    }
+
+
+def _is_photo_slot(name):
+    normalized = str(name or "").strip()
+    return (
+        normalized == "자료"
+        or normalized.startswith("사진")
+        or normalized.startswith("선지사진")
+    )
+
+
+def _set_current_photo_cell_start():
+    """Center a picture from a clean ruler origin in every declared cell."""
+    hwp = _h()
+    action = hwp.HAction
+    paragraph = hwp.HParameterSet.HParaShape
+    action.GetDefault("ParagraphShape", paragraph.HSet)
+    paragraph.LeftMargin = 0
+    paragraph.Indentation = 0
+    paragraph.AlignType = 3
+    action.Execute("ParagraphShape", paragraph.HSet)
+
+
+def fill_slots(anchor, fills, end_para=None, slot_count=None, slot_names=None):
     r"""anchor 이후의 빈칸(\)을 fills 로 위에서부터 채우고, 남은 건 청소.
 
     반환: 실제로 채운 개수.
@@ -532,11 +754,70 @@ def fill_slots(anchor, fills, end_para=None, slot_count=None):
     def _limit():
         return None if end_para is None else end_para + grow
 
-    # 새 문법 토큰(\이름\ · \\)을 홑 \ 로 줄인다 — 그 아래 채우기 코드는
-    # 옛 모습(홑 \ 나열)만 알면 된다. 채우는 길을 둘로 가르지 않는 핵심 장치.
-    normalize_slot_tokens(anchor, end_para)
+    def _put(value, slot_name=""):
+        nonlocal filled, grow
+        if value is None:
+            act.Run("Delete")
+        elif isinstance(value, md_parser.MultiLine):
+            grow += len(value.lines) - 1
+            grow += sum(1 for lv in value.lines
+                        if isinstance(lv, md_parser.Table))
+            delete_selection()
+            for n, line_value in enumerate(value.lines):
+                if n:
+                    act.Run("BreakPara")
+                if isinstance(line_value, md_parser.Table):
+                    insert_table(line_value.rows, line_value.cols,
+                                 line_value.grid)
+                elif isinstance(line_value, list):
+                    insert_rich_line(line_value)
+                    _set_current_paragraph_word_boundary_wrap()
+                else:
+                    insert_plain(line_value)
+                    _set_current_paragraph_word_boundary_wrap()
+            filled += 1
+        elif isinstance(value, list):
+            delete_selection()
+            insert_rich_line(value)
+            _set_current_paragraph_word_boundary_wrap()
+            filled += 1
+        else:
+            insert_plain(value)
+            _set_current_paragraph_word_boundary_wrap()
+            if _is_panel_caption_slot(slot_name):
+                act.Run("ParagraphShapeAlignCenter")
+            filled += 1
+
+    # A floating table is visited before the rest of its host paragraph by
+    # HWP Find. Sequential anonymous markers can consequently swap 문두 and
+    # 사진1 even though the template is valid. Fill declared names exactly;
+    # retain anonymous-marker fallback only for legacy templates.
+    pending = list(range(len(fills)))
+    if slot_names:
+        pending = []
+        for index, value in enumerate(fills):
+            name = str(slot_names[index]).strip() if index < len(slot_names) else ""
+            found = False
+            if name:
+                for query in _named_slot_candidates(name):
+                    hwp.SetPos(*anchor)
+                    if (find_text(query) and not _before_anchor(anchor)
+                            and not _beyond(_limit())):
+                        found = True
+                        break
+            if not found:
+                pending.append(index)
+                continue
+            used += 1
+            if _is_photo_slot(name):
+                _set_current_photo_cell_start()
+            _put(value, name)
+
+    if pending:
+        normalize_slot_tokens(anchor, _limit())
     hwp.SetPos(*anchor)
-    for value in fills:
+    for index in pending:
+        value = fills[index]
         if not find_text("\\"):
             # 빈칸을 못 찾으면 남은 값은 갈 곳이 없다. 예전에는 조용히 멈춰서
             # 사용자가 인쇄물을 보고서야 알았다 → 기록을 남긴다.
@@ -548,37 +829,7 @@ def fill_slots(anchor, fills, end_para=None, slot_count=None):
                         f"({filled}/{want}개 채움)")
             break
         used += 1
-        if value is None:
-            act.Run("Delete")               # '-' → 그 빈칸은 비움
-        elif isinstance(value, md_parser.MultiLine):
-            # { … } 로 묶은 덩어리 — 이 빈칸 하나에 여러 줄을 넣는다.
-            # 표 셀 안이면 BreakPara 가 셀 안에서 문단을 나눈다(칸이 세로로 늘어남).
-            grow += len(value.lines) - 1    # BreakPara 수만큼 본문 문단이 는다
-            grow += sum(1 for lv in value.lines
-                        if isinstance(lv, md_parser.Table))   # 표 닻 문단 여유분
-            delete_selection()              # 빈칸 표시(\)를 먼저 지운다
-            for n, line_value in enumerate(value.lines):
-                if n:
-                    act.Run("BreakPara")
-                if isinstance(line_value, md_parser.Table):
-                    # 덩어리 안의 \표3*3\ — 글과 표가 한 빈칸에 같이 들어간다
-                    insert_table(line_value.rows, line_value.cols,
-                                 line_value.grid)
-                elif isinstance(line_value, list):
-                    insert_rich_line(line_value)
-                else:
-                    insert_plain(line_value)
-            filled += 1
-        elif isinstance(value, list):
-            # 사진·서식이 섞인 빈칸 (parser._slot_value 가 조각 목록으로 준다).
-            # insert_picture 는 선택을 대신 지워 주지 않으므로 빈칸 표시를 먼저 지운다
-            # — 안 그러면 사진 옆에 \ 가 그대로 남는다.
-            delete_selection()
-            insert_rich_line(value)
-            filled += 1
-        else:
-            insert_plain(value)             # 글자만 — InsertText 가 선택을 대체한다
-            filled += 1
+        _put(value)
     # 남은 빈칸만 청소한다. slot_count 를 알면 "이 템플릿에 남은 개수"가 정확한
     # 상한이 된다 — 그만큼만 지우므로 아래쪽 사용자 문서는 절대 안 건드린다.
     remaining = None if slot_count is None else max(int(slot_count) - used, 0)
@@ -2003,6 +2254,14 @@ def insert_rich_line(segments):
             applog.exc("서식 감싸기: 원래 서식을 못 읽음 — 감싼 뒤 서식이 번질 수 있음", e)
 
     for seg in segments:
+        formula = seg.get("formula")
+        if formula:
+            try:
+                _insert_equation(formula)
+            except Exception as e:
+                applog.exc(f"수식 삽입 실패 ({formula}) — 선형 수식으로 대체", e)
+                insert_plain(_formula_plain_fallback(formula))
+            continue
         image = seg.get("image")
         if image:
             # \사진이름\ — 사진 폴더의 그림을 글자처럼 삽입.
@@ -2050,6 +2309,71 @@ def insert_rich_line(segments):
         finally:
             hwp.HAction.Run("Cancel")       # 선택 해제
             hwp.SetPos(*end)                # 다음 구간은 이 줄 끝에서 이어 쓴다
+
+
+def _balanced_group(source, start):
+    if start >= len(source) or source[start] != "{":
+        return None
+    depth = 0
+    for index in range(start, len(source)):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start + 1:index], index + 1
+    return None
+
+
+def _formula_to_hwp(source):
+    import re
+    value = str(source or "").strip()
+    for _ in range(12):
+        match = re.search(r"\\?frac\s*\{", value)
+        if not match:
+            break
+        numerator = _balanced_group(value, match.end() - 1)
+        if not numerator:
+            break
+        den_start = numerator[1]
+        while den_start < len(value) and value[den_start].isspace():
+            den_start += 1
+        denominator = _balanced_group(value, den_start)
+        if not denominator:
+            break
+        replacement = "{" + _formula_to_hwp(numerator[0]) + "} over {" + _formula_to_hwp(denominator[0]) + "}"
+        value = value[:match.start()] + replacement + value[denominator[1]:]
+    value = re.sub(r"\\?sqrt\s*\{", "sqrt {", value)
+    value = re.sub(r"\\?vec\s*\{", "vec {", value)
+    return re.sub(r"\\([A-Za-z]+)", r"\1", value)
+
+
+def _formula_plain_fallback(source):
+    import re
+    greek = {"theta": "θ", "lambda": "λ", "mu": "μ", "pi": "π", "Delta": "Δ",
+             "alpha": "α", "beta": "β", "gamma": "γ", "omega": "ω", "times": "×"}
+    value = re.sub(r"\\([A-Za-z]+)", lambda m: greek.get(m.group(1), m.group(1)), str(source or ""))
+    return value.replace("{", "(").replace("}", ")").replace("frac", "")
+
+
+def _insert_equation(source):
+    hwp = _h()
+    start = hwp.GetPos()
+    act = hwp.HAction
+    ps = hwp.HParameterSet
+    act.GetDefault("EquationCreate", ps.HEqEdit.HSet)
+    # HWP 2022's generated COM wrapper exposes this property as lowercase
+    # ``string``.  Assigning ``String`` raises AttributeError and silently
+    # degrades every formula to the linear fallback in insert_rich_line().
+    ps.HEqEdit.string = _formula_to_hwp(source)
+    ps.HEqEdit.BaseUnit = (
+        FRACTION_EQUATION_BASE_UNIT
+        if "frac" in str(source)
+        else INLINE_EQUATION_BASE_UNIT
+    )
+    act.Execute("EquationCreate", ps.HEqEdit.HSet)
+    act.Run("Cancel")
+    hwp.SetPos(start[0], start[1], start[2] + 1)
 
 
 def _unit_changes(unit, ops):
@@ -2122,6 +2446,16 @@ def convert_units_in_place(units, plan_fn, anchor=None):
 
 
 # ── 라이브러리: 마크다운(\라벨\) 변환 실행 ───────────────
+def _find_template_marker(marker, previous_anchor):
+    """Find the next template marker without rescanning completed fragments."""
+    hwp = _h()
+    if previous_anchor is None:
+        hwp.MoveDocBegin()
+    else:
+        hwp.SetPos(*previous_anchor)
+    return find_text(marker)
+
+
 def execute_library_plan(ops, template_path_fn, form_path_fn=None):
     r"""parser.build_library_plan()의 실행 계획을 문서에 반영한다.
 
@@ -2173,7 +2507,8 @@ def execute_library_plan(ops, template_path_fn, form_path_fn=None):
         hwp.MoveDocBegin()
         form_filled, form_wanted = fill_slots(
             hwp.GetPos(), fills, end_para=None,
-            slot_count=item.get("slot_count"))
+            slot_count=item.get("slot_count"),
+            slot_names=item.get("slot_names"))
         forms_done = 1
 
         # ③ 본문 자리로 커서 이동. 표시가 없는 양식이면 문서 끝에서 이어 쓴다.
@@ -2214,10 +2549,10 @@ def execute_library_plan(ops, template_path_fn, form_path_fn=None):
     # ② 마커 → 조각 치환 + 빈칸(\) 순서대로 채움
     filled = 0
     wanted = 0
+    previous_anchor = None
     for idx, (_, item, fills) in enumerate(templates):
         marker = marker_base + str(idx) + "◈"
-        hwp.MoveDocBegin()
-        if not find_text(marker):
+        if not _find_template_marker(marker, previous_anchor):
             applog.warn(f"마커 유실로 템플릿을 건너뜀: {item.get('name', '?')}")
             continue
         delete_selection()
@@ -2225,9 +2560,11 @@ def execute_library_plan(ops, template_path_fn, form_path_fn=None):
         path = template_path_fn(item)
         end_para = measure_insert_span(anchor, lambda p=path: insert_fragment(p))
         got, want = fill_slots(anchor, fills, end_para,
-                               slot_count=item.get("slot_count"))
+                               slot_count=item.get("slot_count"),
+                               slot_names=item.get("slot_names"))
         filled += got
         wanted += want
+        previous_anchor = anchor
     # 양식을 먼저 처리했다면 그 빈칸 개수도 합쳐서 보고한다 — 사용자에겐
     # "이번 변환에서 빈칸 몇 개를 채웠나"가 하나의 숫자여야 한다.
     return {"templates": len(templates), "slots_filled": filled + form_filled,

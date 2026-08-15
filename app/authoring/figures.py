@@ -6,6 +6,7 @@ project file, starts its local static server, and returns a launch URL.
 from __future__ import annotations
 
 import json
+import math
 import os
 import base64
 import shutil
@@ -13,7 +14,10 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 import uuid
+import re
 from pathlib import Path
 from typing import Protocol
 
@@ -21,16 +25,30 @@ from ..integrations.hwppalette import HwpPaletteError, hwppalette_provider
 from ..paths import BASE_DIR, data_dir
 from .codex_app_server import CodexAppServerError, codex_app_server
 from .fivee_mcp import FiveEMcpClient, FiveEMcpError
+from .fivee_server import available_loopback_port
+from .exam_graph_spec import (
+    GraphSpecError, graph_scene, normalize_figure_objects, split_native_and_graph_objects,
+)
 
 
 class FigureProviderError(RuntimeError):
     pass
 
 
+def required_figure_count(draft: dict) -> int:
+    """Return the number of separately printable image slots selected by the palette."""
+    style_meta = draft.get("style_meta") if isinstance(draft, dict) else {}
+    label = str((style_meta or {}).get("palette_template") or "")
+    match = re.search(r"([1-6])(?:소|대)?사진", label)
+    return int(match.group(1)) if match else 0
+
+
 class FigureProvider(Protocol):
     name: str
 
     def create(self, session_id: int, draft: dict, current: dict) -> dict: ...
+
+    def draw(self, session_id: int, draft: dict, current: dict) -> dict: ...
 
     def edit(self, session_id: int, draft: dict, current: dict) -> dict: ...
 
@@ -56,6 +74,9 @@ class StubFigureProvider:
 
     def create(self, session_id: int, draft: dict, current: dict) -> dict:
         return {"provider": self.name, "status": "draft", **self._paths(current)}
+
+    def draw(self, session_id: int, draft: dict, current: dict) -> dict:
+        return self.edit(session_id, draft, current)
 
     def edit(self, session_id: int, draft: dict, current: dict) -> dict:
         return {"provider": self.name, "status": "editing", **self._paths(current)}
@@ -134,17 +155,36 @@ class FiveELocalProvider:
             "activePageId": page_id,
         }
 
-    def _server_is_ready(self) -> bool:
+    def _port_is_open(self) -> bool:
         try:
             with socket.create_connection(("127.0.0.1", self.port), timeout=0.25):
                 return True
         except OSError:
             return False
 
+    def _server_is_ready(self) -> bool:
+        try:
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{self.port}/__5e_health",
+                timeout=0.5,
+            ) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except (OSError, ValueError, urllib.error.URLError):
+            return False
+        if not isinstance(payload, dict):
+            return False
+        return (
+            payload.get("ok") is True
+            and payload.get("server") == "5e-static"
+            and Path(str(payload.get("root") or "")).resolve() == self.root
+        )
+
     def _ensure_server(self) -> None:
         self._check_installation()
         if self._server_is_ready():
             return
+        if self._port_is_open():
+            self.port = available_loopback_port()
         creationflags = 0
         if os.name == "nt":
             creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
@@ -186,12 +226,38 @@ class FiveELocalProvider:
         self.__class__._mcp_client.start()
         return self.__class__._mcp_client
 
+    def draw(self, session_id: int, draft: dict, current: dict) -> dict:
+        """Create an empty, session-owned 5E project for drawing from scratch."""
+        self._ensure_server()
+        path = self._project_path(session_id, current)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.is_file():
+            path.write_text(json.dumps(self._new_project(session_id, draft), ensure_ascii=False, indent=2), encoding="utf-8")
+        result = self._result(path, "editing", current.get("scene_spec_path") or "", current.get("rendered_image_path") or "")
+        result["instructions"] = "빈 5E 문항 페이지를 열었습니다. 직접 그린 뒤 ExamPool로 돌아오면 자동으로 가져옵니다."
+        return result
+
     @staticmethod
     def _figure_name(session_id: int, draft: dict, current: dict) -> str:
         raw = current.get("figure_name") or draft.get("material") or f"draft_{session_id}"
         raw = str(raw).split(",", 1)[0].strip()
         safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in raw)
         return safe.strip("._") or f"draft_{session_id}"
+
+    @staticmethod
+    def _normalize_artboard(value) -> dict:
+        """Convert model-friendly width/height aliases to 5E's required w/h."""
+        source = value if isinstance(value, dict) else {}
+
+        def dimension(key: str, alias: str, fallback: float) -> float:
+            raw = source.get(key, source.get(alias, fallback))
+            try:
+                number = float(raw)
+            except (TypeError, ValueError):
+                return fallback
+            return number if math.isfinite(number) and number > 0 else fallback
+
+        return {"w": dimension("w", "width", 90), "h": dimension("h", "height", 60)}
 
     @staticmethod
     def _project_object_count(path: Path) -> int:
@@ -208,6 +274,19 @@ class FiveELocalProvider:
         except (OSError, ValueError):
             return False
 
+    def _add_plan_objects(
+        self, client: FiveEMcpClient, objects: list[dict], artboard: dict, **target,
+    ) -> None:
+        """Insert native objects and GraphSpec through their authoritative paths."""
+        native, graphs = split_native_and_graph_objects(objects)
+        if graphs:
+            client.call("add_scene", {
+                **target, "scene": graph_scene(artboard, graphs), "objects": native,
+                "group": True, "strict": True,
+            })
+        elif native:
+            client.call("add_objects", {**target, "objects": native, "group": True})
+
     def _materialize_project(
         self, client: FiveEMcpClient, path: Path, scene_path: Path,
         session_id: int, draft: dict, plan: dict,
@@ -217,16 +296,16 @@ class FiveELocalProvider:
             return
         path.parent.mkdir(parents=True, exist_ok=True)
         staging = path.with_name(path.stem + ".pending" + path.suffix)
-        artboard = plan.get("artboard") if isinstance(plan.get("artboard"), dict) else {"w": 90, "h": 60}
+        artboard = self._normalize_artboard(plan.get("artboard"))
         title = str(draft.get("title") or draft.get("ask") or f"문항 {session_id}").strip()[:40]
         try:
             client.call("create_project", {
                 "path": str(staging), "artboard": artboard,
                 "pageNames": [title or f"문항 {session_id}"], "overwrite": True,
             })
-            client.call("add_objects", {
-                "path": str(staging), "objects": plan["objects"], "group": True,
-            })
+            self._add_plan_objects(
+                client, plan["objects"], artboard, path=str(staging),
+            )
             if not self._project_object_count(staging):
                 raise FigureProviderError("5E가 빈 프로젝트를 반환했습니다. 그림 객체를 다시 확인해 주세요.")
             os.replace(staging, path)
@@ -256,7 +335,6 @@ class FiveELocalProvider:
         hwppalette_provider.register_photo_dir(output_dir)
         token = uuid.uuid4().hex
         url = f"http://127.0.0.1:{self.port}/?from=exampool&mcp=1&render={token}"
-        browser = None
         try:
             with sync_playwright() as playwright:
                 browser = playwright.chromium.launch(headless=True)
@@ -272,8 +350,10 @@ class FiveELocalProvider:
 
                 client.call("set_page", {"page": name, "create": True})
                 client.call("clear_app")
-                client.call("set_artboard", plan.get("artboard") or {"w": 90, "h": 60})
-                client.call("add_objects", {"objects": plan["objects"], "group": True})
+                client.call("set_artboard", self._normalize_artboard(plan.get("artboard")))
+                self._add_plan_objects(
+                    client, plan["objects"], self._normalize_artboard(plan.get("artboard")),
+                )
                 client.call("read_app")
                 client.call("fit_artboard", {"margin": 4, "recenter": True})
                 client.call("read_app")
@@ -292,16 +372,12 @@ class FiveELocalProvider:
                     json.dumps(serialized, ensure_ascii=False, indent=2), encoding="utf-8"
                 )
                 browser.close()
-                browser = None
         except FigureProviderError:
             raise
         except (FiveEMcpError, HwpPaletteError, OSError, ValueError) as exc:
             raise FigureProviderError(f"5E 자동 그림 생성 실패: {exc}") from exc
         except Exception as exc:
             raise FigureProviderError(f"5E 백그라운드 렌더링 실패: {exc}") from exc
-        finally:
-            if browser:
-                browser.close()
 
         image_path = output_dir / f"{name}.png"
         if not image_path.is_file():
@@ -324,7 +400,6 @@ class FiveELocalProvider:
         base_name = self._figure_name(session_id, draft, current)
         token = uuid.uuid4().hex
         url = f"http://127.0.0.1:{self.port}/?from=exampool&mcp=1&render={token}"
-        browser = None
         assets = []
         try:
             with sync_playwright() as playwright:
@@ -343,8 +418,10 @@ class FiveELocalProvider:
                     name = f"{base_name}_{index + 1:02d}"
                     client.call("set_page", {"page": name, "create": True})
                     client.call("clear_app")
-                    client.call("set_artboard", panel.get("artboard") or {"w": 90, "h": 60})
-                    client.call("add_objects", {"objects": panel["objects"], "group": True})
+                    client.call("set_artboard", self._normalize_artboard(panel.get("artboard")))
+                    self._add_plan_objects(
+                        client, panel["objects"], self._normalize_artboard(panel.get("artboard")),
+                    )
                     client.call("read_app")
                     client.call("fit_artboard", {"margin": 4, "recenter": True})
                     fitted = json.loads(str(client.call("read_app")))
@@ -377,16 +454,12 @@ class FiveELocalProvider:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(json.dumps(serialized, ensure_ascii=False, indent=2), encoding="utf-8")
                 browser.close()
-                browser = None
         except FigureProviderError:
             raise
         except (FiveEMcpError, HwpPaletteError, OSError, ValueError) as exc:
             raise FigureProviderError(f"5E 다중 탭 생성 실패: {exc}") from exc
         except Exception as exc:
             raise FigureProviderError(f"5E 다중 탭 렌더링 실패: {exc}") from exc
-        finally:
-            if browser:
-                browser.close()
         return assets
 
     def create(self, session_id: int, draft: dict, current: dict) -> dict:
@@ -405,6 +478,9 @@ class FiveELocalProvider:
             "provider": "fivee_assets", "include_text": False, "composition": "combined",
             **(current.get("options") or plan.get("options") or {}),
         }
+        required_count = required_figure_count(draft)
+        if required_count > 1:
+            options["composition"] = "separate"
         panels = plan.get("panels")
         if not isinstance(panels, list):
             panels = [{
@@ -414,6 +490,11 @@ class FiveELocalProvider:
             }]
         if options["composition"] == "combined" and len(panels) > 1:
             raise FigureProviderError("한 도판에 그리기 설계안은 하나의 통합 패널이어야 합니다. 설계안을 다시 요청하세요.")
+        if required_count and len(panels) != required_count:
+            raise FigureProviderError(
+                f"선택한 조판 물감에는 그림 {required_count}개가 필요하지만 설계안은 {len(panels)}개입니다. "
+                f"그림 설계안을 {required_count}개 장면으로 다시 요청하세요."
+            )
 
         assets = []
         base_name = self._figure_name(session_id, draft, current)
@@ -422,6 +503,7 @@ class FiveELocalProvider:
             if not isinstance(raw_panel, dict):
                 continue
             panel = dict(raw_panel)
+            panel["artboard"] = self._normalize_artboard(panel.get("artboard"))
             objects = panel.get("objects") or []
             if not isinstance(objects, list) or not objects:
                 raise FigureProviderError(f"{index + 1}번째 패널에 생성할 5E 객체가 없습니다.")
@@ -429,7 +511,13 @@ class FiveELocalProvider:
                 objects = [obj for obj in objects if obj.get("type") not in {"text", "formula"}]
                 if not objects:
                     raise FigureProviderError("글자 제거 후 남은 그림 객체가 없습니다. 그림 설계안을 다시 요청하세요.")
-            panel["objects"] = objects
+            try:
+                panel["objects"] = normalize_figure_objects(
+                    objects, include_text=bool(options["include_text"]),
+                    path=f"figure_plan.panels[{index}].objects",
+                )
+            except GraphSpecError as exc:
+                raise FigureProviderError(f"5E 그래프 명세 오류: {exc}") from exc
             normalized_panels.append(panel)
 
         if options["composition"] in {"auto", "separate"}:
@@ -501,13 +589,14 @@ class FiveELocalProvider:
                     plan = draft.get("figure_plan")
                 if isinstance(plan, dict) and not plan.get("objects") and plan.get("panels"):
                     plan = plan["panels"][0]
-                if not isinstance(plan, dict) or not plan.get("objects"):
-                    raise FigureProviderError("5E에 불러올 그림 설계안을 찾을 수 없습니다.")
-                objects = plan.get("objects") or []
-                client.call("clear_app")
-                client.call("set_artboard", plan.get("artboard") or {"w": 90, "h": 60})
-                client.call("add_objects", {"objects": objects, "group": True})
-                client.call("read_app")
+                if isinstance(plan, dict) and plan.get("objects"):
+                    objects = plan.get("objects") or []
+                    client.call("clear_app")
+                    client.call("set_artboard", self._normalize_artboard(plan.get("artboard")))
+                    self._add_plan_objects(
+                        client, objects, self._normalize_artboard(plan.get("artboard")),
+                    )
+                    client.call("read_app")
         except FiveEMcpError as exc:
             raise FigureProviderError(str(exc)) from exc
         except (OSError, ValueError) as exc:
@@ -631,35 +720,49 @@ class RasterImageProvider:
 
     @staticmethod
     def _build_fivee_project(folder: Path, assets: list[dict]) -> Path:
-        """Embed generated rasters as one auto-sized 5E page tab per image."""
+        """Embed text-free rasters below editable 5E label/formula overlays."""
         import fitz
         pages = []
         for index, asset in enumerate(assets):
             source = Path(asset["source_image_path"])
             pixmap = fitz.Pixmap(str(source))
-            scale = min(90 / max(1, pixmap.width), 60 / max(1, pixmap.height))
+            artboard = FiveELocalProvider._normalize_artboard(asset.get("artboard"))
+            scale = min(
+                max(1.0, artboard["w"] - 8) / max(1, pixmap.width),
+                max(1.0, artboard["h"] - 8) / max(1, pixmap.height),
+            )
             width = round(pixmap.width * scale, 2)
             height = round(pixmap.height * scale, 2)
             mime = "image/png" if source.suffix.lower() == ".png" else "image/jpeg"
             src = f"data:{mime};base64," + base64.b64encode(source.read_bytes()).decode("ascii")
             page_id = f"page_raster_{index + 1}_{uuid.uuid4().hex[:8]}"
             page_name = Path(asset["rendered_image_path"]).stem
+            objects = [{
+                "id": f"image_{uuid.uuid4().hex[:12]}", "type": "image",
+                "x": -width / 2, "y": -height / 2, "w": width, "h": height,
+                "src": src, "rotation": 0, "mode": "edit", "opacity": 1,
+                "aspectLocked": True, "exportable": True, "cutouts": [],
+                "recognized": False, "layerId": 1, "order": 0,
+            }]
+            for order, raw in enumerate(asset.get("overlay_objects") or [], start=1):
+                overlay = dict(raw)
+                overlay.setdefault("id", f"overlay_{uuid.uuid4().hex[:12]}")
+                overlay.setdefault("layerId", 2)
+                overlay.setdefault("order", order)
+                overlay.setdefault("exportable", True)
+                if overlay.get("type") == "formula":
+                    overlay.setdefault("rawSource", overlay.get("source") or "")
+                objects.append(overlay)
             pages.append({
                 "id": page_id, "name": page_name, "meta": {"number": "", "points": ""},
-                "objects": [{
-                    "id": f"image_{uuid.uuid4().hex[:12]}", "type": "image",
-                    "x": -width / 2, "y": -height / 2, "w": width, "h": height,
-                    "src": src, "rotation": 0, "mode": "edit", "opacity": 1,
-                    "aspectLocked": True, "exportable": True, "cutouts": [],
-                    "recognized": False, "layerId": 1, "order": 0,
-                }],
+                "objects": objects,
                 "guides": [],
                 "layers": [
                     {"id": 1, "name": "레이어 1", "visible": True},
                     {"id": 2, "name": "레이어 2", "visible": True},
                     {"id": 3, "name": "레이어 3", "visible": True},
                 ],
-                "artboard": {"w": round(width + 8, 2), "h": round(height + 8, 2)},
+                "artboard": {"w": float(artboard["w"]), "h": float(artboard["h"])},
             })
             asset["fivee_project_path"] = str(folder / "figure.5e.json")
             asset["page_name"] = page_name
@@ -690,7 +793,12 @@ class RasterImageProvider:
             "image_prompt": plan.get("summary", ""),
         }]
         options = current.get("options") or {}
-        if options.get("composition") in {"auto", "separate"} and len(panels) <= 1:
+        required_count = required_figure_count(draft)
+        if required_count > 1:
+            options = {**options, "composition": "separate"}
+        if options.get("composition") in {"auto", "separate"} and (
+            len(panels) <= 1 or (required_count and len(panels) != required_count)
+        ):
             question_context = "\n".join(filter(None, [
                 str(draft.get("passage") or ""), str(draft.get("material") or ""),
                 str(draft.get("ask") or ""),
@@ -700,9 +808,15 @@ class RasterImageProvider:
             try:
                 if callable(progress):
                     progress(25, "문항에 필요한 그림 장면 수를 판단하는 중")
-                panels = codex_app_server.plan_image_panels(question_context)
+                panels = codex_app_server.plan_image_panels(
+                    question_context, required_count=required_count or None,
+                )
             except CodexAppServerError as exc:
                 raise FigureProviderError(f"그림 장면 자동 분리 실패: {exc}") from exc
+        if required_count and len(panels) != required_count:
+            raise FigureProviderError(
+                f"선택한 조판 물감에는 그림 {required_count}개가 필요하지만 장면 분석 결과는 {len(panels)}개입니다."
+            )
         folder = self._folder(session_id)
         scene_path = folder / "image-prompts.json"
         scene_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -715,11 +829,9 @@ class RasterImageProvider:
         base_name = str(current.get("figure_name") or f"draft_{session_id}")
         include_text = bool(options.get("include_text", False))
         text_rule = (
-            "Only include labels, letters, and numerical values that are explicitly necessary."
-            if include_text else
             "Do not draw any letters, words, numbers, plus/minus signs, charge marks, arrows, "
-            "motion marks, symbols, captions, panel labels, legends, or watermarks. Express the "
-            "scientific comparison only through object positions, distances, shapes, and leaf spread."
+            "motion marks, symbols, captions, panel labels, legends, or watermarks. Leave clean "
+            "white space where labels belong; ExamPool will add all typography as editable 5E objects."
         )
         assets = []
         references = [
@@ -765,12 +877,21 @@ class RasterImageProvider:
                     fitz.Pixmap(str(source)).save(str(rendered))
             except (CodexAppServerError, HwpPaletteError, OSError, ValueError) as exc:
                 raise FigureProviderError(f"이미지 자동 생성 실패: {exc}") from exc
+            overlay_objects = (
+                normalize_figure_objects(
+                    panel.get("overlay_objects") or [], include_text=True,
+                    path=f"figure_plan.panels[{index}].overlay_objects",
+                ) if include_text else []
+            )
             assets.append({
                 "panel_id": str(panel.get("id") or f"panel-{index + 1}"), "ord": index + 1,
-                "provider": self.name, "status": "draft",
+                "provider": self.name,
+                "status": "overlay_pending" if overlay_objects else "draft",
                 "scene_spec_path": str(scene_path), "fivee_project_path": "",
                 "source_image_path": str(source_copy), "rendered_image_path": str(rendered),
                 "image_prompt": prompt,
+                "artboard": FiveELocalProvider._normalize_artboard(panel.get("artboard")),
+                "overlay_objects": overlay_objects,
             })
             if callable(progress):
                 progress(85 + int(((index + 1) / max(1, len(panels))) * 10),
@@ -778,16 +899,29 @@ class RasterImageProvider:
         project_path = self._build_fivee_project(folder, assets)
         if callable(progress):
             progress(98, "5E 편집 프로젝트와 문항 그림을 연결하는 중")
+        overlay_pending = any(asset["status"] == "overlay_pending" for asset in assets)
+        material = "" if overlay_pending else ",".join(
+            Path(asset["rendered_image_path"]).stem for asset in assets
+        )
         return {
-            "provider": self.name, "status": "draft",
+            "provider": self.name, "status": "overlay_pending" if overlay_pending else "draft",
             "scene_spec_path": str(scene_path), "fivee_project_path": str(project_path),
             "rendered_image_path": assets[0]["rendered_image_path"], "assets": assets,
+            "material": material,
             "previous_image_path": str(previous_image) if previous_image.is_file() else "",
-            "instructions": "ChatGPT-managed 이미지 생성을 완료하고 문항 미리보기에 연결했습니다.",
+            "instructions": (
+                "글자 없는 바탕 이미지를 생성하고 5E 편집 프로젝트에 라벨·수식 객체를 분리했습니다. "
+                "5E에서 위치를 확인한 뒤 동기화하여 최종 PNG를 연결하세요."
+            ),
         }
 
     def edit(self, session_id: int, draft: dict, current: dict) -> dict:
         result = FiveELocalProvider().edit(session_id, draft, current)
+        result["provider"] = self.name
+        return result
+
+    def draw(self, session_id: int, draft: dict, current: dict) -> dict:
+        result = FiveELocalProvider().draw(session_id, draft, current)
         result["provider"] = self.name
         return result
 
@@ -819,6 +953,10 @@ class RasterImageProvider:
             asset for asset in assets
             if Path(asset.get("rendered_image_path") or "").is_file()
         ]
+        if any(asset.get("status") == "overlay_pending" for asset in assets):
+            raise FigureProviderError(
+                "5E 라벨·수식 배치를 확인하고 각 그림을 동기화한 뒤 확정하세요."
+            )
         if assets and len(ready_assets) != len(assets):
             raise FigureProviderError("분리된 모든 그림을 생성해 가져온 뒤 확정하세요.")
         if not rendered.is_file():
@@ -829,7 +967,8 @@ class RasterImageProvider:
         return {
             "provider": self.name, "status": "confirmed",
             "scene_spec_path": current.get("scene_spec_path") or "",
-            "fivee_project_path": "", "rendered_image_path": str(rendered),
+            "fivee_project_path": current.get("fivee_project_path") or "",
+            "rendered_image_path": str(rendered),
             "material": material, "instructions": "이미지 그림을 문항 자료에 연결했습니다.",
         }
 
@@ -850,3 +989,12 @@ def close_figure_providers() -> None:
     FiveELocalProvider._mcp_client = None
     if client:
         client.close()
+    server = FiveELocalProvider._server_process
+    FiveELocalProvider._server_process = None
+    if server and server.poll() is None:
+        server.terminate()
+        try:
+            server.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            server.kill()
+            server.wait(timeout=3)

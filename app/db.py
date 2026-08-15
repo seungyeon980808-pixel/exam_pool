@@ -136,6 +136,7 @@ CREATE TABLE IF NOT EXISTS question (
     explanation    TEXT NOT NULL DEFAULT '',
     status         TEXT NOT NULL DEFAULT '초안',
     review_note    TEXT NOT NULL DEFAULT '{}',
+    style_meta     TEXT NOT NULL DEFAULT '{}',
     created_at     TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
@@ -214,10 +215,10 @@ CREATE TABLE IF NOT EXISTS exam_ref (
     item_num    INTEGER NOT NULL,
     note        TEXT NOT NULL DEFAULT '',
     tags        TEXT NOT NULL DEFAULT '',
-    question_id INTEGER,
+    question_id INTEGER REFERENCES question(id) ON DELETE CASCADE,
+    authoring_session_id INTEGER REFERENCES authoring_session(id) ON DELETE CASCADE,
     created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_ref_uniq ON exam_ref(document_id, page_no, item_num);
 
 -- 대화형 문항 제작 세션. 기존 question 은 확정·저장된 문항이고, 이 테이블은
 -- 저장 전 초안과 Codex 대화를 별도로 보관한다. Codex thread 가 사라져도 대화는 남는다.
@@ -229,6 +230,8 @@ CREATE TABLE IF NOT EXISTS authoring_session (
     model              TEXT NOT NULL DEFAULT '',
     reasoning_effort   TEXT NOT NULL DEFAULT '',
     authoring_mode     TEXT NOT NULL DEFAULT 'quick',
+    workflow_mode      TEXT NOT NULL DEFAULT 'auto',
+    purpose_mode       TEXT NOT NULL DEFAULT 'create',
     provider_thread_id TEXT NOT NULL DEFAULT '',
     provider_protocol  TEXT NOT NULL DEFAULT '',
     status             TEXT NOT NULL DEFAULT 'text_drafting',
@@ -246,7 +249,8 @@ CREATE TABLE IF NOT EXISTS authoring_message (
     role           TEXT NOT NULL,
     content        TEXT NOT NULL DEFAULT '',
     proposals_json TEXT NOT NULL DEFAULT '[]',
-    created_at     TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    created_at     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    updated_at     TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
 CREATE TABLE IF NOT EXISTS authoring_revision (
@@ -284,6 +288,16 @@ CREATE TABLE IF NOT EXISTS authoring_figure_asset (
     fivee_project_path  TEXT NOT NULL DEFAULT '',
     source_image_path   TEXT NOT NULL DEFAULT '',
     rendered_image_path TEXT NOT NULL DEFAULT '',
+    asset_mode          TEXT NOT NULL DEFAULT '',
+    asset_role          TEXT NOT NULL DEFAULT 'editable',
+    source_pdf          TEXT NOT NULL DEFAULT '',
+    page_no             INTEGER NOT NULL DEFAULT 0,
+    bbox_json           TEXT NOT NULL DEFAULT '[]',
+    dpi                 INTEGER NOT NULL DEFAULT 0,
+    width_px            INTEGER NOT NULL DEFAULT 0,
+    height_px           INTEGER NOT NULL DEFAULT 0,
+    aspect_ratio        REAL NOT NULL DEFAULT 0,
+    source_hash         TEXT NOT NULL DEFAULT '',
     revision            INTEGER NOT NULL DEFAULT 0,
     updated_at          TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     UNIQUE(session_id, panel_id)
@@ -310,6 +324,71 @@ CREATE INDEX IF NOT EXISTS idx_authoring_figure_asset_session
 CREATE INDEX IF NOT EXISTS idx_authoring_figure_reference_session
     ON authoring_figure_reference(session_id, id);
 
+-- PDF-to-HWP conversion owns durable jobs independently of question authoring.
+CREATE TABLE IF NOT EXISTS conversion_job (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT NOT NULL DEFAULT '',
+    layout_style    TEXT NOT NULL DEFAULT 'suneung',
+    status          TEXT NOT NULL DEFAULT 'draft',
+    source_filename TEXT NOT NULL DEFAULT '',
+    source_path     TEXT NOT NULL DEFAULT '',
+    source_sha256   TEXT NOT NULL DEFAULT '',
+    error_code      TEXT NOT NULL DEFAULT '',
+    error_message   TEXT NOT NULL DEFAULT '',
+    revision        INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS conversion_item (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id        INTEGER NOT NULL REFERENCES conversion_job(id) ON DELETE CASCADE,
+    ord           INTEGER NOT NULL,
+    source_page   INTEGER NOT NULL,
+    source_number INTEGER,
+    bbox_json     TEXT NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'detected',
+    selected      INTEGER NOT NULL DEFAULT 1,
+    draft_json    TEXT NOT NULL DEFAULT '{}',
+    error_code    TEXT NOT NULL DEFAULT '',
+    error_message TEXT NOT NULL DEFAULT '',
+    revision      INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    UNIQUE(job_id, ord)
+);
+
+CREATE TABLE IF NOT EXISTS conversion_asset (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id       INTEGER NOT NULL REFERENCES conversion_job(id) ON DELETE CASCADE,
+    item_id      INTEGER REFERENCES conversion_item(id) ON DELETE CASCADE,
+    role         TEXT NOT NULL,
+    file_path    TEXT NOT NULL,
+    sha256       TEXT NOT NULL,
+    media_type   TEXT NOT NULL,
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS conversion_output (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id       INTEGER NOT NULL REFERENCES conversion_job(id) ON DELETE CASCADE,
+    kind         TEXT NOT NULL,
+    status       TEXT NOT NULL DEFAULT 'pending',
+    file_path    TEXT NOT NULL DEFAULT '',
+    sha256       TEXT NOT NULL DEFAULT '',
+    size_bytes   INTEGER NOT NULL DEFAULT 0,
+    error_code   TEXT NOT NULL DEFAULT '',
+    error_message TEXT NOT NULL DEFAULT '',
+    created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    updated_at   TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    UNIQUE(job_id, kind)
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversion_item_job ON conversion_item(job_id, ord);
+CREATE INDEX IF NOT EXISTS idx_conversion_asset_job ON conversion_asset(job_id, item_id);
+CREATE INDEX IF NOT EXISTS idx_conversion_output_job ON conversion_output(job_id, id);
+
 CREATE INDEX IF NOT EXISTS idx_prop_std ON proposition(standard_code);
 CREATE INDEX IF NOT EXISTS idx_prop_unit ON proposition(unit_no);
 """
@@ -333,6 +412,96 @@ def _add_column(conn: sqlite3.Connection, table: str, col: str, decl: str) -> No
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
 
 
+def _unwrap_visible_text_envelopes(payload) -> tuple[object, bool]:
+    """Repair the short-lived metadata-envelope format without losing its provenance."""
+    if not isinstance(payload, dict):
+        return payload, False
+    value = dict(payload)
+    changed = False
+    raw_style_meta = value.get("style_meta")
+    style_meta = dict(raw_style_meta) if isinstance(raw_style_meta, dict) else {}
+    for field in ("passage", "ask"):
+        raw = value.get(field)
+        if isinstance(raw, dict):
+            value[field] = str(raw.get("text") or "")
+            frame_id = raw.get("frame_id")
+            if frame_id:
+                style_meta[field] = {
+                    "frame_id": frame_id,
+                    "sources": raw.get("style_sources") or raw.get("sources") or [],
+                }
+            changed = True
+        elif isinstance(raw, str) and raw.strip().lower() == "[object object]":
+            value[field] = ""
+            changed = True
+    if style_meta != (raw_style_meta or {}):
+        value["style_meta"] = style_meta
+        changed = True
+    return value, changed
+
+
+def _repair_authoring_text_envelopes(conn: sqlite3.Connection) -> None:
+    """One-way repair for drafts, proposals and undo snapshots saved by protocol v11."""
+    for row in conn.execute("SELECT id,draft_json,confirmed_json FROM authoring_session").fetchall():
+        updates = {}
+        for column in ("draft_json", "confirmed_json"):
+            try:
+                payload = json.loads(row[column] or "{}")
+            except (TypeError, json.JSONDecodeError):
+                continue
+            repaired, changed = _unwrap_visible_text_envelopes(payload)
+            if changed:
+                updates[column] = json.dumps(repaired, ensure_ascii=False)
+        if updates:
+            assignments = ",".join(f"{column}=?" for column in updates)
+            conn.execute(
+                f"UPDATE authoring_session SET {assignments} WHERE id=?",
+                (*updates.values(), row["id"]),
+            )
+
+    for row in conn.execute("SELECT id,proposals_json FROM authoring_message").fetchall():
+        try:
+            proposals = json.loads(row["proposals_json"] or "[]")
+        except (TypeError, json.JSONDecodeError):
+            continue
+        changed = False
+        if isinstance(proposals, list):
+            for proposal in proposals:
+                if not isinstance(proposal, dict) or proposal.get("field") not in {"passage", "ask"}:
+                    continue
+                raw = proposal.get("value")
+                if not isinstance(raw, dict):
+                    continue
+                proposal["value"] = str(raw.get("text") or "")
+                if raw.get("frame_id") and not proposal.get("frame_id"):
+                    proposal["frame_id"] = raw["frame_id"]
+                if raw.get("style_sources") and not proposal.get("style_sources"):
+                    proposal["style_sources"] = raw["style_sources"]
+                changed = True
+        if changed:
+            conn.execute(
+                "UPDATE authoring_message SET proposals_json=? WHERE id=?",
+                (json.dumps(proposals, ensure_ascii=False), row["id"]),
+            )
+
+    for row in conn.execute("SELECT id,before_json,after_json FROM authoring_revision").fetchall():
+        updates = {}
+        for column in ("before_json", "after_json"):
+            try:
+                payload = json.loads(row[column] or "{}")
+            except (TypeError, json.JSONDecodeError):
+                continue
+            repaired, changed = _unwrap_visible_text_envelopes(payload)
+            if changed:
+                updates[column] = json.dumps(repaired, ensure_ascii=False)
+        if updates:
+            assignments = ",".join(f"{column}=?" for column in updates)
+            conn.execute(
+                f"UPDATE authoring_revision SET {assignments} WHERE id=?",
+                (*updates.values(), row["id"]),
+            )
+
+
 def _migrate(conn: sqlite3.Connection) -> None:
     # 교육과정 확장 — 과목·단원 유의사항·성취기준 해설
     _add_column(conn, "unit", "subject_id", "INTEGER")
@@ -343,7 +512,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
     _add_column(conn, "standard", "explain", "TEXT NOT NULL DEFAULT ''")  # 성취기준 해설
 
     _add_column(conn, "question", "title", "TEXT NOT NULL DEFAULT ''")
+    _add_column(conn, "conversion_item", "selected", "INTEGER NOT NULL DEFAULT 1")
     _add_column(conn, "question", "image_choices", "INTEGER NOT NULL DEFAULT 0")
+    _add_column(conn, "question", "updated_at", "TEXT NOT NULL DEFAULT ''")
+    conn.execute(
+        "UPDATE question SET updated_at = created_at "
+        "WHERE updated_at IS NULL OR updated_at = ''"
+    )
     # 이원목적분류표의 행동영역 (2022 개정: 지식·이해 / 과정·기능 / 가치·태도)
     _add_column(conn, "question", "behavior", "TEXT NOT NULL DEFAULT ''")
 
@@ -356,10 +531,15 @@ def _migrate(conn: sqlite3.Connection) -> None:
     _add_column(conn, "question", "origin_note", "TEXT NOT NULL DEFAULT ''")
     # 대화형 제작 화면에서 사용하는 해설. 기존 문항은 빈 문자열로 안전하게 시작한다.
     _add_column(conn, "question", "explanation", "TEXT NOT NULL DEFAULT ''")
+    # 기출 문체 frame_id와 실제 시험지 출처. 작성 세션이 끝난 뒤에도 문항과 함께 보존한다.
+    _add_column(conn, "question", "style_meta", "TEXT NOT NULL DEFAULT '{}'")
     # 대화 모델 설정은 문항별 작성 세션에만 보관한다. 인증 정보와 토큰은 저장하지 않는다.
     _add_column(conn, "authoring_session", "model", "TEXT NOT NULL DEFAULT ''")
     _add_column(conn, "authoring_session", "reasoning_effort", "TEXT NOT NULL DEFAULT ''")
     _add_column(conn, "authoring_session", "authoring_mode", "TEXT NOT NULL DEFAULT 'quick'")
+    _add_column(conn, "authoring_session", "workflow_mode", "TEXT NOT NULL DEFAULT 'auto'")
+    # 새 문항 출제와 선택 기출의 충실한 복원을 세션(문항 탭)별로 분리한다.
+    _add_column(conn, "authoring_session", "purpose_mode", "TEXT NOT NULL DEFAULT 'create'")
     # 대화 기능 명세가 바뀌면 이전 Codex 스레드를 안전하게 교체하기 위한 버전 표식.
     _add_column(conn, "authoring_session", "provider_protocol", "TEXT NOT NULL DEFAULT ''")
     _add_column(conn, "authoring_session", "source_question_id", "INTEGER REFERENCES question(id) ON DELETE SET NULL")
@@ -367,6 +547,16 @@ def _migrate(conn: sqlite3.Connection) -> None:
     _add_column(conn, "authoring_figure", "revision", "INTEGER NOT NULL DEFAULT 0")
     _add_column(conn, "authoring_figure", "previous_image_path", "TEXT NOT NULL DEFAULT ''")
     _add_column(conn, "authoring_figure_asset", "prompt", "TEXT NOT NULL DEFAULT ''")
+    _add_column(conn, "authoring_figure_asset", "asset_mode", "TEXT NOT NULL DEFAULT ''")
+    _add_column(conn, "authoring_figure_asset", "asset_role", "TEXT NOT NULL DEFAULT 'editable'")
+    _add_column(conn, "authoring_figure_asset", "source_pdf", "TEXT NOT NULL DEFAULT ''")
+    _add_column(conn, "authoring_figure_asset", "page_no", "INTEGER NOT NULL DEFAULT 0")
+    _add_column(conn, "authoring_figure_asset", "bbox_json", "TEXT NOT NULL DEFAULT '[]'")
+    _add_column(conn, "authoring_figure_asset", "dpi", "INTEGER NOT NULL DEFAULT 0")
+    _add_column(conn, "authoring_figure_asset", "width_px", "INTEGER NOT NULL DEFAULT 0")
+    _add_column(conn, "authoring_figure_asset", "height_px", "INTEGER NOT NULL DEFAULT 0")
+    _add_column(conn, "authoring_figure_asset", "aspect_ratio", "REAL NOT NULL DEFAULT 0")
+    _add_column(conn, "authoring_figure_asset", "source_hash", "TEXT NOT NULL DEFAULT ''")
     _add_column(conn, "authoring_figure_reference", "source_label", "TEXT NOT NULL DEFAULT ''")
     _add_column(conn, "authoring_figure_reference", "source_text", "TEXT NOT NULL DEFAULT ''")
     _add_column(conn, "authoring_figure_reference", "usage", "TEXT NOT NULL DEFAULT 'both'")
@@ -374,14 +564,44 @@ def _migrate(conn: sqlite3.Connection) -> None:
     _add_column(conn, "exam_set", "total_points", "REAL NOT NULL DEFAULT 100.0")
     _add_column(conn, "exam_set", "layout_style", "TEXT NOT NULL DEFAULT 'school'")
     _add_column(conn, "lesson", "indexed_at", "TEXT NOT NULL DEFAULT ''")
+    # Reconstruct legacy set_item tables before repairing their invariants.
+    _migrate_set_item_slots(conn)
+    _add_column(conn, "exam_ref", "authoring_session_id", "INTEGER")
+    conn.execute("DROP INDEX IF EXISTS idx_ref_uniq")
+    conn.execute("DROP INDEX IF EXISTS idx_ref_owner_uniq")
+    conn.execute(
+        "CREATE UNIQUE INDEX idx_ref_owner_uniq ON exam_ref("
+        "document_id, page_no, item_num, COALESCE(question_id, -1), "
+        "COALESCE(authoring_session_id, -1))"
+    )
+    conn.execute("DROP INDEX IF EXISTS idx_set_item_question")
+    conn.execute("DROP INDEX IF EXISTS idx_set_item_ord")
+    conn.execute(
+        "DELETE FROM set_item WHERE question_id IS NOT NULL AND id NOT IN ("
+        "SELECT MIN(id) FROM set_item WHERE question_id IS NOT NULL "
+        "GROUP BY set_id, question_id)"
+    )
+    for set_row in conn.execute("SELECT DISTINCT set_id FROM set_item").fetchall():
+        item_rows = conn.execute(
+            "SELECT id FROM set_item WHERE set_id = ? ORDER BY ord, id",
+            (set_row["set_id"],),
+        ).fetchall()
+        for index, item_row in enumerate(item_rows, start=1):
+            conn.execute("UPDATE set_item SET ord = ? WHERE id = ?", (-index, item_row["id"]))
+        conn.execute("UPDATE set_item SET ord = -ord WHERE set_id = ?", (set_row["set_id"],))
+    conn.execute(
+        "CREATE UNIQUE INDEX idx_set_item_question "
+        "ON set_item(set_id, question_id) WHERE question_id IS NOT NULL"
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX idx_set_item_ord ON set_item(set_id, ord)"
+    )
 
     # ExamMaker 청사진 — 세트 약칭(그림 파일명 규약 {short_code}_{번호2자리}의 앞부분)
     _add_column(conn, "exam_set", "short_code", "TEXT NOT NULL DEFAULT ''")
+    _repair_authoring_text_envelopes(conn)
     # 슬롯 계획 필드. question_id 를 NULL 허용으로 바꿔야 해서(SQLite 는 제약 변경 불가)
     # 한 번은 테이블 재구성이 필요하다 — 데이터는 그대로 복사한다.
-    _migrate_set_item_slots(conn)
-
-
 def _migrate_set_item_slots(conn: sqlite3.Connection) -> None:
     info = {r["name"]: r for r in conn.execute("PRAGMA table_info(set_item)")}
     plan_cols = [

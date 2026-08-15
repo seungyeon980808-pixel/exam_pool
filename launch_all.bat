@@ -5,7 +5,7 @@ REM Then: open both in browser. Start Claude Code from THIS folder (32_exam_pool
 REM so the exampool MCP attaches. See docs/PIPELINE.md for the workflow.
 
 start "ExamPool 8632" cmd /k "cd /d %~dp0 && python -m uvicorn app.main:app --host 127.0.0.1 --port 8632"
-start "5E 8611" cmd /k "cd /d %~dp0..\51_5E\5E_main && python -m http.server 8611"
+start "5E 8611" cmd /k "cd /d %~dp0..\51_5E\5E_main && python tools\serve.py 8611"
 timeout /t 2 >nul
 start "" "http://127.0.0.1:8632"
 start "" "http://localhost:8611/?mcp=1"

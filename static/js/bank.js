@@ -11,6 +11,8 @@
     const rows = await api("/api/propositions?" + params);
     const allow = EP.allowedCodes();
     EP.S.curProps = allow ? rows.filter((r) => allow.has(r.standard_code)) : rows;
+    const firstRun = $("firstRunGuide");
+    if (firstRun) firstRun.classList.toggle("hidden", EP.S.curProps.length > 0);
     const tb = $("propRows");
     tb.innerHTML = "";
     let ev = 0, va = 0;
@@ -181,17 +183,27 @@
       const di = parseInt(btn.dataset.di), vi = btn.dataset.vi;
       const d = detail[di];
       const target = btn.dataset.target, idx = parseInt(btn.dataset.idx);
+      const primaryEvidence = (d.evidence || [])[0];
+      const evidence = primaryEvidence
+        ? [primaryEvidence.source_label, primaryEvidence.quote].filter(Boolean).join(" — ") : "";
       if (vi !== undefined) {
-        EP.applyPick(target, idx, d.variants[parseInt(vi)].text, null, d.variants[parseInt(vi)].id);
+        const variant = d.variants[parseInt(vi)];
+        EP.applyPick(target, idx, variant.text, null, variant.id, evidence,
+          `근거가 되는 참 명제를 '${variant.distortion || "개념 변형"}' 방식으로 바꾼 진술이므로 옳지 않다.`);
       } else {
-        EP.applyPick(target, idx, d.proposition.text, d.proposition.id, null);
+        EP.applyPick(target, idx, d.proposition.text, d.proposition.id, null, evidence,
+          "연결된 근거가 이 보기의 내용을 직접 뒷받침하므로 옳다.");
       }
     });
   };
 
-  EP.applyPick = function (target, idx, text, propId, varId) {
+  EP.applyPick = function (target, idx, text, propId, varId, evidence, explanation) {
     if (target === "bogi") {
-      EP.S.bogi[idx] = Object.assign({}, EP.S.bogi[idx], { text: text, proposition_id: propId, variant_id: varId });
+      EP.S.bogi[idx] = Object.assign({}, EP.S.bogi[idx], {
+        text: text, proposition_id: propId, variant_id: varId,
+        evidence: evidence || EP.S.bogi[idx].evidence || "",
+        explanation: explanation || EP.S.bogi[idx].explanation || "",
+      });
       EP.renderBogi();
     } else {
       EP.S.choices[idx] = Object.assign({}, EP.S.choices[idx], { text: text, proposition_id: propId, variant_id: varId });

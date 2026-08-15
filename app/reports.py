@@ -16,7 +16,7 @@ BLUEPRINT_COLS = ["문항", "단원", "성취기준", "평가 내용(출제 의�
 
 # 2022 개정 교육과정의 세 범주. 문항에 저장된 값이 없으면 빈칸으로 두고 교사가 채운다.
 BEHAVIORS = ["지식·이해", "과정·기능", "가치·태도"]
-ORIGINS = ["직접", "AI초안", "기출변형"]
+ORIGINS = ["직접", "AI초안", "기출변형", "기출복원"]
 
 
 def _answer_of(question: dict, choices: list[dict]) -> str:
