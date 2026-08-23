@@ -71,6 +71,43 @@ def test_fraction_with_zero_measured_numerator_overlap_fails_closed() -> None:
     assert all("\\frac" not in word.text for word in normalized)
 
 
+def test_fraction_tail_after_times_sign_decodes_remaining_pua() -> None:
+    # Given: only the leading glyph sits over the bar; ×c=6 remains after the prefix.
+    numerator = draft_extractor._Word(
+        (100.0, 90.0, 108.0, 102.0), "\ue0e5×\ue0e7\ue047\ue039이다.",
+        "\ue0e5×\ue0e7\ue047\ue039이다.",
+        char_bboxes=(
+            (100.0, 90.0, 108.0, 102.0),
+            (108.0, 90.0, 116.0, 102.0),
+            (116.0, 90.0, 124.0, 102.0),
+            (124.0, 90.0, 132.0, 102.0),
+            (132.0, 90.0, 140.0, 102.0),
+            (140.0, 90.0, 148.0, 102.0),
+            (148.0, 90.0, 156.0, 102.0),
+            (156.0, 90.0, 164.0, 102.0),
+        ),
+    )
+    bar = draft_extractor._Word(
+        (99.0, 100.0, 110.0, 112.0), "\ue06d", "\ue06d",
+        char_bboxes=((99.0, 100.0, 110.0, 112.0),),
+    )
+    denominator = draft_extractor._Word(
+        (102.0, 116.0, 110.0, 128.0), "\ue0e6", "\ue0e6",
+        char_bboxes=((102.0, 116.0, 110.0, 128.0),),
+    )
+    decoder = _decoder(numerator, bar, denominator)
+
+    normalized = draft_extractor._normalize_fractions(
+        [numerator, bar, denominator], decoder,
+    )
+
+    joined = "".join(word.text for word in normalized if not word.suppressed)
+    assert r"\frac{a}{b}" in joined
+    assert "[[formula:c=6]]" in joined
+    assert not any(0xE000 <= ord(char) <= 0xF8FF for char in joined)
+    assert decoder.unknown == set()
+
+
 def test_plausible_detached_superscript_outside_safe_ratio_fails_closed() -> None:
     # Given: a detached digit with plausible stack geometry but a 0.75 height ratio.
     base = draft_extractor._Word(

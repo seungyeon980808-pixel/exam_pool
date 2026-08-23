@@ -75,6 +75,44 @@ def test_detect_arrangement_classifies_panel_geometry(
     assert arrangement.value == expected
 
 
+def test_order_panel_bboxes_reads_left_stack_and_right_panel_as_ga_na_da() -> None:
+    # Given: two left-column scenes and a right panel whose top edge is slightly higher.
+    boxes = (
+        (276.36, 760.321, 391.56, 868.321),
+        (114.78, 764.041, 265.98, 807.841),
+        (114.78, 820.861, 265.98, 864.661),
+    )
+
+    ordered = routing.order_panel_bboxes(boxes, models.FigureArrangement.GRID)
+
+    assert ordered == (
+        (114.78, 764.041, 265.98, 807.841),
+        (114.78, 820.861, 265.98, 864.661),
+        (276.36, 760.321, 391.56, 868.321),
+    )
+
+
+def test_route_figure_keeps_unlabeled_three_images_as_one_captionless_composite(
+    tmp_path: Path,
+) -> None:
+    # Given: three adjacent illustration objects with no (가)/(나)/(다) or A/B/C labels.
+    boxes = (
+        (0.0, 0.0, 90.0, 120.0),
+        (110.0, 0.0, 200.0, 120.0),
+        (220.0, 0.0, 310.0, 120.0),
+    )
+    source = source_artifact(tmp_path, SourceArtifactSpec(
+        name="unlabeled-triple", panel_bboxes=boxes, captions=(),
+        drawing_count=0, image_count=3,
+    ))
+
+    routed = routing.route_figure("전자기 유도 현상을 활용하는 것만을 고른 것은?", source)
+
+    assert len(routed.figure_assets) == 1
+    assert routed.figure_assets[0].metadata.caption_text == ""
+    assert routed.manual_review_required is False
+
+
 def test_route_figure_builds_three_captionless_grid_assets_with_complete_metadata(
     tmp_path: Path,
 ) -> None:
@@ -127,6 +165,19 @@ def test_route_figure_requires_review_when_three_labels_have_only_single_panel_e
     assert "panel evidence does not match expected count" in routed.figure_assets[0].metadata.review_reasons
 
 
+def test_unlabeled_two_panels_receive_static_pair_captions(tmp_path: Path) -> None:
+    boxes = ((0.0, 0.0, 140.0, 260.0), (160.0, 0.0, 300.0, 260.0))
+    source = source_artifact(tmp_path, SourceArtifactSpec(
+        name="pair", panel_bboxes=boxes, captions=(),
+        drawing_count=0, image_count=1,
+    ))
+
+    routed = routing.route_figure("그림은 두 경계를 나타낸 것이다.", source)
+
+    assert [asset.metadata.caption_text for asset in routed.figure_assets] == ["(가)", "(나)"]
+    assert routed.manual_review_required is False
+
+
 @pytest.mark.parametrize(
     ("passage", "boxes"),
     [
@@ -155,10 +206,11 @@ def test_route_figure_never_emits_gap_inferred_panels_without_object_evidence(
     assert "panel evidence unavailable" in routed.figure_assets[0].metadata.review_reasons
 
 
-def test_route_figure_requires_caption_evidence_for_explicit_labeled_panels(
+def test_route_figure_maps_source_labels_to_explicit_panels_without_caption_geometry(
     tmp_path: Path,
 ) -> None:
-    # Given: two object-backed panels are explicit, but their referenced captions are absent.
+    # Given: two object-backed panels are explicit, while the PDF stores their labels
+    # outside the embedded image objects.
     source = source_artifact(tmp_path, SourceArtifactSpec(
         name="caption-missing",
         panel_bboxes=((0.0, 0.0, 140.0, 300.0), (160.0, 0.0, 300.0, 300.0)),
@@ -168,10 +220,12 @@ def test_route_figure_requires_caption_evidence_for_explicit_labeled_panels(
     # When: routing sees passage labels that require caption identity.
     routed = routing.route_figure("(가)와 (나)를 비교한다.", source)
 
-    # Then: geometry alone cannot authorize a captionless HWP handoff.
+    # Then: authoritative object order plus authoritative source labels is enough to
+    # keep both panels and supply the static template captions.
     assert len(routed.assets) == 2
-    assert routed.manual_review_required is True
-    assert "caption geometry unavailable" in routed.figure_assets[0].metadata.review_reasons
+    assert routed.manual_review_required is False
+    assert [asset.metadata.caption_text for asset in routed.figure_assets] == ["(가)", "(나)"]
+    assert all(asset.metadata.caption_bbox is None for asset in routed.figure_assets)
 
 
 def test_route_figure_keeps_authoritative_panels_when_passage_starts_with_daeumeun(

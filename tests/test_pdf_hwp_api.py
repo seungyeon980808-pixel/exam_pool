@@ -4,6 +4,7 @@ import sqlite3
 from pathlib import Path
 
 import pytest
+import fitz
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -15,6 +16,22 @@ from app.pdf_hwp_pipeline import (
     DetectionResult,
     InvalidCropError,
 )
+from app.pdf_hwp_raster_ocr import RasterOcrDocument, RasterOcrWord
+
+
+def _fake_raster_ocr(payload: bytes, extension: str, *, image_path: Path) -> RasterOcrDocument:
+    del image_path
+    with fitz.open(stream=payload, filetype=extension) as image_document:
+        normalized = image_document.convert_to_pdf()
+    return RasterOcrDocument(normalized, (
+        RasterOcrWord("6. 물체 A가 운동한다.", (15, 15, 220, 30), 0.99),
+        RasterOcrWord("이에 대한 설명으로 옳은 것은?", (15, 75, 225, 90), 0.99),
+        RasterOcrWord("① 1", (15, 105, 42, 120), 0.99),
+        RasterOcrWord("② 2", (58, 105, 85, 120), 0.99),
+        RasterOcrWord("③ 3", (101, 105, 128, 120), 0.99),
+        RasterOcrWord("④ 4", (144, 105, 171, 120), 0.99),
+        RasterOcrWord("⑤ 5", (187, 105, 214, 120), 0.99),
+    ))
 
 
 @pytest.fixture
@@ -42,7 +59,17 @@ def test_conversion_schema_is_isolated_from_authoring(tmp_path: Path, monkeypatc
         tables = {row[0] for row in connection.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"
         )}
-    assert {"conversion_job", "conversion_item", "conversion_asset", "conversion_output"} <= tables
+        assert {"conversion_job", "conversion_item", "conversion_asset", "conversion_output"} <= tables
+
+
+def test_runtime_contract_advertises_editable_raster_ocr(client: TestClient) -> None:
+    response = client.get("/api/pdf-hwp/runtime")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "contract_version": 2,
+        "raster_editable_ocr": True,
+    }
 
 
 def test_create_upload_and_get_job_when_pdf_is_valid(client: TestClient) -> None:
@@ -87,6 +114,52 @@ def test_upload_rejects_malformed_pdf_without_partial_state(client: TestClient) 
     assert body["error"] is None
 
 
+def test_upload_accepts_png_and_normalizes_it_to_a_raster_pdf(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(routes_pdf_hwp.pdf_hwp_raster_ocr, "recognize_raster_document", _fake_raster_ocr)
+    job_id = client.post("/api/pdf-hwp/jobs", json={}).json()["id"]
+    pixmap = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 320, 180), False)
+    pixmap.clear_with(255)
+
+    response = client.post(
+        f"/api/pdf-hwp/jobs/{job_id}/upload",
+        files={"file": ("question.png", pixmap.tobytes("png"), "image/png")},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source_filename"] == "question.png"
+    with fitz.open(body["source_path"]) as document:
+        assert document.page_count == 1
+        assert document[0].get_images()
+
+
+def test_png_detection_builds_an_editable_draft_with_a_separate_material_crop(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(routes_pdf_hwp.pdf_hwp_raster_ocr, "recognize_raster_document", _fake_raster_ocr)
+    job_id = client.post("/api/pdf-hwp/jobs", json={}).json()["id"]
+    pixmap = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 320, 180), False)
+    pixmap.clear_with(255)
+    upload = client.post(
+        f"/api/pdf-hwp/jobs/{job_id}/upload",
+        files={"file": ("question.png", pixmap.tobytes("png"), "image/png")},
+    )
+
+    detected = client.post(f"/api/pdf-hwp/jobs/{job_id}/detect")
+
+    assert upload.status_code == 200
+    assert detected.status_code == 200
+    body = detected.json()
+    assert len(body["items"]) == 1
+    assert body["items"][0]["status"] == "ready"
+    assert "물체 A가 운동" in body["items"][0]["draft"]["palette_markdown"]
+    assert "수능원문1대사진" not in body["items"][0]["draft"]["palette_markdown"]
+    assert any(asset["role"] == "source_crop" for asset in body["assets"])
+    assert any(asset["role"] == "figure" for asset in body["assets"])
+
+
 def test_output_download_is_scoped_to_owning_job(client: TestClient, tmp_path: Path) -> None:
     # Given: two jobs and one persisted output owned by the first.
     first = client.post("/api/pdf-hwp/jobs", json={}).json()["id"]
@@ -94,6 +167,10 @@ def test_output_download_is_scoped_to_owning_job(client: TestClient, tmp_path: P
     output_path = tmp_path / "result.hwp"
     output_path.write_bytes(b"HWP output")
     with db.transaction() as connection:
+        connection.execute(
+            "UPDATE conversion_job SET source_filename='p1_2021_06.pdf' WHERE id=?",
+            (first,),
+        )
         output_id = connection.execute(
             "INSERT INTO conversion_output(job_id,kind,status,file_path,sha256,size_bytes) "
             "VALUES(?, 'hwp', 'ready', ?, 'abc', ?)",
@@ -107,6 +184,7 @@ def test_output_download_is_scoped_to_owning_job(client: TestClient, tmp_path: P
     # Then: only the owning job can retrieve it.
     assert owned.status_code == 200
     assert owned.content == b"HWP output"
+    assert "p1_2021_06_converted.hwp" in owned.headers["content-disposition"]
     assert foreign.status_code == 404
 
 

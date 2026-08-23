@@ -17,6 +17,7 @@ from .pdf_hwp_models import (
     JobRead,
     OutputRead,
 )
+from .pdf_hwp_serializer import serialize_draft
 
 
 def _error(code: str, message: str) -> ErrorRead | None:
@@ -33,18 +34,47 @@ def _metadata_map(raw: str) -> dict[str, JsonValue]:
     return value if isinstance(value, dict) else {}
 
 
+def _json_list(raw: str) -> list[JsonValue]:
+    try:
+        value = json.loads(raw or "[]")
+    except (TypeError, json.JSONDecodeError):
+        return []
+    return value if isinstance(value, list) else []
+
+
 def _read_job(connection: sqlite3.Connection, job_id: int) -> JobRead | None:
     row = connection.execute("SELECT * FROM conversion_job WHERE id=?", (job_id,)).fetchone()
     if row is None:
         return None
-    items = [ItemRead(
-        id=item["id"], ord=item["ord"], source_page=item["source_page"],
-        source_number=item["source_number"], bbox=tuple(json.loads(item["bbox_json"])),
-        status=item["status"], selected=bool(item["selected"]), draft=_json_map(item["draft_json"]),
-        error=_error(item["error_code"], item["error_message"]), revision=item["revision"],
-    ) for item in connection.execute(
+    items = []
+    for item in connection.execute(
         "SELECT * FROM conversion_item WHERE job_id=? ORDER BY ord,id", (job_id,),
-    )]
+    ):
+        draft = _json_map(item["draft_json"])
+        draft.setdefault("source_text", str(draft.get("source_text") or ""))
+        draft.setdefault("source_bbox", json.loads(item["bbox_json"]))
+        draft.setdefault("materials", [])
+        draft.setdefault("bogi", [])
+        draft.setdefault("choices", [])
+        items.append(ItemRead(
+            id=item["id"], ord=item["ord"], source_page=item["source_page"],
+            source_number=item["source_number"], bbox=tuple(json.loads(item["bbox_json"])),
+            status=item["status"], selected=bool(item["selected"]), draft=draft,
+            error=_error(item["error_code"], item["error_message"]), revision=item["revision"],
+            question_number=item["question_number"] or item["source_number"],
+            domain=item["domain"] or str(draft.get("domain") or ""),
+            type_id=item["type_id"] or str(draft.get("type_id") or ""),
+            type_version=item["type_version"] or str(draft.get("type_version") or "1.0"),
+            response_type=item["response_type"] or str(draft.get("response_type") or "matching"),
+            asset_count=int(item["asset_count"] or len(draft.get("materials") or [])),
+            detection_status=item["detection_status"] or str(draft.get("detection_status") or item["status"]),
+            conversion_status=item["conversion_status"] or str(draft.get("conversion_status") or "pending"),
+            confirmed=bool(item["confirmed"]),
+            confirmed_at=item["confirmed_at"] or None,
+            source_text=str(draft.get("source_text") or ""),
+            manual_blocks=_json_list(item["manual_blocks_json"]),
+            unplaced_materials=_json_list(item["unplaced_materials_json"]),
+        ))
     assets = [AssetRead(
         id=asset["id"], item_id=asset["item_id"], role=asset["role"],
         file_path=asset["file_path"], sha256=asset["sha256"], media_type=asset["media_type"],
@@ -60,13 +90,17 @@ def _read_job(connection: sqlite3.Connection, job_id: int) -> JobRead | None:
         "SELECT * FROM conversion_output WHERE job_id=? ORDER BY id", (job_id,),
     )]
     ready_items = [item for item in items if item.status == "ready"]
-    failed_items = [item for item in items if item.status == "failed"]
+    failed_items = [item for item in items if item.status in {"failed", "manual_required", "conversion_failed"}]
     selected_ready = [item for item in ready_items if item.selected]
+    selected_confirmed = [
+        item for item in selected_ready
+        if item.confirmed or (not item.domain and not item.type_id)
+    ]
     capabilities = JobCapabilities(
         review_items=bool(ready_items),
-        typeset_selected=bool(selected_ready) and all(
-            str(item.draft.get("palette_markdown") or "").strip()
-            for item in selected_ready
+        typeset_selected=bool(selected_confirmed) and all(
+            (serialize_draft(item) if item.confirmed else str(item.draft.get("palette_markdown") or "")).strip()
+            for item in selected_confirmed
         ),
         retry_failed=bool(failed_items) or row["status"] == "failed",
     )
@@ -76,6 +110,17 @@ def _read_job(connection: sqlite3.Connection, job_id: int) -> JobRead | None:
         source_sha256=row["source_sha256"], error=_error(row["error_code"], row["error_message"]),
         revision=row["revision"], created_at=row["created_at"], updated_at=row["updated_at"],
         capabilities=capabilities, items=items, assets=assets, outputs=outputs,
+        detection_progress=int(row["detection_progress"] or 0),
+        generation_progress=int(row["generation_progress"] or 0),
+        current_item_number=row["current_item_number"],
+        selection_snapshot=_json_list(row["selection_snapshot_json"]),
+        selection_snapshot_at=row["selection_snapshot_at"] or None,
+        warnings=[
+            f"{item.question_number or item.ord}번 문항에 미배치 자료가 {len(item.unplaced_materials)}개 있습니다."
+            for item in items if item.unplaced_materials
+        ],
+        async_typeset=True,
+        async_detection=True,
     )
 
 
@@ -105,6 +150,29 @@ def list_jobs() -> list[JobRead]:
             "SELECT id FROM conversion_job ORDER BY id DESC"
         )]
         return [job for job_id in ids if (job := _read_job(connection, job_id)) is not None]
+
+
+def cancel_job(job_id: int) -> JobRead | None:
+    with db.transaction() as connection:
+        connection.execute(
+            "UPDATE conversion_job SET status='cancelled',error_code='cancelled',"
+            "error_message='사용자가 작업을 취소했습니다.',updated_at=datetime('now','localtime') WHERE id=?",
+            (job_id,),
+        )
+        connection.execute(
+            "UPDATE conversion_operation SET status='cancelled',updated_at=datetime('now','localtime') "
+            "WHERE job_id=? AND status IN ('queued','running')", (job_id,),
+        )
+        return _read_job(connection, job_id)
+
+
+def delete_job(job_id: int) -> bool:
+    with db.transaction() as connection:
+        row = connection.execute("SELECT id FROM conversion_job WHERE id=?", (job_id,)).fetchone()
+        if row is None:
+            return False
+        connection.execute("DELETE FROM conversion_job WHERE id=?", (job_id,))
+        return True
 
 
 def attach_source(job_id: int, filename: str, path: Path, sha256: str) -> JobRead | None:
@@ -155,16 +223,17 @@ def finish_detection(job_id: int) -> JobRead | None:
             "SELECT COUNT(*) FROM conversion_item WHERE job_id=?", (job_id,),
         ).fetchone()[0]
         failed = connection.execute(
-            "SELECT COUNT(*) FROM conversion_item WHERE job_id=? AND status='failed'", (job_id,),
+            "SELECT COUNT(*) FROM conversion_item WHERE job_id=? AND status IN ('failed','manual_required','conversion_failed')",
+            (job_id,),
         ).fetchone()[0]
         if failed == 0:
             status, code, message = "review", "", ""
         elif failed == total:
             status, code = "failed", "crop_all_failed"
-            message = f"변환 가능한 문항이 없습니다. 실패한 {failed}개 문항의 상세 원인을 확인하세요."
+            message = f"실패한 {failed}개 문항도 자동 추출 원문으로 HWP에 보존합니다."
         else:
             status, code = "partial_failure", "crop_partial_failure"
-            message = f"성공 {total - failed}개 · 실패 {failed}개. 성공한 문항은 HWP로 만들 수 있습니다."
+            message = f"성공 {total - failed}개 · 실패 {failed}개. 실패 문항도 자동 추출 원문으로 함께 보존합니다."
         connection.execute(
             "UPDATE conversion_job SET status=?,error_code=?,error_message=?,"
             "updated_at=datetime('now','localtime') WHERE id=?",
@@ -182,11 +251,14 @@ def fail_job(job_id: int, code: str, message: str) -> JobRead | None:
         return _read_job(connection, job_id)
 
 
-def begin_typeset(job_id: int) -> JobRead | None:
+def begin_typeset(job_id: int, selection: list[int] | None = None) -> JobRead | None:
     with db.transaction() as connection:
         connection.execute(
             "UPDATE conversion_job SET status='typesetting',error_code='',error_message='',"
-            "revision=revision+1,updated_at=datetime('now','localtime') WHERE id=?", (job_id,),
+            "generation_progress=0,current_item_number=NULL,selection_snapshot_json=?,"
+            "selection_snapshot_at=datetime('now','localtime'),revision=revision+1,"
+            "updated_at=datetime('now','localtime') WHERE id=?",
+            (json.dumps(selection or [], ensure_ascii=False), job_id),
         )
         return _read_job(connection, job_id)
 
@@ -204,16 +276,39 @@ def finish_typeset(job_id: int, paths: tuple[Path, Path]) -> JobRead | None:
                 (job_id, kind, str(path), hashlib.sha256(payload).hexdigest(), len(payload)),
             )
         failed = connection.execute(
-            "SELECT COUNT(*) FROM conversion_item WHERE job_id=? AND status='failed'", (job_id,),
+            "SELECT COUNT(*) FROM conversion_item WHERE job_id=? AND status IN ('failed','manual_required','conversion_failed')",
+            (job_id,),
         ).fetchone()[0]
         status = "partial_failure" if failed else "completed"
         code = "crop_partial_failure" if failed else ""
         message = (
-            f"성공한 문항은 출력했습니다. 실패한 {failed}개 문항은 상세 원인을 확인하세요."
+            f"성공한 문항은 편집 가능하게 출력했습니다. 실패한 {failed}개 문항은 자동 추출 원문으로 보존했습니다."
             if failed else ""
         )
         connection.execute(
             "UPDATE conversion_job SET status=?,error_code=?,error_message=?,"
-            "updated_at=datetime('now','localtime') WHERE id=?", (status, code, message, job_id),
+            "generation_progress=100,current_item_number=NULL,updated_at=datetime('now','localtime') WHERE id=?",
+            (status, code, message, job_id),
+        )
+        return _read_job(connection, job_id)
+
+
+def mark_item_conversion_failed(job_id: int, item_number: int, detail: str) -> JobRead | None:
+    with db.transaction() as connection:
+        connection.execute(
+            "UPDATE conversion_item SET status='conversion_failed',selected=0,confirmed=0,"
+            "conversion_status='failed',error_code='item_conversion_failed',error_message=?,"
+            "revision=revision+1,updated_at=datetime('now','localtime') "
+            "WHERE job_id=? AND (source_number=? OR question_number=?)",
+            (detail, job_id, item_number, item_number),
+        )
+        remaining = connection.execute(
+            "SELECT COUNT(*) FROM conversion_item WHERE job_id=? AND status='ready' AND selected=1",
+            (job_id,),
+        ).fetchone()[0]
+        status = "partial_failure" if remaining else "failed"
+        connection.execute(
+            "UPDATE conversion_job SET status=?,error_code='item_conversion_failed',error_message=?,"
+            "updated_at=datetime('now','localtime') WHERE id=?", (status, detail, job_id),
         )
         return _read_job(connection, job_id)

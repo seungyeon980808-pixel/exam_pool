@@ -335,6 +335,11 @@ CREATE TABLE IF NOT EXISTS conversion_job (
     source_sha256   TEXT NOT NULL DEFAULT '',
     error_code      TEXT NOT NULL DEFAULT '',
     error_message   TEXT NOT NULL DEFAULT '',
+    detection_progress INTEGER NOT NULL DEFAULT 0,
+    generation_progress INTEGER NOT NULL DEFAULT 0,
+    current_item_number INTEGER,
+    selection_snapshot_json TEXT NOT NULL DEFAULT '[]',
+    selection_snapshot_at TEXT NOT NULL DEFAULT '',
     revision        INTEGER NOT NULL DEFAULT 0,
     created_at      TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     updated_at      TEXT NOT NULL DEFAULT (datetime('now','localtime'))
@@ -352,6 +357,18 @@ CREATE TABLE IF NOT EXISTS conversion_item (
     draft_json    TEXT NOT NULL DEFAULT '{}',
     error_code    TEXT NOT NULL DEFAULT '',
     error_message TEXT NOT NULL DEFAULT '',
+    question_number INTEGER,
+    domain        TEXT NOT NULL DEFAULT '',
+    type_id       TEXT NOT NULL DEFAULT '',
+    type_version  TEXT NOT NULL DEFAULT '1.0',
+    response_type TEXT NOT NULL DEFAULT 'matching',
+    asset_count   INTEGER NOT NULL DEFAULT 0,
+    detection_status TEXT NOT NULL DEFAULT 'detected',
+    conversion_status TEXT NOT NULL DEFAULT 'pending',
+    confirmed     INTEGER NOT NULL DEFAULT 0,
+    confirmed_at  TEXT NOT NULL DEFAULT '',
+    manual_blocks_json TEXT NOT NULL DEFAULT '[]',
+    unplaced_materials_json TEXT NOT NULL DEFAULT '[]',
     revision      INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     updated_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
@@ -388,6 +405,22 @@ CREATE TABLE IF NOT EXISTS conversion_output (
 CREATE INDEX IF NOT EXISTS idx_conversion_item_job ON conversion_item(job_id, ord);
 CREATE INDEX IF NOT EXISTS idx_conversion_asset_job ON conversion_asset(job_id, item_id);
 CREATE INDEX IF NOT EXISTS idx_conversion_output_job ON conversion_output(job_id, id);
+
+CREATE TABLE IF NOT EXISTS conversion_operation (
+    id              TEXT PRIMARY KEY,
+    job_id          INTEGER NOT NULL REFERENCES conversion_job(id) ON DELETE CASCADE,
+    kind            TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'queued',
+    progress        INTEGER NOT NULL DEFAULT 0,
+    current_item_number INTEGER,
+    selection_snapshot_json TEXT NOT NULL DEFAULT '[]',
+    error_code      TEXT NOT NULL DEFAULT '',
+    error_message   TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversion_operation_job ON conversion_operation(job_id, created_at);
 
 CREATE INDEX IF NOT EXISTS idx_prop_std ON proposition(standard_code);
 CREATE INDEX IF NOT EXISTS idx_prop_unit ON proposition(unit_no);
@@ -513,6 +546,25 @@ def _migrate(conn: sqlite3.Connection) -> None:
 
     _add_column(conn, "question", "title", "TEXT NOT NULL DEFAULT ''")
     _add_column(conn, "conversion_item", "selected", "INTEGER NOT NULL DEFAULT 1")
+    # PDF→HWP structured review fields. Existing palette-only drafts remain valid
+    # and are upgraded lazily by the item store when first read or edited.
+    _add_column(conn, "conversion_job", "detection_progress", "INTEGER NOT NULL DEFAULT 0")
+    _add_column(conn, "conversion_job", "generation_progress", "INTEGER NOT NULL DEFAULT 0")
+    _add_column(conn, "conversion_job", "current_item_number", "INTEGER")
+    _add_column(conn, "conversion_job", "selection_snapshot_json", "TEXT NOT NULL DEFAULT '[]'")
+    _add_column(conn, "conversion_job", "selection_snapshot_at", "TEXT NOT NULL DEFAULT ''")
+    _add_column(conn, "conversion_item", "question_number", "INTEGER")
+    _add_column(conn, "conversion_item", "domain", "TEXT NOT NULL DEFAULT ''")
+    _add_column(conn, "conversion_item", "type_id", "TEXT NOT NULL DEFAULT ''")
+    _add_column(conn, "conversion_item", "type_version", "TEXT NOT NULL DEFAULT '1.0'")
+    _add_column(conn, "conversion_item", "response_type", "TEXT NOT NULL DEFAULT 'matching'")
+    _add_column(conn, "conversion_item", "asset_count", "INTEGER NOT NULL DEFAULT 0")
+    _add_column(conn, "conversion_item", "detection_status", "TEXT NOT NULL DEFAULT 'detected'")
+    _add_column(conn, "conversion_item", "conversion_status", "TEXT NOT NULL DEFAULT 'pending'")
+    _add_column(conn, "conversion_item", "confirmed", "INTEGER NOT NULL DEFAULT 0")
+    _add_column(conn, "conversion_item", "confirmed_at", "TEXT NOT NULL DEFAULT ''")
+    _add_column(conn, "conversion_item", "manual_blocks_json", "TEXT NOT NULL DEFAULT '[]'")
+    _add_column(conn, "conversion_item", "unplaced_materials_json", "TEXT NOT NULL DEFAULT '[]'")
     _add_column(conn, "question", "image_choices", "INTEGER NOT NULL DEFAULT 0")
     _add_column(conn, "question", "updated_at", "TEXT NOT NULL DEFAULT ''")
     conn.execute(

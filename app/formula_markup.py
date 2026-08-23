@@ -198,7 +198,14 @@ def to_hwppalette_markup(text: str) -> str:
     """Escape prose braces while preserving formulas as HwpPalette rich runs."""
     formulas: list[str] = []
     def hold(match: re.Match) -> str:
-        formulas.append(match.group(1).strip())
+        source = match.group(1).strip()
+        # Hancom's equation grammar keeps consuming an unbraced script through
+        # the following operator/identifier (``d_2=`` became subscript ``2=``).
+        # Preserve the authoring grammar while making every single-character
+        # sub/superscript boundary explicit at the HwpPalette export boundary.
+        source = re.sub(r"_(?!\{)([A-Za-z0-9])", r"_{\1}", source)
+        source = re.sub(r"\^(?!\{)([A-Za-z0-9])", r"^{\1}", source)
+        formulas.append(source)
         return f"\u0000FORMULA{len(formulas) - 1}\u0000"
     protected = FORMULA_RE.sub(hold, text or "").replace("}", "\\}")
     for index, source in enumerate(formulas):

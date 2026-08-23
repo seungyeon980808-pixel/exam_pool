@@ -250,6 +250,8 @@ class HwpPaletteProvider:
             return authoritative_matches[0]
         if len(authoritative_matches) > 1:
             return None
+        if self._authoritative_photo_dirs:
+            return None
         authoritative_keys = {
             str(path).casefold() for path in self._authoritative_photo_dirs
         }
@@ -304,7 +306,7 @@ class HwpPaletteProvider:
         self.register_photo_dirs((folder,))
 
     def register_photo_dirs(self, folders: tuple[Path, ...]) -> None:
-        """Make current conversion folders authoritative for the next render."""
+        """Replace photo lookup with the current conversion folders."""
         if not self.available():
             raise HwpPaletteError("hwpPalette 설치 위치를 찾지 못했습니다.")
         current: list[Path] = []
@@ -315,12 +317,8 @@ class HwpPaletteProvider:
             if key not in seen:
                 seen.add(key)
                 current.append(path)
-        fallback = [
-            path for path in self.photo_dirs()
-            if str(path).casefold() not in seen
-        ]
         config = self._config()
-        ordered = [str(path) for path in (*current, *fallback)]
+        ordered = [str(path) for path in current]
         config["photo_dirs"] = ordered
         config["photo_dir"] = ordered[0] if ordered else ""
         config_path = self._data_root() / "config.json"
@@ -588,6 +586,9 @@ class HwpPaletteProvider:
                 ) from exc
             result = subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
             if result.returncode:
+                _cleanup_timed_out_process(
+                    process, hwp_pid_path, is_windows=os.name == "nt",
+                )
                 detail = (result.stderr or result.stdout or "알 수 없는 오류").strip()[-1800:]
                 raise HwpPaletteError(f"HWP 미리보기 조판에 실패했습니다.\n{detail}")
             if not hwp_path.is_file() or not pdf_path.is_file():

@@ -113,15 +113,17 @@ def test_pdf_hwp_full_review_and_typeset_flow(tmp_path: Path) -> None:
             page.locator("#pdfHwpFile").set_input_files(pdf)
             page.get_by_role("button", name="변환 시작").click()
             page.locator("#pdfHwpStatus").get_by_text("문항 검출 완료", exact=True).wait_for()
-            assert page.get_by_role("button", name="검토한 문항으로 HWP 만들기").is_disabled()
+            page.get_by_text("변환 상세 보기", exact=True).click()
+            assert page.locator("#pdfHwpTypeset").is_disabled()
 
-            editor = page.get_by_label("20번 HWP 변환 내용")
+            editor = page.get_by_label("20번 HwpPalette용 조판 텍스트")
             editor.fill("\\direct\\\n20\n빛의 굴절")
             page.get_by_role("button", name="문항 내용 저장").click()
-            page.get_by_role("button", name="검토한 문항으로 HWP 만들기").click()
+            page.locator("#pdfHwpTypeset").click()
 
             page.locator("#pdfHwpStatus").get_by_text("변환 완료", exact=True).wait_for()
-            assert page.get_by_role("link", name="편집용 HWP 받기").get_attribute("href").endswith("/outputs/81")
+            assert page.get_by_role("link", name="exam_converted.hwp 받기").get_attribute("href").endswith("/outputs/81")
+            page.get_by_text("이전 변환 작업", exact=True).click()
             assert page.get_by_role("link", name="확인용 PDF 받기").get_attribute("href").endswith("/outputs/82")
 
             listed_jobs.append(_job("partial_failure", palette_markdown="ready"))
@@ -130,8 +132,10 @@ def test_pdf_hwp_full_review_and_typeset_flow(tmp_path: Path) -> None:
             page.locator("#pdfHwpStatus").get_by_text("일부 문항 변환 실패", exact=True).wait_for()
             assert page.locator("#pdfHwpStatus").get_attribute("role") == "alert"
             page.get_by_role("button", name="실패 단계 다시 시도").click()
-            page.locator("#pdfHwpStatus").get_by_text("문항 검출 완료", exact=True).wait_for()
-            assert page.locator(".ph-job-state").get_by_text("문항 검출 완료", exact=True).is_visible()
+            page.locator("#pdfHwpStatus").get_by_text("변환 완료", exact=True).wait_for()
+            page.get_by_text("변환 상세 보기", exact=True).click()
+            page.get_by_text("이전 변환 작업", exact=True).click()
+            assert page.locator(".ph-job-state").get_by_text("변환 완료", exact=True).is_visible()
 
             successful_uploads = scenario["upload_calls"]
             scenario["upload_fails"] = True
@@ -177,6 +181,111 @@ def test_pdf_hwp_full_review_and_typeset_flow(tmp_path: Path) -> None:
             page.get_by_role("button", name="PDF→HWP").press("Enter")
             page.wait_for_timeout(1900)
             assert detail_calls == 1
+            browser.close()
+    finally:
+        server.terminate()
+        server.wait(timeout=5)
+
+
+def test_clipboard_image_can_be_pasted_and_converted() -> None:
+    # Given: the standalone converter is open with an image on the clipboard.
+    port = _free_port()
+    server = subprocess.Popen(
+        [sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1"],
+        cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    try:
+        _wait_for_server(f"http://127.0.0.1:{port}/static/pdf-hwp.html")
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch()
+            page = browser.new_page(viewport={"width": 1280, "height": 900})
+            uploads = []
+
+            def api(route: Route) -> None:
+                path = route.request.url.split("/api/pdf-hwp", 1)[1]
+                if path == "/runtime":
+                    route.fulfill(json={"contract_version": 2, "raster_editable_ocr": True})
+                elif route.request.method == "GET" and path == "/jobs":
+                    route.fulfill(json={"items": []})
+                elif path == "/jobs" and route.request.method == "POST":
+                    route.fulfill(status=201, json=_job("draft"))
+                elif path.endswith("/upload"):
+                    uploads.append(route.request.post_data_buffer)
+                    route.fulfill(json=_job("uploaded"))
+                elif path.endswith("/detect"):
+                    route.fulfill(json=_job("review", palette_markdown="ready"))
+                elif path.endswith("/typeset"):
+                    route.fulfill(json=_job("completed", palette_markdown="ready", outputs=True))
+                else:
+                    route.fulfill(status=404, json={"detail": "unexpected test route"})
+
+            page.route("**/api/pdf-hwp/**", api)
+            page.goto(f"http://127.0.0.1:{port}/static/pdf-hwp.html")
+
+            # When: Ctrl+V delivers a PNG clipboard item and conversion is started.
+            page.evaluate("""
+              const transfer = new DataTransfer();
+              transfer.items.add(new File([new Uint8Array([137, 80, 78, 71])], '', {type: 'image/png'}));
+              const input = document.querySelector('#pdfHwpFile');
+              input.focus();
+              input.dispatchEvent(new ClipboardEvent('paste', {clipboardData: transfer, bubbles: true}));
+            """)
+
+            # Then: the pasted image enters the existing upload and conversion flow.
+            assert page.locator("#pdfHwpFileName").get_by_text("clipboard-image.png", exact=True).is_visible()
+            assert page.locator("#pdfHwpStart").is_enabled()
+            page.locator("#pdfHwpStart").click()
+            page.locator("#pdfHwpStatus").get_by_text("변환 완료", exact=True).wait_for()
+            assert len(uploads) == 1
+            assert b'filename="clipboard-image.png"' in uploads[0]
+            browser.close()
+    finally:
+        server.terminate()
+        server.wait(timeout=5)
+
+
+def test_stale_server_blocks_clipboard_image_before_creating_a_job() -> None:
+    port = _free_port()
+    server = subprocess.Popen(
+        [sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1"],
+        cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    try:
+        _wait_for_server(f"http://127.0.0.1:{port}/static/pdf-hwp.html")
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch()
+            page = browser.new_page(viewport={"width": 1280, "height": 900})
+            created_jobs = []
+
+            def api(route: Route) -> None:
+                path = route.request.url.split("/api/pdf-hwp", 1)[1]
+                if route.request.method == "GET" and path == "/jobs":
+                    route.fulfill(json={"items": []})
+                elif path == "/runtime":
+                    route.fulfill(status=404, json={"detail": "Not Found"})
+                elif path == "/jobs" and route.request.method == "POST":
+                    created_jobs.append(True)
+                    route.fulfill(status=201, json=_job("draft"))
+                else:
+                    route.fulfill(status=404, json={"detail": "unexpected test route"})
+
+            page.route("**/api/pdf-hwp/**", api)
+            page.goto(f"http://127.0.0.1:{port}/static/pdf-hwp.html")
+            page.evaluate("""
+              const transfer = new DataTransfer();
+              transfer.items.add(new File([new Uint8Array([137, 80, 78, 71])], '', {type: 'image/png'}));
+              document.querySelector('#pdfHwpFile').dispatchEvent(
+                new ClipboardEvent('paste', {clipboardData: transfer, bubbles: true})
+              );
+            """)
+
+            page.locator("#pdfHwpStart").click()
+
+            page.locator("#pdfHwpStatus").get_by_text(
+                "이미지 편집 변환 서버가 이전 버전입니다. PDF-HWP 앱을 종료한 뒤 다시 실행해 주세요.",
+                exact=True,
+            ).wait_for()
+            assert created_jobs == []
             browser.close()
     finally:
         server.terminate()
@@ -557,7 +666,7 @@ def test_real_server_upload_detect_select_and_review(
             assert page.get_by_role("checkbox", name="21번 문항 선택").is_checked()
             assert page.locator(".ph-selection-count").get_by_text("2개 문항 선택됨", exact=True).is_visible()
             assert page.get_by_role("img", name="20번 원문 자르기 미리보기").evaluate("img => img.complete && img.naturalWidth > 0")
-            assert page.get_by_role("textbox", name="20번 HWP 변환 내용").input_value().startswith("\\direct\\")
+            assert page.get_by_role("textbox", name="20번 HwpPalette용 조판 텍스트").input_value().startswith("\\direct\\")
             assert page.locator("#pdfHwpTypeset").is_enabled()
             page.get_by_role("button", name="선택 해제").click()
             page.locator(".ph-selection-count").get_by_text("0개 문항 선택됨", exact=True).wait_for()
@@ -687,13 +796,13 @@ def test_same_job_review_mutations_follow_user_intent_order(mutation_case: str) 
                 page.wait_for_timeout(1100)
                 assert page.get_by_role("checkbox", name="21번 문항 선택").is_checked() is False
             else:
-                editor = page.get_by_role("textbox", name="20번 HWP 변환 내용")
+                editor = page.get_by_role("textbox", name="20번 HwpPalette용 조판 텍스트")
                 page.get_by_role("checkbox", name="20번 문항 선택").check()
                 editor.fill("new")
                 page.locator(".ph-review-item", has=editor).get_by_role("button", name="문항 내용 저장").click()
                 page.wait_for_timeout(1000)
-                assert page.get_by_role("textbox", name="20번 HWP 변환 내용").input_value() == "new"
-                assert "palette_markdown" not in page.evaluate("window.patchBodies[0]")
+                assert page.get_by_role("textbox", name="20번 HwpPalette용 조판 텍스트").input_value() == "new"
+                assert page.evaluate("window.patchBodies[0].palette_markdown") == "new"
             browser.close()
     finally:
         server.terminate()
@@ -835,7 +944,7 @@ def test_typeset_waits_for_pending_review_mutation(mutation_kind: str) -> None:
             if mutation_kind == "checkbox":
                 page.get_by_role("checkbox", name="20번 문항 선택").uncheck()
             else:
-                editor = page.get_by_role("textbox", name="20번 HWP 변환 내용")
+                editor = page.get_by_role("textbox", name="20번 HwpPalette용 조판 텍스트")
                 editor.fill("new draft")
                 page.locator(".ph-review-item", has=editor).get_by_role("button", name="문항 내용 저장").click()
             page.wait_for_function("window.requestOrder.includes('patch-start')")
@@ -916,7 +1025,7 @@ def test_typeset_locks_new_review_mutations_until_response() -> None:
             page.locator('[data-tab="pdf-hwp"]').click()
             page.locator("#pdfHwpTypeset").click()
             assert page.get_by_role("checkbox", name="20번 문항 선택").is_disabled()
-            assert page.get_by_role("textbox", name="20번 HWP 변환 내용").is_disabled()
+            assert page.get_by_role("textbox", name="20번 HwpPalette용 조판 텍스트").is_disabled()
             assert page.get_by_role("button", name="문항 내용 저장").is_disabled()
             assert page.get_by_role("button", name="전체 선택").is_disabled()
             page.wait_for_timeout(200)
@@ -988,7 +1097,7 @@ def test_unsaved_or_failed_draft_edit_blocks_typeset() -> None:
             page.locator('[data-tab="pdf-hwp"]').click()
             typeset = page.locator("#pdfHwpTypeset")
             assert typeset.is_enabled()
-            editor = page.get_by_role("textbox", name="20번 HWP 변환 내용")
+            editor = page.get_by_role("textbox", name="20번 HwpPalette용 조판 텍스트")
             editor.fill("unsaved")
             assert typeset.is_disabled()
             page.evaluate("window.EP.pdfHwpTypeset()")
@@ -1079,7 +1188,7 @@ def test_partial_batch_failure_reconciles_even_when_later_save_fails() -> None:
                 initial,
             )
             page.locator('[data-tab="pdf-hwp"]').click()
-            editor = page.get_by_role("textbox", name="20번 HWP 변환 내용")
+            editor = page.get_by_role("textbox", name="20번 HwpPalette용 조판 텍스트")
             editor.fill("dirty newest")
             page.get_by_role("button", name="선택 해제").click()
             page.locator(".ph-review-item", has=editor).get_by_role("button", name="문항 내용 저장").click()
@@ -1088,7 +1197,7 @@ def test_partial_batch_failure_reconciles_even_when_later_save_fails() -> None:
             assert page.get_by_role("checkbox", name="20번 문항 선택").is_checked() is False
             assert page.get_by_role("checkbox", name="21번 문항 선택").is_checked()
             assert page.locator(".ph-selection-count").get_by_text("1개 문항 선택됨", exact=True).is_visible()
-            assert page.get_by_role("textbox", name="20번 HWP 변환 내용").input_value() == "dirty newest"
+            assert page.get_by_role("textbox", name="20번 HwpPalette용 조판 텍스트").input_value() == "dirty newest"
             assert page.locator("#pdfHwpStatus").get_by_text("save-latest", exact=True).is_visible()
             browser.close()
     finally:
@@ -1133,7 +1242,7 @@ def test_partial_failure_keeps_review_typeset_retry_and_outputs_together() -> No
                 "일부 문항 제외 후 변환 가능", exact=True,
             ).is_visible()
             assert page.get_by_role("checkbox", name="20번 문항 선택").is_checked()
-            assert page.get_by_role("textbox", name="20번 HWP 변환 내용").input_value() == "ready"
+            assert page.get_by_role("textbox", name="20번 HwpPalette용 조판 텍스트").input_value() == "ready"
             current = page.locator("#pdfHwpCurrent")
             current.get_by_text("실패 문항 1개 자세히 보기", exact=True).click()
             assert current.get_by_text("21번 · PDF 4쪽", exact=True).is_visible()

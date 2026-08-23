@@ -6,17 +6,18 @@ import re
 from typing import assert_never
 
 from .pdf_hwp_equation_decode import (
-    bind_leading_superscripts, decode_word, formula_prefix, formula_run, split_structural_words,
-    word_slice,
+    bind_leading_subscripts, bind_leading_superscripts, decode_word, formula_prefix,
+    formula_run, split_structural_words, word_slice,
 )
 from .pdf_hwp_equation_fraction import AmbiguousFractionNumerator, FractionNumerator, fraction_numerator
 from .pdf_hwp_equation_glyphs import FRACTION_BAR, RADICAL_SIGN
-from .pdf_hwp_equation_radical import decode_inline_radical
+from .pdf_hwp_equation_radical import bind_detached_inline_radicands, decode_inline_radical
 from .pdf_hwp_equation_rows import group_rows as rows
 from .pdf_hwp_equation_scripts import bind_detached_superscripts
 from .pdf_hwp_equation_types import (
     EquationDecoder, EquationWord, FORMULA_PREFIX_RE, PUA_RE,
 )
+from .pdf_hwp_equation_vector import bind_vector_accents
 
 
 def _bind_script_stacks(
@@ -70,8 +71,19 @@ def _bind_radicals(
         bars = [
             index for index, word in enumerate(words)
             if FRACTION_BAR in word.raw
-            and radical.bbox[2] - 1 <= word.bbox[0] <= radical.bbox[2] + 2
-            and abs(word.bbox[1] - radical.bbox[1]) <= 5
+            and (
+                (
+                    radical.bbox[2] - 1 <= word.bbox[0] <= radical.bbox[2] + 2
+                    and abs(word.bbox[1] - radical.bbox[1]) <= 5
+                )
+                or (
+                    word.bbox[0] <= radical.bbox[0]
+                    and radical.bbox[2] <= word.bbox[2]
+                    and 2 <= (
+                        radical.bbox[1] + radical.bbox[3] - word.bbox[1] - word.bbox[3]
+                    ) / 2 <= 12
+                )
+            )
         ]
         if len(bars) != 1:
             decoder.unknown.add(f"ambiguous-radical@{radical.bbox[0]:.2f},{radical.bbox[1]:.2f}")
@@ -81,7 +93,16 @@ def _bind_radicals(
             index for index, word in enumerate(words)
             if index not in {radical_index, bar_index}
             and bar.bbox[0] - 1 <= word.bbox[0] <= bar.bbox[2] + 1
-            and 2 <= word.bbox[1] - bar.bbox[1] <= 10
+            and word.bbox[0] >= radical.bbox[2] - 1
+            and (
+                2 <= word.bbox[1] - bar.bbox[1] <= 10
+                or (
+                    bar.bbox[0] < radical.bbox[0] - 1
+                    and 2 <= (
+                        word.bbox[1] + word.bbox[3] - bar.bbox[1] - bar.bbox[3]
+                    ) / 2 <= 12
+                )
+            )
             and bool(formula_run(word, decoder))
         ]
         if len(radicands) != 1:
@@ -96,10 +117,57 @@ def _bind_radicals(
         decoded[radical_index] = replace(
             decoded[radical_index], text=f"[[formula:\\sqrt{{{formula}}}]]{tail}",
         )
-        decoded[bar_index] = replace(decoded[bar_index], suppressed=True)
+        owns_bar = bar.bbox[0] >= radical.bbox[0] - 1
+        decoded[bar_index] = replace(decoded[bar_index], suppressed=owns_bar)
         decoded[radicand_index] = replace(decoded[radicand_index], suppressed=True)
-        consumed_bars.add(bar_index)
+        if owns_bar:
+            consumed_bars.add(bar_index)
     return consumed_bars
+
+
+_DECODED_FORMULA = re.compile(r"^\[\[formula:(.*)\]\](.*)$", re.DOTALL)
+_EBS_COMPACT_FRACTION = re.compile(r"^;(?P<den>\d+)(?P<num>[!@#$%^&*()]);$")
+_EBS_SHIFT_DIGIT = dict(zip("!@#$%^&*()", "1234567890", strict=True))
+
+
+def _compact_fraction(word: EquationWord) -> EquationWord | None:
+    match = _EBS_COMPACT_FRACTION.fullmatch(word.raw)
+    if match is None:
+        return None
+    numerator = _EBS_SHIFT_DIGIT[match.group("num")]
+    denominator = match.group("den")
+    return replace(word, text=f"[[formula:\\frac{{{numerator}}}{{{denominator}}}]]")
+
+
+def _bar_belongs_to_bound_radical(
+    bar: EquationWord, words: list[EquationWord], decoded: list[EquationWord],
+) -> bool:
+    """True when a leftover bar is the packed viniculum of an already-bound radical."""
+    return any(
+        "\\sqrt" in item.text and not item.suppressed
+        and abs(bar.bbox[0] - word.bbox[0]) <= 30
+        and abs(bar.bbox[1] - word.bbox[1]) <= 24
+        for word, item in zip(words, decoded, strict=True)
+    )
+
+
+def _numerator_formula(
+    word: EquationWord, decoded: EquationWord, decoder: EquationDecoder,
+) -> str | None:
+    """Return a unique stacked-fraction numerator, including a bound radical."""
+    if decoded.suppressed:
+        return None
+    bound = _DECODED_FORMULA.fullmatch(decoded.text)
+    if bound is not None and RADICAL_SIGN in word.raw and bound.group(1):
+        return bound.group(1)
+    if FRACTION_BAR in word.raw or RADICAL_SIGN in word.raw:
+        return None
+    if FORMULA_PREFIX_RE.match(word.raw) is None:
+        return None
+    formula = formula_run(word, decoder)
+    if not any(char.isalnum() or char == "\\" or "\u2160" <= char <= "\u216b" for char in formula):
+        return None
+    return formula
 
 
 def _is_overbar_formula(formula: str) -> bool:
@@ -110,11 +178,29 @@ def _is_overbar_formula(formula: str) -> bool:
     ) is not None
 
 
+def _clustered_bar_indices(
+    bar_index: int, bar: EquationWord, words: list[EquationWord],
+) -> list[int]:
+    """Bars that share a header-underline row with this bar."""
+    center = (bar.bbox[1] + bar.bbox[3]) / 2
+    return [
+        index for index, word in enumerate(words)
+        if index != bar_index
+        and FRACTION_BAR in word.raw
+        and RADICAL_SIGN not in word.raw
+        and abs((word.bbox[1] + word.bbox[3]) / 2 - center) <= 4
+    ]
+
+
 def normalize_equations(
     words: list[EquationWord], decoder: EquationDecoder,
 ) -> list[EquationWord]:
+    words = bind_detached_inline_radicands(words)
     words = bind_detached_superscripts(
-        bind_leading_superscripts(split_structural_words(words)), decoder,
+        bind_leading_subscripts(
+            bind_leading_superscripts(split_structural_words(words)),
+        ),
+        decoder,
     )
     for word in words:
         if word.ambiguous_subscript:
@@ -122,7 +208,9 @@ def normalize_equations(
         if word.ambiguous_superscript:
             decoder.unknown.add(f"ambiguous-superscript@{word.bbox[0]:.2f},{word.bbox[1]:.2f}")
     decoded = [
-        decode_inline_radical(word, decoder)
+        compact
+        if (compact := _compact_fraction(word)) is not None
+        else decode_inline_radical(word, decoder)
         if RADICAL_SIGN in word.raw and FRACTION_BAR in word.raw
         else decode_word(
             replace(word, raw=word.raw.replace(FRACTION_BAR, "").replace(RADICAL_SIGN, "")),
@@ -133,9 +221,13 @@ def normalize_equations(
     ]
     _bind_script_stacks(words, decoded, decoder)
     radical_bars = _bind_radicals(words, decoded, decoder)
+    vector_bars = bind_vector_accents(words, decoded, decoder)
     consumed: set[int] = set()
     for bar_index, bar in enumerate(words):
-        if FRACTION_BAR not in bar.raw or RADICAL_SIGN in bar.raw or bar_index in radical_bars:
+        if (
+            FRACTION_BAR not in bar.raw or RADICAL_SIGN in bar.raw
+            or bar_index in radical_bars | vector_bars
+        ):
             continue
         split_index = bar.raw.index(FRACTION_BAR)
         prefix = formula_run(word_slice(bar, 0, split_index), decoder)
@@ -143,9 +235,7 @@ def normalize_equations(
         above = [
             index for index, word in enumerate(words)
             if index not in consumed | {bar_index}
-            and FORMULA_PREFIX_RE.match(word.raw) and FRACTION_BAR not in word.raw
-            and RADICAL_SIGN not in word.raw
-            and any(char.isalnum() or char == "\\" for char in formula_run(word, decoder))
+            and _numerator_formula(word, decoded[index], decoder) is not None
             and bar.bbox[0] - 3 <= word.bbox[0] <= bar.bbox[2] + 3
             and 0 < (bar.bbox[1] + bar.bbox[3] - word.bbox[1] - word.bbox[3]) / 2 < 18
         ]
@@ -169,6 +259,11 @@ def normalize_equations(
                 for candidate in above
             )
             if _is_overbar_formula(overbar_formula) and not has_plain_above:
+                if overbar_tail:
+                    overbar_tail = decode_word(
+                        EquationWord(words[index].bbox, overbar_tail, overbar_tail),
+                        decoder,
+                    ).text
                 decoded[index] = replace(
                     decoded[index], text=f"[[formula:\\bar{{{overbar_formula}}}]]{overbar_tail}",
                 )
@@ -176,44 +271,101 @@ def normalize_equations(
                 consumed.add(index)
                 continue
         if not above:
+            if _bar_belongs_to_bound_radical(bar, words, decoded):
+                decoded[bar_index] = replace(decoded[bar_index], suppressed=True)
+                continue
             decoder.unknown.add("U+E06D")
             continue
         above_index = min(above, key=lambda index: bar.bbox[1] - words[index].bbox[1])
-        formula, below_index = formula_run(words[above_index], decoder), None
+        formula = _numerator_formula(words[above_index], decoded[above_index], decoder) or ""
+        below_index = None
+        extra_below: list[int] = []
         if not denominator:
             below = [
                 index for index, word in enumerate(words)
                 if index not in consumed | {bar_index, above_index}
-                and FRACTION_BAR not in word.raw and RADICAL_SIGN not in word.raw
-                and FORMULA_PREFIX_RE.fullmatch(word.raw)
-                and any(char.isalnum() or char == "\\" for char in formula_run(word, decoder))
+                and FRACTION_BAR not in word.raw
+                and _numerator_formula(word, decoded[index], decoder) is not None
                 and bar.bbox[0] - 3 <= word.bbox[0] <= bar.bbox[2] + 3
                 and 0 < (word.bbox[1] + word.bbox[3] - bar.bbox[1] - bar.bbox[3]) / 2 < 18
             ]
             if below:
-                below_index = min(below, key=lambda index: words[index].bbox[1])
-                denominator = formula_run(words[below_index], decoder)
+                primary = min(below, key=lambda index: words[index].bbox[1])
+                row = [
+                    index for index in below
+                    if abs(
+                        (
+                            words[index].bbox[1] + words[index].bbox[3]
+                            - words[primary].bbox[1] - words[primary].bbox[3]
+                        ) / 2
+                    ) <= 4
+                ]
+                joined: list[tuple[int, str]] = []
+                prev_right = None
+                for index in sorted(row, key=lambda item: words[item].bbox[0]):
+                    if prev_right is not None and words[index].bbox[0] - prev_right > 4:
+                        break
+                    piece = _numerator_formula(words[index], decoded[index], decoder) or ""
+                    if not piece:
+                        break
+                    joined.append((index, piece))
+                    prev_right = words[index].bbox[2]
+                below_index = joined[0][0]
+                extra_below = [index for index, _ in joined[1:]]
+                denominator = "".join(piece for _, piece in joined)
+                below_dy = (
+                    words[below_index].bbox[1] + words[below_index].bbox[3]
+                    - bar.bbox[1] - bar.bbox[3]
+                ) / 2
+                if (
+                    _is_overbar_formula(formula)
+                    and _clustered_bar_indices(bar_index, bar, words)
+                    and below_dy > 8
+                ):
+                    below_index = None
+                    extra_below = []
+                    denominator = ""
         if not formula or not denominator:
+            if _bar_belongs_to_bound_radical(bar, words, decoded):
+                decoded[bar_index] = replace(decoded[bar_index], suppressed=True)
+                continue
+            if (
+                formula
+                and not denominator
+                and _is_overbar_formula(formula)
+                and _clustered_bar_indices(bar_index, bar, words)
+            ):
+                decoded[bar_index] = replace(decoded[bar_index], suppressed=True)
+                continue
             decoder.unknown.add("U+E06D")
             continue
-        numerator_result = fraction_numerator(words[above_index], bar, decoder)
-        match numerator_result:
-            case AmbiguousFractionNumerator(x=x, y=y):
-                decoder.unknown.add(f"ambiguous-fraction-numerator@{x:.2f},{y:.2f}")
-                continue
-            case FractionNumerator(numerator=numerator, suffix=suffix, tail=tail):
-                pass
-            case unreachable:
-                assert_never(unreachable)
-        decoded[above_index] = replace(
-            decoded[above_index],
-            text=f"[[formula:{prefix}\\frac{{{numerator}}}{{{denominator}}}{suffix}]]{tail}",
-        )
-        decoded[bar_index] = replace(decoded[bar_index], suppressed=True)
+        if RADICAL_SIGN in words[above_index].raw:
+            bound = _DECODED_FORMULA.fullmatch(decoded[above_index].text)
+            numerator, suffix, tail = formula, "", bound.group(2) if bound else ""
+        else:
+            numerator_result = fraction_numerator(words[above_index], bar, decoder)
+            match numerator_result:
+                case AmbiguousFractionNumerator(x=x, y=y):
+                    decoder.unknown.add(f"ambiguous-fraction-numerator@{x:.2f},{y:.2f}")
+                    continue
+                case FractionNumerator(numerator=numerator, suffix=suffix, tail=tail):
+                    pass
+                case unreachable:
+                    assert_never(unreachable)
+        composed = f"[[formula:{prefix}\\frac{{{numerator}}}{{{denominator}}}{suffix}]]{tail}"
+        if RADICAL_SIGN in words[above_index].raw:
+            decoded[bar_index] = replace(decoded[bar_index], text=composed, suppressed=False)
+            decoded[above_index] = replace(decoded[above_index], suppressed=True)
+        else:
+            decoded[above_index] = replace(decoded[above_index], text=composed)
+            decoded[bar_index] = replace(decoded[bar_index], suppressed=True)
         consumed.add(above_index)
         if below_index is not None:
             decoded[below_index] = replace(decoded[below_index], suppressed=True)
             consumed.add(below_index)
+            for extra in extra_below:
+                decoded[extra] = replace(decoded[extra], suppressed=True)
+                consumed.add(extra)
     return decoded
 
 

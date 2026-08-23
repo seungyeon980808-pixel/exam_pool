@@ -975,8 +975,11 @@ def _set_cell_border(act, ps, top, bottom, left, right):
 _MAX_NEST_DEPTH = 8
 
 
-def _exit_table(act):
-    """표 편집 상태에서 확실히 본문으로 빠져나온다. **본문 도달을 확인하면 True.**
+def _exit_table(act, parent_list_id=0):
+    """표 편집 상태에서 지정한 부모 리스트로 빠져나온다.
+
+    ``parent_list_id=0``이면 본문, 중첩 표에서는 바깥 셀의 리스트 ID를
+    넘긴다. 지정한 위치 도달을 확인하면 True를 반환한다.
 
     주의: 셀 병합(TableMergeCell) 직후처럼 '셀 선택' 상태에서 CloseEx는 표 밖으로
     나가지 않고 선택만 해제한다(실측 2026-07-05 — 이때 다음 표가 셀 안에 중첩되던
@@ -991,7 +994,7 @@ def _exit_table(act):
     reached = False
     for _ in range(_MAX_NEST_DEPTH):
         try:
-            if hwp.GetPos()[0] == 0:   # list 0 = 본문
+            if hwp.GetPos()[0] == parent_list_id:
                 reached = True
                 break
         except Exception as e:
@@ -1000,7 +1003,7 @@ def _exit_table(act):
         act.Run("CloseEx")
     if not reached:
         try:                            # 마지막 CloseEx 뒤 상태도 한 번 본다
-            reached = hwp.GetPos()[0] == 0
+            reached = hwp.GetPos()[0] == parent_list_id
         except Exception as e:
             applog.exc("표 탈출 중 위치 조회 실패 — 탈출 중단", e)
             return False
@@ -1050,13 +1053,14 @@ def _create_table(rows, cols, total_mm, row_heights_mm):
     act.Execute("TableCreate", ps.HTableCreation.HSet)
 
 
-def create_table_autofit(rows, cols):
-    r"""rows×cols 표를 '단에 맞춤'으로 만든다 (\표3x3\ 변환용, 2026-07-25).
+GENERATED_TABLE_WIDTH_RATIO = 0.8
 
-    _create_table 과 달리 폭을 계산하지 않는다. WidthType=0 이면 한글이
-    **커서가 있는 단의 폭**에 맞춰 주기 때문이다 — 2단 시험지의 한 단에 넣으면
-    그 단 폭, 본문이면 본문 폭. "들어가는 곳의 칸을 알아서 인식"이 이것이다.
-    (WidthType 값의 뜻은 _create_table 주석 참고: 0=단에 맞춤, 2=임의 값)
+
+def create_table_autofit(rows, cols):
+    r"""rows×cols 표를 가용 폭의 80%로 만든다 (\표3x3\ 변환용).
+
+    본문에서는 현재 단 폭, 다른 표의 셀 안에서는 현재 셀 폭을 기준으로 삼는다.
+    양쪽 모두 WidthType=2로 고정해야 HWP가 요청한 80% 폭을 무시하지 않는다.
 
     높이는 지정하지 않는다(HeightType=0) — 내용에 따라 늘어나게 둔다.
     """
@@ -1065,14 +1069,36 @@ def create_table_autofit(rows, cols):
     act.GetDefault("TableCreate", ps.HTableCreation.HSet)
     ps.HTableCreation.Rows       = rows
     ps.HTableCreation.Cols       = cols
-    ps.HTableCreation.WidthType  = 0      # 단에 맞춤
+    nested = in_table()
+    available_width_mm = float(hwp.get_col_width()) if nested else _col_width_mm()
+    width_mm = available_width_mm * GENERATED_TABLE_WIDTH_RATIO
+    width_hu = _mm(width_mm)
+    ps.HTableCreation.WidthType  = 2
     ps.HTableCreation.HeightType = 0      # 자동 높이
+    ps.HTableCreation.TableProperties.TreatAsChar = True
+    ps.HTableCreation.WidthValue = width_hu
+    ps.HTableCreation.TableProperties.Width = width_hu
+    ps.HTableCreation.CreateItemArray("ColWidth", cols)
+    content_total = max(width_mm - cols * _CELL_SIDE_MARGIN_MM, float(cols))
+    each = content_total / cols
+    for index in range(cols):
+        ps.HTableCreation.ColWidth.SetItem(index, _mm(each))
     act.Execute("TableCreate", ps.HTableCreation.HSet)
+    # HWP 2022 ignores TableProperties.TreatAsChar in the creation parameter
+    # set.  Apply it once more to the created control, as pyhwpx itself does.
+    # Without this, a table created inside the experiment material cell is
+    # anchored to the page and can float over the exam header.
+    control = hwp.CurSelectedCtrl
+    if getattr(control, "_com_obj", None) is None:
+        control = hwp.ParentCtrl
+    inline_properties = hwp.CreateSet("Table")
+    inline_properties.SetItem("TreatAsChar", True)
+    control.Properties = inline_properties
 
 
-def exit_table():
-    """표 편집 상태에서 본문으로 빠져나온다 (_exit_table 의 공개 이름). 성공 여부."""
-    return _exit_table(hwp.HAction)
+def exit_table(parent_list_id=0):
+    """표 편집 상태에서 지정한 부모 리스트로 빠져나온다. 성공 여부."""
+    return _exit_table(hwp.HAction, parent_list_id=parent_list_id)
 
 
 # ── 찾기 ──────────────────────────────────────────────

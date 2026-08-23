@@ -13,6 +13,15 @@ class FormulaMarkupTest(unittest.TestCase):
         self.assertEqual(validate_formula_markup(text), [])
         self.assertIn(r"\수식{a = \frac{\Delta v}{\Delta t}}", to_hwppalette_markup(text))
 
+    def test_hwp_export_braces_script_boundaries(self):
+        text = r"[[formula:d_2=\frac{3}{2}d_1]], [[formula:v_0>v_2>v_1]], [[formula:t^2]]"
+
+        rendered = to_hwppalette_markup(text)
+
+        self.assertIn(r"\수식{d_{2}=\frac{3}{2}d_{1}}", rendered)
+        self.assertIn(r"\수식{v_{0}>v_{2}>v_{1}}", rendered)
+        self.assertIn(r"\수식{t^{2}}", rendered)
+
     def test_unicode_subscript_is_rejected(self):
         errors = validate_formula_markup("[[formula:v₀ = 2]]")
         self.assertTrue(any("유니코드 첨자" in message for message in errors))

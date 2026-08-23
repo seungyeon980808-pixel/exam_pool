@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+from typing import Final
 
 from PIL import Image
 from pydantic import ValidationError
@@ -10,12 +11,20 @@ from pydantic import ValidationError
 from .pdf_hwp_figure_layout import classify_final_layout, display_size_for_width
 from .pdf_hwp_pipeline_models import (
     CropArtifact,
+    DetectedItem,
     FigureAssetMetadata,
+    FigureArrangement,
     FigureLayout,
     FigureLayoutMetadata,
     PanelMode,
 )
+from .pdf_hwp_kice_source_placement import single_layout_from_source
 from .pdf_hwp_question_structure import reconcile_final_template
+
+
+_EXACT_SOURCE_TEMPLATE = "수능원문1대사진"
+_SHALLOW_BOUNDARY_OVERLAP_POINTS: Final = 1.5
+_SHALLOW_BOUNDARY_OVERLAP_RATIO: Final = 0.01
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +42,8 @@ def reconcile_final_figure_contract(
     item_number: int,
     palette_markdown: str,
     artifacts: tuple[CropArtifact, ...],
+    *,
+    source_item: DetectedItem | None = None,
 ) -> FinalFigureContract | FinalFigureReview:
     """Parse final sidecars and make their geometry authoritative before persistence."""
     if not artifacts:
@@ -49,10 +60,14 @@ def reconcile_final_figure_contract(
     detail = _metadata_review_detail(item_number, artifacts, metadata)
     if detail is not None:
         return FinalFigureReview(detail)
+    template_label = _palette_template_label(palette_markdown)
     layout = classify_final_layout(
         metadata,
-        template_label=_palette_template_label(palette_markdown),
+        template_label=template_label,
+        single_layout=single_layout_from_source(source_item, artifacts, metadata),
     )
+    if template_label == _EXACT_SOURCE_TEMPLATE:
+        return FinalFigureContract(palette_markdown, layout)
     if layout.layout is FigureLayout.THREE_SMALL:
         three_panel_detail = _proven_three_panel_review_detail(metadata)
         if three_panel_detail is not None:
@@ -75,10 +90,17 @@ def _palette_template_label(markdown: str) -> str | None:
     return token[1:-1]
 
 
+_THREE_PANEL_CAPTION_SETS = frozenset({
+    ("(가)", "(나)", "(다)"),
+    ("A", "B", "C"),
+})
+
+
 def _proven_three_panel_review_detail(
     metadata: tuple[FigureAssetMetadata, ...],
 ) -> str | None:
-    if tuple(value.caption_text.strip() for value in metadata) != ("(가)", "(나)", "(다)"):
+    captions = tuple(value.caption_text.strip() for value in metadata)
+    if captions not in _THREE_PANEL_CAPTION_SETS:
         return "three-panel captions are incomplete or out of order"
     if any(value.caption_bbox is None for value in metadata):
         return "three-panel caption geometry is unavailable"
@@ -118,7 +140,7 @@ def _metadata_review_detail(
         return "final figure item identity mismatch"
     if len({value.arrangement for value in metadata}) != 1:
         return "final figure arrangement is inconsistent"
-    if any(value.manual_review_required for value in metadata):
+    if final_figure_metadata_requires_review(metadata):
         return "final figure metadata requires manual review"
     for artifact, value in zip(artifacts, metadata, strict=True):
         width_points = value.image_bbox[2] - value.image_bbox[0]
@@ -144,3 +166,62 @@ def _metadata_review_detail(
         if abs(pixel_aspect / source_aspect - 1.0) > 0.05:
             return "final figure source and pixel aspect ratios disagree"
     return None
+
+
+def final_figure_metadata_requires_review(
+    metadata: tuple[FigureAssetMetadata, ...],
+) -> bool:
+    """Classify review flags after applying proven final-asset exceptions."""
+    if not any(value.manual_review_required for value in metadata):
+        return False
+    keeps_full_composite = (
+        len(metadata) == 1
+        and metadata[0].panel_mode in {PanelMode.SINGLE, PanelMode.COMPOSITE}
+        and metadata[0].arrangement is FigureArrangement.COMPOSITE
+    )
+    return not keeps_full_composite and not _is_shallow_boundary_overlap_pair(metadata)
+
+
+def _is_shallow_boundary_overlap_pair(
+    metadata: tuple[FigureAssetMetadata, ...],
+) -> bool:
+    """Accept only a proven two-panel seam whose detector boxes barely touch."""
+    if len(metadata) != 2:
+        return False
+    if any(value.arrangement is not FigureArrangement.COMPOSITE for value in metadata):
+        return False
+    if any(value.panel_mode is not PanelMode.COMPOSITE for value in metadata):
+        return False
+    if any(value.review_reasons != ("overlapping panel geometry",) for value in metadata):
+        return False
+    captions = tuple(value.caption_text.strip() for value in metadata)
+    if captions not in {("(가)", "(나)"), ("A", "B")}:
+        return False
+    first, second = metadata
+    horizontal_overlap = min(first.image_bbox[2], second.image_bbox[2]) - max(
+        first.image_bbox[0], second.image_bbox[0]
+    )
+    vertical_overlap = min(first.image_bbox[3], second.image_bbox[3]) - max(
+        first.image_bbox[1], second.image_bbox[1]
+    )
+    minimum_width = min(
+        first.image_bbox[2] - first.image_bbox[0],
+        second.image_bbox[2] - second.image_bbox[0],
+    )
+    minimum_height = min(
+        first.image_bbox[3] - first.image_bbox[1],
+        second.image_bbox[3] - second.image_bbox[1],
+    )
+    if minimum_width <= 0 or minimum_height <= 0:
+        return False
+    shallow_horizontal = (
+        0 < horizontal_overlap <= _SHALLOW_BOUNDARY_OVERLAP_POINTS
+        and horizontal_overlap / minimum_width <= _SHALLOW_BOUNDARY_OVERLAP_RATIO
+        and vertical_overlap > 0
+    )
+    shallow_vertical = (
+        0 < vertical_overlap <= _SHALLOW_BOUNDARY_OVERLAP_POINTS
+        and vertical_overlap / minimum_height <= _SHALLOW_BOUNDARY_OVERLAP_RATIO
+        and horizontal_overlap > 0
+    )
+    return shallow_horizontal or shallow_vertical

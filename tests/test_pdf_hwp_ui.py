@@ -11,13 +11,24 @@ def test_pdf_hwp_tab_has_a_dedicated_accessible_workflow() -> None:
     assert 'id="tab-pdf-hwp"' in html
     assert 'aria-labelledby="pdfHwpTitle"' in html
     assert 'id="pdfHwpFile"' in html
+    assert 'aria-describedby="pdfHwpFileHelp"' in html
     assert 'class="ph-file-action"' in html
-    assert 'accept="application/pdf,.pdf"' in html
+    assert 'id="pdfHwpDropzone"' in html
+    assert 'PDF·이미지를 놓으세요' in html
+    assert 'aria-label="PDF, PNG, JPEG 또는 WebP 파일 선택"' in html
+    assert 'accept="application/pdf,.pdf,image/png,image/jpeg,image/webp"' in html
+    assert 'multiple required' in html
+    assert 'id="pdfHwpFileHelp"' in html
+    assert '클립보드 이미지를 Ctrl+V로 붙여넣으세요.' in html
+    assert '출력 양식: 수능형 시험지' in html
+    assert 'id="pdfHwpProgressBar"' in html
+    assert 'id="pdfHwpTotalElapsed"' in html
     assert 'id="pdfHwpStart"' in html
+    assert 'id="pdfHwpOutput"' in html
     assert 'id="pdfHwpStatus"' in html
-    assert '원본 배치를 살린 <span class="ph-keep">HWP와 확인용 PDF를 만듭니다.</span>' in html
-    assert '<span class="ph-keep">서버에 작업을 만들지 않습니다.</span>' in html
-    assert '<span class="ph-keep">선택한 파일은 오류가 나도 유지됩니다.</span>' in html
+    assert '변환 상세 보기' in html
+    assert '원문 미리보기 · HwpPalette 조판 텍스트' in html
+    assert '<details class="ph-history"' in html
     assert 'role="status"' in html
     assert 'aria-live="polite"' in html
     assert 'id="pdfHwpRetry"' in html
@@ -31,8 +42,15 @@ def test_pdf_hwp_client_is_isolated_to_its_api_namespace() -> None:
     client = (ROOT / "static" / "js" / "pdf-hwp.js").read_text(encoding="utf-8")
 
     assert 'const API_ROOT = "/api/pdf-hwp"' in client
+    assert 'request("/runtime")' in client
+    assert '이미지 편집 변환 서버가 이전 버전입니다. PDF-HWP 앱을 종료한 뒤 다시 실행해 주세요.' in client
     assert 'EP.pdfHwpInit' in client
     assert 'EP.pdfHwpStart' in client
+    assert 'state.pendingFiles = selected' in client
+    assert 'document.addEventListener("paste"' in client
+    assert '변환 준비 완료' in client
+    assert '해당 파일 ${formatDuration(spent)} / 총 진행 ${formatDuration(totalSpent)}' in client
+    assert 'EP.pdfHwpStart({ preventDefault() {}, files })' not in client
     assert 'EP.pdfHwpRetry' in client
     assert 'EP.pdfHwpTypeset' in client
     assert 'payload.items || []' in client
@@ -57,7 +75,13 @@ def test_pdf_hwp_client_is_isolated_to_its_api_namespace() -> None:
     assert 'showFailure(error.message, true)' in client
     assert 'selectedItems(job)' in client
     assert 'const selected = checkbox.checked' in client
-    assert 'const markdown = textarea.value' in client
+    assert 'fieldTitle.textContent = "HwpPalette용 조판 텍스트"' in client
+    assert 'patchReviewItem(byId(job.id) || job, item, { palette_markdown: textarea.value.trim() })' in client
+    assert 'makeField("문항번호"' not in client
+    assert 'makeField("분야"' not in client
+    assert 'makeField("문항 유형"' not in client
+    assert 'makeField("응답 구조"' not in client
+    assert 'makeField("자료 이미지 개수"' not in client
     assert 'patchReviewItem(byId(job.id) || job, item, { selected })' in client
     assert '`${API_ROOT}/jobs/${encodeURIComponent(job.id)}/assets/${encodeURIComponent(asset.id)}`' in client
     assert '`${API_ROOT}/jobs/${encodeURIComponent(job.id)}/source#page=${encodeURIComponent(item.source_page || 1)}`' in client
@@ -75,6 +99,27 @@ def test_pdf_hwp_client_is_isolated_to_its_api_namespace() -> None:
     assert 'makeSourceLink(job, item)' in client
     assert 'const roles = ["figure", "figure_panel", "source_crop", "crop"]' in client
     assert 'renderCurrent(byId(job.id))' in client
+    assert 'dragenter' in client
+    assert 'new DataTransfer()' in client
+    assert 'renderSourcePreviewContent(job, box)' in client
+    assert 'layout_style: "suneung"' in client
+    assert 'startAutomaticTypeset(job)' in client
+    assert 'if (hasFallback && rasterSource) return job' in client
+    assert 'state.autoStart' in client
+    assert 'new DataTransfer()' in client
+    assert 'function convertedFileName' in client
+    assert 'EP.pdfHwpDownloadSelected' in client
+    assert 'ph-output-ready-list' in client
+    assert '${stem}_converted' in client
+
+
+def test_standalone_converter_starts_with_a_clean_history_view() -> None:
+    html = (ROOT / "static" / "pdf-hwp.html").read_text(encoding="utf-8")
+    client = (ROOT / "static" / "js" / "pdf-hwp.js").read_text(encoding="utf-8")
+
+    assert 'data-clear-conversion-history-on-refresh="true"' in html
+    assert 'document.body.dataset.clearConversionHistoryOnRefresh === "true"' in client
+    assert "state.currentId = state.jobs[0]?.id || null" in client
 
 
 def test_pdf_hwp_styles_define_responsive_and_accessible_states() -> None:
@@ -95,6 +140,8 @@ def test_pdf_hwp_styles_define_responsive_and_accessible_states() -> None:
     assert ".ph-review-toolbar" in styles
     assert ".ph-review-workspace" in styles
     assert ".ph-source-preview" in styles
+    assert ".ph-source-details" in styles
+    assert ".ph-source-preview img" in styles and "object-fit: contain" in styles and "block-size: auto" in styles
     assert ".ph-review-item-failed { border-color: var(--ui-danger); }" in styles
     assert "#d9a09a" not in styles
     assert "#e7c5c1" not in styles
@@ -102,6 +149,9 @@ def test_pdf_hwp_styles_define_responsive_and_accessible_states() -> None:
     assert "#7a3630" not in styles
     assert "padding: 3px 7px" not in styles
     assert ".ph-job-state" in styles and "padding: var(--ph-space-xs) var(--ph-space-sm)" in styles
+    assert ".ph-output-ready-list" in styles
+    assert ".ph-output-ready-item" in styles
+    assert ".ph-output-filename" in styles
     assert "--ph-space-2xs" not in styles
     assert "--ph-space-control" not in styles
     assert "--ph-space-2xl" not in styles

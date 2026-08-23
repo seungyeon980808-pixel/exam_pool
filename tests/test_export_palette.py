@@ -50,6 +50,71 @@ class TestTemplateOutput(unittest.TestCase):
         self.assertEqual(out[5], "빛의 속력은 매질마다 다르다")
         self.assertEqual(out[12], "ㄱ, ㄴ, ㄷ")
 
+    def test_registered_experiment_template_separates_intro_body_photo_and_table(self):
+        item = {
+            "category": "템플릿", "label": "수능AI실제실험형", "slot_count": 14,
+            "slot_names": [
+                "문항번호", "문두", "실험내용", "사진1", "표", "발문",
+                "ㄱ", "ㄴ", "ㄷ", "1", "2", "3", "4", "5",
+            ],
+        }
+        q = hapdap(
+            passage="\n".join((
+                "다음은 빛의 세기에 대한 실험이다.",
+                "[실험 과정]",
+                "(가) 센서로 빛의 세기를 측정한다.",
+                "[실험 결과]",
+                "\\표2*2\\",
+                "거리&빛의 세기",
+                "1&4",
+            )),
+            material="실험장치.png",
+            style_meta={"palette_template": "수능AI실제실험형"},
+        )
+
+        with patch("app.integrations.palette_registry.active_template", return_value=item):
+            out = ep.question_to_palette(q, combos(), num=13, layout_style="suneung").split("\n")
+
+        self.assertEqual(out[0], "\\수능AI실제실험형\\")
+        self.assertEqual(out[1], "13")
+        self.assertEqual(out[2], "다음은 빛의 세기에 대한 실험이다.")
+        self.assertIn("[실험 과정]", out[3])
+        self.assertNotIn("\\표2*2\\", out[3])
+        self.assertEqual(out[6], "\\실험장치\\")
+        table = "\n".join(out[7:11])
+        self.assertIn("\\표2*2\\", table)
+        self.assertIn("거리&빛의 세기", table)
+
+    def test_registered_experiment_template_does_not_serialize_outer_box_as_result_peer(self):
+        item = {
+            "category": "템플릿", "label": "수능AI실제실험형", "slot_count": 14,
+            "slot_names": [
+                "문항번호", "문두", "사진1", "실험내용", "표", "발문",
+                "ㄱ", "ㄴ", "ㄷ", "1", "2", "3", "4", "5",
+            ],
+        }
+        q = hapdap(
+            passage="\n".join((
+                "다음은 중화 적정 실험이다.",
+                "\\표2*3\\",
+                "식초&A&B",
+                "질량&16w&15w",
+                "\\표1*1\\",
+                "[자료] ◦분자량은 60이다. [실험 과정] (가) 식초를 준비한다. "
+                "[실험 결과] ◦부피를 측정한다.",
+            )),
+            material="",
+            style_meta={"palette_template": "수능AI실제실험형"},
+        )
+
+        with patch("app.integrations.palette_registry.active_template", return_value=item):
+            out = ep.question_to_palette(q, combos(), num=16, layout_style="suneung")
+
+        self.assertNotIn("\\표1*1\\", out)
+        self.assertEqual(out.count("\\표2*3\\"), 1)
+        self.assertLess(out.index("[실험 과정]"), out.index("\\표2*3\\"))
+        self.assertLess(out.index("\\표2*3\\"), out.index("옳은 것만을"))
+
     def test_photo1_template_and_slot_order(self):
         """학교합답1사진5선지 — 번호·지문·사진·발문(점수 포함)·보기·선지."""
         out = ep.question_to_palette(hapdap(), combos(), num=7).split("\n")
@@ -349,6 +414,16 @@ class TestSuneungPalette(unittest.TestCase):
         self.assertTrue(out[4].endswith("[3점]"), out[4])
         self.assertEqual(out[5], "빛의 속력은 매질마다 다르다")
         self.assertEqual(out[8], "ㄱ")
+
+    @patch.object(ep, "active_suneung_labels", return_value=set())
+    def test_derived_suneung_photo_template_keeps_prompt_after_photo(self, _labels):
+        """The built-in active CSAT template must not fold the prompt into passage."""
+        q = hapdap(material="굴절_그림01.png", default_points=3)
+        out = ep.question_to_palette(q, combos(), layout_style="suneung").split("\n")
+        self.assertEqual(out[0], "\\수능합답1대사진5선지\\")
+        self.assertEqual(out[3], "\\굴절_그림01\\")
+        self.assertTrue(out[4].startswith("옳은 것만"), out[4])
+        self.assertNotIn("굴절_그림01", out[2])
 
     @patch.object(ep, "active_suneung_labels", return_value={"수능합답1대사진5선지", "수능원안지"})
     def test_active_custom_palette_keeps_direct_question_photo_in_its_own_slot(self, _labels):

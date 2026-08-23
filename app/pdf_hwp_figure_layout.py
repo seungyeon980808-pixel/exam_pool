@@ -14,9 +14,9 @@ from .pdf_hwp_pipeline_models import (
 
 
 SMALL_PANEL_MAX_WIDTH_POINTS: Final = 168.0
-TWO_SMALL_MAX_COMBINED_WIDTH_POINTS: Final = 209.2
+TWO_SMALL_MAX_COMBINED_WIDTH_POINTS: Final = 92.53
 POINTS_TO_MM: Final = 25.4 / 72.0
-MINIMUM_READABLE_SCALE: Final = 0.50
+MINIMUM_READABLE_SCALE: Final = 0.70
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +46,7 @@ def classify_final_layout(
     assets: tuple[FigureAssetMetadata, ...],
     *,
     template_label: str | None = None,
+    single_layout: FigureLayout | None = None,
 ) -> FigureLayoutMetadata:
     """Classify the final persisted geometry, never an earlier crop candidate."""
     panel_widths = tuple(asset.image_bbox[2] - asset.image_bbox[0] for asset in assets)
@@ -73,13 +74,19 @@ def classify_final_layout(
             _projected_scales(panel_widths, panel_heights, candidate_size)
             if candidate_size is not None else ()
         )
-        layout = (
-            FigureLayout.ONE_LARGE
-            if candidate_layout is FigureLayout.ONE_SMALL
-            and candidate_scales
-            and min(candidate_scales) < MINIMUM_READABLE_SCALE
-            else candidate_layout
-        )
+        if single_layout is not None:
+            if single_layout not in {FigureLayout.ONE_SMALL, FigureLayout.ONE_LARGE}:
+                msg = "single_layout must use a one-picture layout"
+                raise ValueError(msg)
+            layout = single_layout
+        else:
+            layout = (
+                FigureLayout.ONE_LARGE
+                if candidate_layout is FigureLayout.ONE_SMALL
+                and candidate_scales
+                and min(candidate_scales) < MINIMUM_READABLE_SCALE
+                else candidate_layout
+            )
     elif len(assets) == 2:
         match arrangement:
             case FigureArrangement.VERTICAL:
@@ -140,13 +147,11 @@ def _template_size(
         case FigureLayout.TWO_LARGE:
             return TWO_LARGE_USABLE_SIZE
         case FigureLayout.ONE_SMALL:
-            if template_label is None:
-                return None
-            if template_label.startswith(_DIRECT_LABEL_PREFIX):
+            if template_label is None or template_label.startswith(_DIRECT_LABEL_PREFIX):
                 return ONE_SMALL_DIRECT_USABLE_SIZE
             if template_label.startswith(_HAPDAP_LABEL_PREFIX):
                 return ONE_SMALL_HAPDAP_USABLE_SIZE
-            return None
+            return ONE_SMALL_DIRECT_USABLE_SIZE
         case FigureLayout.ONE_LARGE:
             if template_label is None or template_label.startswith(_DIRECT_LABEL_PREFIX):
                 return ONE_LARGE_DIRECT_USABLE_SIZE

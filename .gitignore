@@ -41,6 +41,12 @@ promo/assets/audio/
 # ===== 임시 산출물 =====
 output/
 tmp/
+exports/
+.tmp/
+
+# ===== 로컬 에이전트 작업 상태 =====
+.codex/
+.omo/
 
 # ===== 일회성 복원/테스트 스크립트 =====
 tools/restore_*.py

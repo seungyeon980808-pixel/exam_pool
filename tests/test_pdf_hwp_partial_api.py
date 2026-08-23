@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import json
 from pathlib import Path
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from app import db, routes_pdf_hwp
@@ -148,7 +150,7 @@ def test_detection_with_no_ready_items_is_reported_as_total_failure(
     assert body.status == "failed"
     assert body.error is not None
     assert body.error.code == "crop_all_failed"
-    assert body.error.message == "변환 가능한 문항이 없습니다. 실패한 2개 문항의 상세 원인을 확인하세요."
+    assert body.error.message == "실패한 2개 문항도 자동 추출 원문으로 HWP에 보존합니다."
 
 
 def test_partial_typeset_keeps_failed_items_retryable_and_attaches_outputs(
@@ -167,11 +169,15 @@ def test_partial_typeset_keeps_failed_items_retryable_and_attaches_outputs(
         ).lastrowid
         failed_id = connection.execute(
             "INSERT INTO conversion_item(job_id,ord,source_page,source_number,bbox_json,status,"
-            "draft_json,error_code,error_message) VALUES(?,2,4,20,'[5,6,7,8]','failed','{}',"
+            "draft_json,error_code,error_message) VALUES(?,2,4,20,'[5,6,7,8]','failed',"
+            "'{\"source_text\":\"31\\n3\\n20. 원문\"}',"
             "'draft_extraction_failed','formula extraction failed')", (job_id,),
         ).lastrowid
 
+    captured = {}
+
     def typeset(request):
+        captured["markdown"] = "\n\n".join(unit.palette_markdown for unit in request.units)
         request.output_dir.mkdir(parents=True, exist_ok=True)
         hwp, pdf = request.output_dir / "partial.hwp", request.output_dir / "partial.pdf"
         hwp.write_bytes(b"hwp")
@@ -190,6 +196,71 @@ def test_partial_typeset_keeps_failed_items_retryable_and_attaches_outputs(
     assert failed["error"]["code"] == "draft_extraction_failed"
     assert {output["kind"] for output in body["outputs"]} == {"hwp", "pdf"}
     assert body["capabilities"]["retry_failed"] is True
+    failed_block = captured["markdown"].split("\n\n")[-1]
+    failed_lines = failed_block.splitlines()
+    assert failed_lines[0] == "\\수능AI실제직접형\\"
+    assert failed_lines[1] == "20"
+    assert failed_lines[2].startswith("{[자동 추출 원문]")
+    assert failed_lines[3] == "원문}"
+    assert len(failed_lines) == 11  # template marker + 9 slots; passage block uses two lines
+    assert failed_lines[-7:] == ["-"] * 7
+
+
+def test_failed_item_fallback_preserves_the_exact_source_crop(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job_id = client.post("/api/pdf-hwp/jobs", json={}).json()["id"]
+    crop = tmp_path / "item-7-source.png"
+    crop.write_bytes(b"source-crop")
+    digest = hashlib.sha256(crop.read_bytes()).hexdigest()
+    metadata = {
+        "source_pdf": "source.pdf", "page_number": 1, "item_number": 7,
+        "bbox": [10.0, 20.0, 410.0, 620.0], "dpi": 300,
+        "width_px": 1667, "height_px": 2500,
+    }
+    with db.transaction() as connection:
+        item_id = connection.execute(
+            "INSERT INTO conversion_item(job_id,ord,source_page,source_number,bbox_json,status,"
+            "draft_json,error_code,error_message) VALUES(?,1,1,7,'[10,20,410,620]','failed',"
+            "'{\"source_text\":\"7. 원문\"}','draft_extraction_failed','ocr failed')",
+            (job_id,),
+        ).lastrowid
+        connection.execute(
+            "INSERT INTO conversion_asset(job_id,item_id,role,file_path,sha256,media_type,metadata_json) "
+            "VALUES(?,?,?,?,?,'image/png',?)",
+            (job_id, item_id, "source_crop", str(crop), digest,
+             json.dumps(metadata, ensure_ascii=False)),
+        )
+
+    captured = {}
+
+    def typeset(request):
+        captured["unit"] = request.units[0]
+        request.output_dir.mkdir(parents=True, exist_ok=True)
+        hwp, pdf = request.output_dir / "fallback.hwp", request.output_dir / "fallback.pdf"
+        hwp.write_bytes(b"hwp")
+        pdf.write_bytes(b"pdf")
+        manifest = request.output_dir / "manifest.json"
+        manifest.write_text("{}", encoding="utf-8")
+        return ConversionResult(hwp, pdf, (), manifest)
+
+    monkeypatch.setattr(routes_pdf_hwp.pipeline, "typeset_conversion", typeset)
+    response = client.post(f"/api/pdf-hwp/jobs/{job_id}/typeset")
+
+    assert response.status_code == 200
+    unit = captured["unit"]
+    assert unit.palette_markdown == f"\\수능원문1대사진\\\n\\{crop.stem}\\"
+    assert len(unit.figure_assets) == 1
+    assert unit.figure_assets[0].image_path == crop
+    assert unit.figure_assets[0].metadata.manual_review_required is False
+
+    with db.transaction() as connection:
+        connection.execute(
+            "UPDATE conversion_job SET source_filename='clipboard-image.png' WHERE id=?", (job_id,),
+        )
+    blocked = client.post(f"/api/pdf-hwp/jobs/{job_id}/typeset")
+    assert blocked.status_code == 409
+    assert "전체 사진으로 대체하지 않습니다" in blocked.json()["detail"]
 
 
 def test_selection_patch_does_not_erase_failed_item_error(client: TestClient) -> None:
@@ -208,3 +279,91 @@ def test_selection_patch_does_not_erase_failed_item_error(client: TestClient) ->
     assert item["selected"] is False
     assert item["status"] == "failed"
     assert item["error"]["code"] == "draft_extraction_failed"
+
+
+def test_async_typeset_starts_when_every_item_needs_text_fallback(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job_id = client.post("/api/pdf-hwp/jobs", json={}).json()["id"]
+    with db.transaction() as connection:
+        connection.execute(
+            "UPDATE conversion_job SET status='failed' WHERE id=?", (job_id,),
+        )
+        connection.execute(
+            "INSERT INTO conversion_item(job_id,ord,source_page,source_number,bbox_json,status,"
+            "draft_json,error_code,error_message) VALUES(?,1,1,7,'[1,2,3,4]','failed',"
+            "'{\"source_text\":\"7. 원문\"}','draft_extraction_failed','ocr failed')", (job_id,),
+        )
+    started = {}
+    monkeypatch.setattr(routes_pdf_hwp, "_run_typeset_operation", lambda operation_id, current_id: started.update(operation_id=operation_id, job_id=current_id))
+    response = client.post(f"/api/pdf-hwp/jobs/{job_id}/typeset/start")
+    assert response.status_code == 200
+    assert response.json()["selection_snapshot"] == [7]
+    assert started["job_id"] == job_id
+
+
+def test_async_typeset_automatically_retries_manual_review_with_fallback(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given: preflight rejects one structured item before HWP is launched.
+    job_id = client.post("/api/pdf-hwp/jobs", json={}).json()["id"]
+    operation_id = "auto-fallback"
+    with db.transaction() as connection:
+        connection.execute(
+            "INSERT INTO conversion_operation(id,job_id,kind,status,progress,"
+            "selection_snapshot_json) VALUES(?,?,?,'queued',0,'[11]')",
+            (operation_id, job_id, "typeset"),
+        )
+    attempts = 0
+
+    def typeset(_job_id: int, _selection: list[int]) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise HTTPException(409, "item 11 requires manual review")
+
+    monkeypatch.setattr(routes_pdf_hwp, "_typeset", typeset)
+
+    # When: the background conversion handles the preflight result.
+    routes_pdf_hwp._run_typeset_operation(operation_id, job_id)
+
+    # Then: the failed item is retried through its text fallback without user action.
+    operation = routes_pdf_hwp._operation_read(operation_id)
+    assert attempts == 2
+    assert operation is not None
+    assert operation["status"] == "completed"
+
+
+def test_failed_item_text_edit_becomes_selected_review_candidate(client: TestClient) -> None:
+    job_id = client.post("/api/pdf-hwp/jobs", json={}).json()["id"]
+    with db.transaction() as connection:
+        item_id = connection.execute(
+            "INSERT INTO conversion_item(job_id,ord,source_page,source_number,bbox_json,status,"
+            "selected,draft_json,error_code,error_message) VALUES(?,1,1,7,'[1,2,3,4]','failed',"
+            "0,?,'draft_extraction_failed','ocr failed')",
+            (job_id, '{"source_text":"7. 원문"}'),
+        ).lastrowid
+        connection.execute(
+            "INSERT INTO conversion_output(job_id,kind,status,file_path) VALUES(?,?,'ready','old.hwp')",
+            (job_id, "hwp"),
+        )
+
+    response = client.patch(
+        f"/api/pdf-hwp/jobs/{job_id}/items/{item_id}",
+        json={
+            "source_text": "7. 수정된 원문",
+            "passage": "7. 수정된 원문",
+            "prompt": "이에 대한 설명으로 옳은 것은?",
+            "manual_blocks": [{"kind": "whole_source", "text": "7. 수정된 원문"}],
+            "whole_source_text": True,
+            "palette_markdown": "",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "review"
+    item = body["items"][0]
+    assert item["status"] == "ready"
+    assert item["selected"] is True
+    assert item["error"] is None
+    assert body["outputs"] == []

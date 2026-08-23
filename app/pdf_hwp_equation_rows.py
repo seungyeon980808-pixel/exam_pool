@@ -25,7 +25,37 @@ def _greedy_rows(words: list[EquationWord]) -> list[list[EquationWord]]:
             grouped.append([word])
         else:
             grouped[-1].append(word)
-    return grouped
+    # A built-up fraction starts at its numerator, often close enough to the
+    # preceding baseline to enter the wrong row.  Reassign tall formulas to the
+    # plain-text row with which they actually overlap most.  This preserves
+    # source order in sentences whose next line begins with a fraction.
+    moves: list[tuple[int, int, EquationWord]] = []
+    for source_index, row in enumerate(grouped):
+        for word in row:
+            if not word.text.startswith("[[formula:") or word.bbox[3] - word.bbox[1] < 17:
+                continue
+            candidates = [
+                (target_index, max(
+                    (_vertical_overlap(word, candidate) for candidate in target),
+                    default=0.0,
+                ))
+                for target_index, target in enumerate(grouped)
+                if target_index != source_index
+                and any(not candidate.text.startswith("[[formula:") for candidate in target)
+            ]
+            if not candidates:
+                continue
+            target_index, overlap = max(candidates, key=lambda value: value[1])
+            current_overlap = max(
+                (_vertical_overlap(word, candidate) for candidate in row if candidate is not word),
+                default=0.0,
+            )
+            if overlap > current_overlap + 1.0:
+                moves.append((source_index, target_index, word))
+    for source_index, target_index, word in moves:
+        grouped[source_index].remove(word)
+        grouped[target_index].append(word)
+    return [row for row in grouped if row]
 
 
 def group_rows(

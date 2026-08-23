@@ -21,6 +21,36 @@ def test_runner_prefers_exam_pool_runtime_when_sibling_runtime_is_on_pythonpath(
     )
 
 
+def test_subject_header_directive_is_stripped_and_maps_source_stems():
+    from app.integrations import hwppalette_runner
+
+    remainder, header = hwppalette_runner._extract_subject_header(
+        "\\수능과목머리말\\\n화학Ⅰ\n\\수능합답1대사진5선지\\\n1\n"
+    )
+    assert header == "화학Ⅰ"
+    assert remainder.startswith("\\수능합답1대사진5선지\\")
+    assert hwppalette_runner.subject_header_from_source("c1_2026_11.pdf") == "화학Ⅰ"
+    assert hwppalette_runner.subject_header_from_source("b2_2027_06") == "생명과학Ⅱ"
+    assert hwppalette_runner.subject_header_from_source("p1_2024_11.pdf") == "물리Ⅰ"
+
+
+def test_physics_form_header_is_replaced_with_source_subject(monkeypatch):
+    from app.integrations import hwppalette_runner
+
+    class FakeEngine:
+        def __init__(self):
+            self.calls = []
+
+        def replace_all(self, find, repl):
+            self.calls.append((find, repl))
+            return True
+
+    fake = FakeEngine()
+    hwppalette_runner._apply_csat_subject_header(fake, "화학Ⅰ")
+    assert ("(물리I)", "(화학Ⅰ)") in fake.calls
+    assert ("(물리Ⅰ)", "(화학Ⅰ)") in fake.calls
+
+
 def test_direct_large_photo_configures_measured_source_crop_frame():
     # Given: the active two-column layout used for item 20.
     from app.integrations import hwppalette_runner
@@ -48,6 +78,223 @@ def test_reconstruction_passage_uses_kice_word_spacing_contract():
         "condense_percent": 20,
         "character_ratio_percent": 85,
     }
+
+
+def test_only_long_hapdap_fifth_choices_are_condensed():
+    from app.integrations import hwppalette_runner
+
+    long_block = "\n".join((
+        "\\수능합답1대사진5선지\\", "234", "stem", "photo", "ask",
+        "claim-a", "claim-b", "claim-c", "ㄱ", "ㄴ", "ㄱ, ㄴ", "ㄴ, ㄷ", "ㄱ, ㄴ, ㄷ",
+    ))
+    short_block = long_block.replace("ㄱ, ㄴ, ㄷ", "ㄱ, ㄷ")
+    ordinary = long_block.replace("수능합답1대사진5선지", "수능정답1대사진5선지")
+    small_hapdap = long_block.replace("수능합답1대사진5선지", "수능합답1소사진5선지")
+    formula_combo = ordinary.replace(
+        "ㄱ\nㄴ\nㄱ, ㄴ\nㄴ, ㄷ\nㄱ, ㄴ, ㄷ",
+        "\\수식{A}\n\\수식{C}\n\\수식{A}, \\수식{B}\n"
+        "\\수식{B}, \\수식{C}\n\\수식{A}, \\수식{B}, \\수식{C}",
+    )
+    ai_direct_formula_combo = formula_combo.replace(
+        "수능정답1대사진5선지", "수능AI실제직접형",
+    )
+    radical_fractions = ordinary.replace(
+        "ㄱ\nㄴ\nㄱ, ㄴ\nㄴ, ㄷ\nㄱ, ㄴ, ㄷ",
+        "\\수식{\\frac{1}{3}} m/s\n"
+        "\\수식{\\frac{\\sqrt{2}}{3}} m/s\n"
+        "\\수식{\\frac{1}{2}} m/s\n"
+        "\\수식{\\frac{2\\sqrt{2}}{3}} m/s\n1m/s",
+    )
+
+    assert hwppalette_runner._long_hapdap_fifth_choice_count(long_block) == 1
+    assert hwppalette_runner._long_hapdap_fifth_choice_count(
+        "\n".join((long_block, short_block, ordinary, long_block)),
+    ) == 2
+    assert hwppalette_runner._long_hapdap_fifth_choice_mask(
+        "\n".join((ordinary, long_block, small_hapdap, ordinary, long_block)),
+    ) == (False, True, True, False, True)
+    assert hwppalette_runner._fifth_choice_ratio_mask(
+        "\n".join((
+            ordinary, long_block, formula_combo, ai_direct_formula_combo,
+            small_hapdap, ordinary,
+        )),
+    ) == (False, True, True, True, True, False)
+    assert hwppalette_runner._fifth_choice_ratio_mask(
+        "\n".join((ordinary, radical_fractions, ordinary)),
+    ) == (False, True, False)
+    assert hwppalette_runner._LONG_HAPDAP_RATIO == 87
+
+
+def test_ratio_mask_preserves_ordinals_across_every_registered_template_label():
+    from app.integrations import hwppalette_runner
+
+    direct = "\n".join((
+        "\\수능정답1대사진5선지\\", "1", "stem", "photo", "ask",
+        "a", "b", "c", "1", "2", "3", "4", "5",
+    ))
+    ai_hapdap = direct.replace(
+        "수능정답1대사진5선지", "수능AI실제합답형",
+    ).replace("1\n2\n3\n4\n5", "ㄱ\nㄷ\nㄱ, ㄴ\nㄴ, ㄷ\nㄱ, ㄴ, ㄷ")
+    long_hapdap = ai_hapdap.replace(
+        "수능AI실제합답형", "수능합답1대사진5선지",
+    )
+    split_experiment = long_hapdap.replace(
+        "수능합답1대사진5선지", "수능AI실제실험형",
+    )
+
+    assert hwppalette_runner._fifth_choice_ratio_mask(
+        "\n".join((direct, split_experiment, ai_hapdap, long_hapdap)),
+    ) == (False, False, True)
+
+
+def test_matching_hapdap_choice_ratio_changes_only_requested_paragraphs(monkeypatch):
+    from app.integrations import hwppalette_runner
+
+    hwppalette_runner._prefer_exam_pool_runtime()
+    from hwp_palette.hwp import engine_library
+
+    class FakeAction:
+        def __init__(self):
+            self.calls = []
+
+        def Run(self, action):
+            self.calls.append(action)
+
+    class FakeHwp:
+        def __init__(self):
+            self.HAction = FakeAction()
+            self.font_ratios = []
+            self.paragraph_begins = 0
+
+        def MoveParaBegin(self):
+            self.paragraph_begins += 1
+
+        def MoveSelParaEnd(self):
+            pass
+
+        def MoveParaEnd(self):
+            pass
+
+        def set_font(self, *, Ratio):
+            self.font_ratios.append(Ratio)
+
+    fake = FakeHwp()
+    searches = []
+    monkeypatch.setattr(engine_library, "_h", lambda: fake)
+    monkeypatch.setattr(
+        engine_library, "find_text",
+        lambda text: searches.append(text) is None,
+    )
+
+    assert engine_library.set_matching_paragraph_character_ratio(
+        "⑤ ㄱ, ㄴ, ㄷ", (False, True, False, True), character_ratio=87,
+    )
+    assert searches == ["⑤ ㄱ, ㄴ, ㄷ"] * 4
+    assert fake.paragraph_begins == 2
+    assert fake.font_ratios == [87, 87]
+
+
+def test_ratio_mask_condenses_only_physically_wrapped_candidates(monkeypatch):
+    from app.integrations import hwppalette_runner
+
+    hwppalette_runner._prefer_exam_pool_runtime()
+    from hwp_palette.hwp import engine_library
+
+    class FakeAction:
+        def __init__(self, owner):
+            self.owner = owner
+
+        def Run(self, action):
+            if action == "MoveLineEnd":
+                self.owner.pos = (0, self.owner.match, 5 if self.owner.wrapped[self.owner.match] else 10)
+            elif action == "MoveParaEnd":
+                self.owner.pos = (0, self.owner.match, 10)
+
+    class FakeHwp:
+        def __init__(self):
+            self.match = -1
+            self.wrapped = (False, True, False, True)
+            self.pos = (0, 0, 0)
+            self.font_ratios = []
+            self.HAction = FakeAction(self)
+
+        def MoveParaBegin(self):
+            self.pos = (0, self.match, 0)
+
+        def MoveSelParaEnd(self):
+            pass
+
+        def GetPos(self):
+            return self.pos
+
+        def SetPos(self, *pos):
+            self.pos = pos
+
+        def set_font(self, *, Ratio):
+            self.font_ratios.append(Ratio)
+
+    fake = FakeHwp()
+
+    def find(_text):
+        fake.match += 1
+        return True
+
+    monkeypatch.setattr(engine_library, "_h", lambda: fake)
+    monkeypatch.setattr(engine_library, "find_text", find)
+
+    assert engine_library.set_matching_paragraph_character_ratio(
+        "⑤", (True, True, True, True), character_ratio=87, wrapped_only=True,
+    )
+    assert fake.font_ratios == [87, 87]
+
+
+def test_ratio_mask_skips_non_choice_marker_occurrences(monkeypatch):
+    from app.integrations import hwppalette_runner
+
+    hwppalette_runner._prefer_exam_pool_runtime()
+    from hwp_palette.hwp import engine_library, hwp_engine
+
+    class FakeAction:
+        def Run(self, _action):
+            pass
+
+    class FakeHwp:
+        HAction = FakeAction()
+
+        def __init__(self):
+            self.match = -1
+            self.font_ratios = []
+
+        def MoveParaBegin(self):
+            pass
+
+        def MoveSelParaEnd(self):
+            pass
+
+        def MoveParaEnd(self):
+            pass
+
+        def set_font(self, *, Ratio):
+            self.font_ratios.append(Ratio)
+
+    fake = FakeHwp()
+    paragraphs = ("① unrelated stem marker", "① ② ③ ④ ⑤ choices")
+
+    def find(_text):
+        fake.match += 1
+        return fake.match < len(paragraphs)
+
+    monkeypatch.setattr(engine_library, "_h", lambda: fake)
+    monkeypatch.setattr(engine_library, "find_text", find)
+    monkeypatch.setattr(
+        hwp_engine, "read_selection_direct", lambda: paragraphs[fake.match],
+    )
+
+    assert engine_library.set_matching_paragraph_character_ratio(
+        "①", (True,), character_ratio=87,
+        required_paragraph_text=("①", "②", "③", "④", "⑤"),
+    )
+    assert fake.font_ratios == [87]
 
 
 def test_direct_reconstruction_wraps_stem_and_atomic_size_phrase():

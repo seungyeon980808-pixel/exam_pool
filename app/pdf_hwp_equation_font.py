@@ -12,8 +12,8 @@ from fontTools.ttLib import TTLibError
 from .pdf_hwp_font_trace import trace_font_glyphs
 from .pdf_hwp_font_view import FontView as _FontView, font_view as _font_view
 from .pdf_hwp_equation_glyphs import (
-    FRACTION_BAR, GLYPH_MAPPINGS, LOCAL_FONT_PATH, LOCAL_FONT_SHA256,
-    RADICAL_SIGN, VERIFIED_EQUATION_FONT,
+    ALTERNATE_EMBEDDED_GLYPH_PROOFS, FRACTION_BAR, GLYPH_MAPPINGS, LOCAL_FONT_PATH, LOCAL_FONT_SHA256,
+    RADICAL_SIGN, SCOPED_EMBEDDED_GLYPH_PROOFS, VECTOR_HEAD, VERIFIED_EQUATION_FONT,
 )
 
 
@@ -45,6 +45,7 @@ class EquationFontContext:
     verified_codepoints: frozenset[int]
     evidence: tuple[FontGlyphEvidence, ...]
     rejections: tuple[str, ...]
+    scoped_mappings: tuple[tuple[int, str], ...] = ()
 
 
 def _local_view() -> _FontView | None:
@@ -163,6 +164,7 @@ def verify_equation_context(
         if len(font_xrefs) > 1 else None
     )
     evidence: list[FontGlyphEvidence] = []
+    scoped_mappings: list[tuple[int, str]] = []
     for occurrence in _trace_occurrences(page, clip):
         codepoint, glyph_id, font_name, trace_sha, size, origin, bbox = occurrence
         local_gid = local.gid_for_codepoint(codepoint) if local is not None else None
@@ -187,12 +189,27 @@ def verify_equation_context(
                 selected = readable_bound[0]
         embedded_digest = selected[2].digest(glyph_id) if selected is not None else None
         embedded_metrics = selected[2].metric(glyph_id) if selected is not None else None
+        alternate_match = (
+            selected is not None
+            and (
+                codepoint, selected[1], embedded_digest, embedded_metrics,
+            ) in ALTERNATE_EMBEDDED_GLYPH_PROOFS
+        )
+        scoped_match = SCOPED_EMBEDDED_GLYPH_PROOFS.get(
+            (codepoint, font_name, trace_sha, glyph_id)
+        )
         outline_match = (
             selected is not None
-            and embedded_digest == local_digest
-            and embedded_metrics == local_metrics
+            and (
+                (embedded_digest == local_digest and embedded_metrics == local_metrics)
+                or alternate_match
+            )
         )
-        known = codepoint in GLYPH_MAPPINGS or chr(codepoint) in {FRACTION_BAR, RADICAL_SIGN}
+        known = (
+            codepoint in GLYPH_MAPPINGS
+            or chr(codepoint) in {FRACTION_BAR, RADICAL_SIGN, VECTOR_HEAD}
+            or scoped_match is not None
+        )
         identity = _font_identities(document, page, font_name)
         match = (
             (selected[0], selected[1], embedded_digest, embedded_metrics)
@@ -204,13 +221,20 @@ def verify_equation_context(
         )
         reason = (
             "unregistered-codepoint" if not known else
+            "verified-scoped-embedded-glyph" if scoped_match is not None else
             "wrong-font" if font_name != VERIFIED_EQUATION_FONT else
             "local-font-missing-or-changed" if local is None else
             binding_reason if binding_reason is not None else
+            "verified-alternate-embedded-outline" if alternate_match else
             "verified" if outline_match else
             "embedded-outline-match-count:0"
         )
-        verified = reason == "verified"
+        verified = reason in {
+            "verified", "verified-alternate-embedded-outline",
+            "verified-scoped-embedded-glyph",
+        }
+        if scoped_match is not None:
+            scoped_mappings.append((codepoint, scoped_match.formula))
         evidence.append(FontGlyphEvidence(
             codepoint, font_name, match[0], match[1], glyph_id, local_gid,
             match[2], local_digest, match[3], local_metrics,
@@ -219,10 +243,39 @@ def verify_equation_context(
     grouped: dict[int, list[FontGlyphEvidence]] = {}
     for entry in evidence:
         grouped.setdefault(entry.codepoint, []).append(entry)
-    verified = frozenset(
+    # Outline-verified HyhwpEQ mappings stay authorized when the same
+    # codepoint is also tagged as 명조 in the clip (PDF font-name error).
+    # HyhwpEQ outline mismatches still fail closed.
+    mixed_ok = frozenset(
         codepoint for codepoint, entries in grouped.items()
-        if entries and all(entry.verified for entry in entries)
+        if entries
+        and any(entry.verified for entry in entries)
+        and all(entry.verified or entry.reason == "wrong-font" for entry in entries)
     )
+    verified_occurrences = tuple(entry for entry in evidence if entry.verified)
+
+    def _adjacent_to_verified(entry: FontGlyphEvidence) -> bool:
+        return any(
+            abs(
+                (other.bbox[1] + other.bbox[3] - entry.bbox[1] - entry.bbox[3]) / 2
+            ) <= 3
+            and other.bbox[0] - 8 <= entry.bbox[2]
+            and entry.bbox[0] <= other.bbox[2] + 8
+            for other in verified_occurrences
+        )
+
+    sibling_verified = frozenset(
+        entry.codepoint
+        for entry in evidence
+        if not entry.verified
+        and entry.reason == "wrong-font"
+        and (
+            entry.codepoint in GLYPH_MAPPINGS
+            or chr(entry.codepoint) in {FRACTION_BAR, RADICAL_SIGN, VECTOR_HEAD}
+        )
+        and _adjacent_to_verified(entry)
+    )
+    verified = mixed_ok | sibling_verified
     global_reasons = tuple(sorted({
         entry.reason for entry in evidence
         if entry.reason.startswith((
@@ -237,7 +290,11 @@ def verify_equation_context(
         *(
             f"U+{entry.codepoint:04X}:{entry.reason}@{entry.bbox[0]:.2f},{entry.bbox[1]:.2f}"
             for entry in evidence
-            if not entry.verified and entry.reason not in global_reason_set
+            if not entry.verified
+            and entry.reason not in global_reason_set
+            and entry.codepoint not in verified
         ),
     )
-    return EquationFontContext(verified, tuple(evidence), rejections)
+    return EquationFontContext(
+        verified, tuple(evidence), rejections, tuple(sorted(set(scoped_mappings))),
+    )

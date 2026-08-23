@@ -10,6 +10,7 @@ import fitz
 from PIL import Image, ImageChops, ImageDraw
 
 from app.pdf_hwp_crop_assets import crop_region
+from app.pdf_hwp_object_segmentation import TextRegion, _assembled_panel_labels, _captions_under_panels
 from app.pdf_hwp_pipeline import build_editable_draft, detect_items
 from app.pdf_hwp_pipeline_models import DetectedItem, LayoutStyle
 
@@ -147,6 +148,42 @@ def test_object_layout_evidence_distinguishes_horizontal_and_vertical_panels(tmp
         assert metadata["image_count"] == 2
 
 
+def test_extra_image_objects_are_grouped_by_largest_gap_to_expected_panels(
+    tmp_path: Path,
+) -> None:
+    # Given: (가) is one embedded image and (나) is stored as two adjacent image
+    # objects, a common export shape in KICE PDFs.
+    panel = Image.new("L", (80, 100), "white")
+    ImageDraw.Draw(panel).rectangle((5, 5, 74, 94), outline="black", width=3)
+    stream = BytesIO()
+    panel.save(stream, format="PNG")
+    panel_png = stream.getvalue()
+    boxes = (
+        (20.0, 40.0, 100.0, 140.0),
+        (145.0, 40.0, 225.0, 140.0),
+        (235.0, 40.0, 315.0, 140.0),
+    )
+    pdf_path = tmp_path / "grouped-panels.pdf"
+    with fitz.open() as document:
+        page = document.new_page(width=360, height=200)
+        for box in boxes:
+            page.insert_image(fitz.Rect(box), stream=panel_png)
+        document.save(pdf_path)
+
+    # When: semantic labels require two panels.
+    source_bbox = tuple(fitz.Rect(boxes[0]) | fitz.Rect(boxes[-1]))
+    artifact = crop_region(
+        pdf_path, _item(source_bbox, "그림 (가), (나)를 비교한다."),
+        source_bbox, tmp_path / "grouped", "figure",
+    )
+    metadata = _metadata(artifact.provenance_path)
+
+    # Then: the largest inter-object gap splits the first image from the two
+    # adjacent objects instead of inventing a third semantic panel.
+    assert metadata["panel_bboxes"] == [list(boxes[0]), [145.0, 40.0, 315.0, 140.0]]
+    assert metadata["layout_axis"] == "horizontal"
+
+
 def test_ambiguous_single_scanned_caption_is_preserved_for_manual_review(tmp_path: Path) -> None:
     # Given: a caption-like isolated bottom row has only one group, so geometry cannot prove it is a caption.
     fixture = _raster_fixture(tmp_path, caption_groups=1)
@@ -181,6 +218,25 @@ def test_equal_raster_groups_without_expected_panel_labels_are_manual_review(tmp
         Image.open(BytesIO(fixture.image_png)).convert("L"),
         Image.open(artifact.image_path).convert("L"),
     )
+
+
+def test_real_grid_three_panel_raster_captions_are_excluded_in_reading_order(
+    tmp_path: Path,
+) -> None:
+    source = Path("PDF/p1_2025_11.pdf")
+    item = next(value for value in detect_items(source).items if value.item_number == 13)
+    draft = build_editable_draft(
+        source, item, tmp_path / "q13", layout_style=LayoutStyle.SUNEUNG,
+    )
+    metadata = tuple(
+        json.loads(asset.provenance_path.read_text(encoding="utf-8"))
+        for asset in draft.figure_assets
+    )
+
+    assert [entry["caption_text"] for entry in metadata] == ["(가)", "(나)", "(다)"]
+    assert all(entry["caption_bbox"] is not None for entry in metadata)
+    assert all(entry["image_bbox"][3] <= entry["caption_bbox"][1] for entry in metadata)
+    assert all(entry["panel_mode"] == "separate" for entry in metadata)
 
 
 def test_real_items_remove_only_caption_pixels_and_keep_final_panels_captionless(tmp_path: Path) -> None:
@@ -285,3 +341,29 @@ def test_real_items_15_and_16_use_exact_object_bbox_and_exclude_body_spans(tmp_p
         assert metadata["excluded_body_spans"]
         assert metadata["caption_detection_source"] == "none"
         assert _metadata(draft.figure_assets[0].provenance_path)["source_kind"] == "raster"
+
+
+def test_split_parenthesis_spans_assemble_into_panel_captions() -> None:
+    texts = (
+        TextRegion("(", (110.0, 350.0, 116.0, 360.0)),
+        TextRegion("가", (116.0, 350.0, 128.0, 360.0)),
+        TextRegion(")", (128.0, 350.0, 134.0, 360.0)),
+        TextRegion("(", (210.0, 350.0, 216.0, 360.0)),
+        TextRegion("나", (216.0, 350.0, 228.0, 360.0)),
+        TextRegion(")", (228.0, 350.0, 234.0, 360.0)),
+        TextRegion("(", (310.0, 350.0, 316.0, 360.0)),
+        TextRegion("다", (316.0, 350.0, 328.0, 360.0)),
+        TextRegion(")", (328.0, 350.0, 334.0, 360.0)),
+    )
+    panels = (
+        (100.0, 280.0, 200.0, 342.0),
+        (205.0, 280.0, 300.0, 342.0),
+        (305.0, 280.0, 400.0, 342.0),
+    )
+
+    assembled = _assembled_panel_labels(texts)
+    captions = _captions_under_panels(assembled, panels, ("(가)", "(나)", "(다)"))
+
+    assert tuple(region.text for region in assembled) == ("(가)", "(나)", "(다)")
+    assert tuple(caption.text for caption in captions) == ("(가)", "(나)", "(다)")
+    assert all(caption.bbox is not None for caption in captions)

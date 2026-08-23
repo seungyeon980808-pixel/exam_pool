@@ -34,6 +34,10 @@ _DIRECT_GRAPHICAL_CHOICE_SLOTS = [
     "문항번호", "문두", "사진1", "발문",
     "선지사진1", "선지사진2", "선지사진3", "선지사진4", "선지사진5",
 ]
+_DIRECT_NO_PROMPT_GRAPHICAL_CHOICE_SLOTS = [
+    "문항번호", "문두", "발문",
+    "선지사진1", "선지사진2", "선지사진3", "선지사진4", "선지사진5",
+]
 _HAPDAP_TWO_PHOTO_SLOTS = [
     "문항번호", "문두", "사진1", "사진2", "발문", "ㄱ", "ㄴ", "ㄷ", "1", "2", "3", "4", "5",
 ]
@@ -48,7 +52,31 @@ _HAPDAP_THREE_CAPTIONED_PHOTO_SLOTS = [
     "사진1", "(가)", "사진2", "(나)", "사진3", "(다)",
     "발문", "ㄱ", "ㄴ", "ㄷ", "1", "2", "3", "4", "5",
 ]
+_EXPERIMENT_SLOTS = [
+    "문항번호", "실험과정", "질문", "발언1", "발언2", "발언3",
+    "선지1", "선지2", "선지3", "선지4", "선지5",
+]
+_COMPARISON_SLOTS = [
+    "문항번호", "발문", "질문", "표머리",
+    "선지1", "선지2", "선지3", "선지4", "선지5",
+]
+_AI_HAPDAP_SLOTS = [
+    "문항번호", "발문", "질문", "보기ㄱ", "보기ㄴ", "보기ㄷ",
+    "선지1", "선지2", "선지3", "선지4", "선지5",
+]
+_AI_DIRECT_SLOTS = [
+    "문항번호", "발문", "질문", "배점",
+    "선지1", "선지2", "선지3", "선지4", "선지5",
+]
+_BUILTIN_SUNEUNG_TEMPLATES = {
+    "수능AI실제직접형": ("csat_science_direct.hwp", _AI_DIRECT_SLOTS),
+    "수능AI실제실험형": ("csat_science_experiment.hwp", _EXPERIMENT_SLOTS),
+    "수능AI실제비교선지형": ("csat_science_comparison.hwp", _COMPARISON_SLOTS),
+    "수능AI실제합답형": ("csat_science_hapdap.hwp", _AI_HAPDAP_SLOTS),
+}
 _DERIVED_TEMPLATES = {
+    "수능AI실제직접형새쪽": ("csat_science_direct.hwp", _AI_DIRECT_SLOTS),
+    "수능원문1대사진": ("csat_exact_source_one_large.hwp", ["사진1"]),
     "수능정답1대사진5선지": ("csat_direct_one_large.hwp", _DIRECT_ONE_PHOTO_SLOTS),
     "수능정답1소사진5선지": ("csat_direct_one_small.hwp", _DIRECT_ONE_PHOTO_SLOTS),
     "수능정답2소사진무캡션5선지": (
@@ -63,7 +91,17 @@ _DERIVED_TEMPLATES = {
     "수능정답1대사진그림5선지": (
         "csat_direct_one_large_graphical_choices.hwp", _DIRECT_GRAPHICAL_CHOICE_SLOTS,
     ),
+    "수능정답0사진그림5선지": (
+        "csat_direct_no_prompt_graphical_choices.hwp",
+        _DIRECT_NO_PROMPT_GRAPHICAL_CHOICE_SLOTS,
+    ),
+    "수능정답3소사진무캡션5선지": (
+        "csat_hapdap_three_small_captioned.hwp", _HAPDAP_THREE_CAPTIONED_PHOTO_SLOTS,
+    ),
     "수능합답1대사진5선지": (
+        "csat_hapdap_one_large.hwp", _HAPDAP_ONE_PHOTO_SLOTS,
+    ),
+    "수능합답실험1대사진5선지": (
         "csat_hapdap_one_large.hwp", _HAPDAP_ONE_PHOTO_SLOTS,
     ),
     "수능합답1소사진5선지": (
@@ -163,6 +201,31 @@ def _normal_label(value) -> str:
     return str(value or "").strip().strip("\\").strip()
 
 
+def _normalize_hwp_palette_export_item(raw: dict) -> tuple[str, str, list[str]]:
+    """Undo HwpPalette's collision suffixes and repair anonymous fifth choices.
+
+    HwpPalette appends ``(2)`` to a copied paint name and ``2`` to its call
+    label when a revised library is exported beside the previous one.  Those
+    suffixes are library bookkeeping, not part of ExamPool's runtime contract.
+    The experiment template was renamed while keeping the same semantic role,
+    so it gets the stable label used by the converter as well.
+    """
+    name = str(raw.get("name") or raw.get("label") or "").strip()
+    label = _normal_label(raw.get("label"))
+    if name.endswith(" (2)") and label.endswith("2"):
+        name = name[:-4].rstrip()
+        label = label[:-1].rstrip()
+    if label == "수능AI실제실험형2":
+        label = "수능AI실제실험형"
+
+    slots = list(raw.get("slot_names") or [])
+    if slots and not slots[-1].strip():
+        numeric_tail = [slot.strip() for slot in slots if slot.strip().isdigit()]
+        if numeric_tail[-4:] == ["1", "2", "3", "4"]:
+            slots[-1] = "5"
+    return name, label, slots
+
+
 def inspect_hwpal(content: bytes, filename: str = "palette.hwpal") -> tuple[dict, list[tuple[str, bytes]]]:
     """칩을 검사하고 정규화 메타데이터와 조각 바이트를 돌려준다."""
     if len(content) > MAX_ARCHIVE_BYTES:
@@ -196,7 +259,10 @@ def inspect_hwpal(content: bytes, filename: str = "palette.hwpal") -> tuple[dict
             if category not in FILE_CATEGORIES:
                 ignored += 1
                 continue
-            label = _normal_label(raw.get("label"))
+            raw_slots = raw.get("slot_names") or []
+            if not isinstance(raw_slots, list) or any(not isinstance(v, str) for v in raw_slots):
+                raise PalettePackageError(f"{raw.get('label') or category}의 슬롯 이름 형식이 올바르지 않습니다.")
+            name, label, slots = _normalize_hwp_palette_export_item(raw)
             if not label:
                 raise PalettePackageError(f"{category} 물감에 호출 라벨이 없습니다.")
             if (category, label) in labels:
@@ -206,9 +272,6 @@ def inspect_hwpal(content: bytes, filename: str = "palette.hwpal") -> tuple[dict
             archive_name = f"fragments/{source_name}"
             if not source_name or archive_name not in members:
                 raise PalettePackageError(f"{label}의 HWP 조각이 없습니다: {archive_name}")
-            slots = raw.get("slot_names") or []
-            if not isinstance(slots, list) or any(not isinstance(v, str) for v in slots):
-                raise PalettePackageError(f"{label}의 슬롯 이름 형식이 올바르지 않습니다.")
             count = int(raw.get("slot_count") or len(slots))
             if slots and count != len(slots):
                 raise PalettePackageError(
@@ -221,7 +284,7 @@ def inspect_hwpal(content: bytes, filename: str = "palette.hwpal") -> tuple[dict
             stored_name = f"{index:03d}_{source_name}"
             normalized.append({
                 "category": category,
-                "name": str(raw.get("name") or label),
+                "name": name or label,
                 "label": label,
                 "file": stored_name,
                 "slot_count": count,
@@ -487,6 +550,22 @@ def list_palettes() -> dict:
             "active": {style: digest[:16] for style, digest in registry["active"].items()}}
 
 
+def active_palette_package(style: str) -> tuple[dict, Path] | None:
+    """Return the active public package record and its complete source archive."""
+    if style not in STYLES:
+        return None
+    registry = _load_registry()
+    digest = registry.get("active", {}).get(style)
+    record = next((item for item in registry.get("packages", [])
+                   if item.get("digest") == digest), None)
+    if record is None:
+        return None
+    archive = _root() / "packages" / digest / "package.hwpal"
+    if not archive.is_file():
+        return None
+    return _public_record(record, registry), archive
+
+
 def package_item(package_id: str, item_index: int, style: str | None = None) -> tuple[dict, dict]:
     """Return one registered paint and optionally require it to be active for a style."""
     registry = _load_registry()
@@ -510,10 +589,6 @@ def active_template(style: str, label: str) -> dict | None:
     """Return a template from the palette currently active for ``style``."""
     if style not in STYLES:
         return None
-    registry = _load_registry()
-    digest = registry.get("active", {}).get(style)
-    if not digest:
-        return None
     wanted = _normal_label(label)
     if style == "suneung" and wanted in _DERIVED_TEMPLATES:
         filename, slot_names = _DERIVED_TEMPLATES[wanted]
@@ -524,13 +599,36 @@ def active_template(style: str, label: str) -> dict | None:
             "slot_names": list(slot_names),
             "slot_options": [{} for _ in slot_names],
         }
+    registry = _load_registry()
+    digest = registry.get("active", {}).get(style)
+    if not digest:
+        builtin = _BUILTIN_SUNEUNG_TEMPLATES.get(wanted) if style == "suneung" else None
+        if builtin is None:
+            return None
+        filename, slot_names = builtin
+        return {
+            "category": "템플릿", "name": wanted, "label": wanted,
+            "file": filename, "slot_count": len(slot_names),
+            "slot_names": list(slot_names), "slot_options": [{} for _ in slot_names],
+        }
     package = next((p for p in registry.get("packages", [])
                     if p.get("digest") == digest), None)
     if not package:
         return None
-    return next((item for item in package.get("items", [])
-                 if item.get("category") == "템플릿"
-                 and _normal_label(item.get("label")) == wanted), None)
+    active = next((item for item in package.get("items", [])
+                   if item.get("category") == "템플릿"
+                   and _normal_label(item.get("label")) == wanted), None)
+    if active is not None:
+        return active
+    builtin = _BUILTIN_SUNEUNG_TEMPLATES.get(wanted) if style == "suneung" else None
+    if builtin is None:
+        return None
+    filename, slot_names = builtin
+    return {
+        "category": "템플릿", "name": wanted, "label": wanted,
+        "file": filename, "slot_count": len(slot_names),
+        "slot_names": list(slot_names), "slot_options": [{} for _ in slot_names],
+    }
 
 
 def save_item_test(package_id: str, item_index: int, state: str, message: str = "") -> dict:
@@ -584,8 +682,18 @@ def _active_digest() -> str:
     for label, (filename, _) in _DERIVED_TEMPLATES.items():
         path = Path(__file__).resolve().parents[2] / "assets" / "hwp_templates" / filename
         derived[label] = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else ""
+    normalized_contracts = {}
+    for style, digest in registry.get("active", {}).items():
+        path = _root() / "packages" / str(digest) / "normalized.json"
+        normalized_contracts[style] = (
+            hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else ""
+        )
     payload = json.dumps(
-        {"active": registry.get("active", {}), "derived": derived},
+        {
+            "active": registry.get("active", {}),
+            "normalized_contracts": normalized_contracts,
+            "derived": derived,
+        },
         sort_keys=True, ensure_ascii=False,
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
@@ -640,6 +748,8 @@ def materialize_active(runtime_dir: Path, seed_dir: Path, force: bool = False) -
 
     for index, (label, (filename, slot_names)) in enumerate(_DERIVED_TEMPLATES.items()):
         source = Path(__file__).resolve().parents[2] / "assets" / "hwp_templates" / filename
+        if not source.is_file():
+            source = seed_dir / "fragments" / filename
         if not source.is_file():
             raise PalettePackageError(f"ExamPool 직접형 템플릿이 없습니다: {source}")
         target_name = f"exampool_{filename}"

@@ -142,6 +142,25 @@ def test_caption_count_mismatch_requires_manual_review_before_hwp(
     assert typesetter.markdown == ""
 
 
+def test_captionless_template_ignores_unused_asset_caption_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        palette_registry,
+        "active_template",
+        lambda _style, _label: {
+            "label": "one-photo",
+            "slot_count": 3,
+            "slot_names": ["문항번호", "발문", "사진1"],
+        },
+    )
+    asset = _figure_asset(tmp_path, 1, caption="(가)")
+    markdown = f"\\one-photo\\\n20\n발문\n\\{asset.image_path.stem}\\"
+    unit = ConversionUnit(item_number=20, palette_markdown=markdown, figure_assets=(asset,))
+
+    typeset_conversion(_request(tmp_path, unit), typesetter=_RecordingTypesetter())
+
+
 def test_captionless_png_and_caption_remain_separate_hwp_slot_values(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -183,6 +202,39 @@ def test_captionless_png_and_caption_remain_separate_hwp_slot_values(
     assert warnings == []
     assert fills[1][0]["image"] == str(asset.image_path)
     assert fills[2] == "(가)"
+
+
+def test_revised_experiment_template_accepts_its_dedicated_photo_slot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    slot_names = [
+        "문항번호", "문두", "실험내용", "사진1", "표", "발문",
+        "ㄱ", "ㄴ", "ㄷ", "1", "2", "3", "4", "5",
+    ]
+    monkeypatch.setattr(
+        palette_registry,
+        "active_template",
+        lambda _style, _label: {
+            "label": "수능AI실제실험형",
+            "slot_count": len(slot_names),
+            "slot_names": slot_names,
+        },
+    )
+    asset = _figure_asset(tmp_path, 1)
+    values = (
+        "4", "intro", "experiment", f"\\{asset.image_path.stem}\\", "-", "ask",
+        "a", "b", "c", "1", "2", "3", "4", "5",
+    )
+    unit = ConversionUnit(
+        4,
+        "\n".join(("\\수능AI실제실험형\\", *values)),
+        (asset,),
+    )
+
+    result = typeset_conversion(_request(tmp_path, unit), typesetter=_RecordingTypesetter())
+
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["figure_asset_hashes"]["4"] == [asset.metadata.asset_hash]
 
 
 def test_editable_kice_panel_labels_are_typed_caption_slots(

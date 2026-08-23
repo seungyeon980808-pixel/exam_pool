@@ -194,6 +194,7 @@ class ConversionRequest:
     output_dir: Path
     layout_style: LayoutStyle
     asset_dirs: tuple[Path, ...] = ()
+    header_subject: str = ""
 
 
 @dataclass(frozen=True, slots=True)

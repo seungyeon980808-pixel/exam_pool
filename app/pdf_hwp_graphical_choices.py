@@ -17,6 +17,10 @@ from .pdf_hwp_pipeline_models import (
 
 
 GRAPHICAL_CHOICE_TEMPLATE: Final = "수능정답1대사진그림5선지"
+GRAPHICAL_CHOICE_NO_PROMPT_TEMPLATE: Final = "수능정답0사진그림5선지"
+GRAPHICAL_CHOICE_TEMPLATES: Final = frozenset({
+    GRAPHICAL_CHOICE_TEMPLATE, GRAPHICAL_CHOICE_NO_PROMPT_TEMPLATE,
+})
 GRAPHICAL_CHOICE_COUNT: Final = 5
 
 
@@ -26,7 +30,7 @@ def _file_hash(path: Path) -> str:
 
 def _template_detail(markdown: str, assets: tuple[CropArtifact, ...]) -> str | None:
     lines = tuple(line.strip() for line in markdown.splitlines() if line.strip())
-    if not lines or lines[0] != f"\\{GRAPHICAL_CHOICE_TEMPLATE}\\":
+    if not lines or lines[0] not in {f"\\{label}\\" for label in GRAPHICAL_CHOICE_TEMPLATES}:
         return "graphical-choice template label is incomplete"
     expected = tuple(f"\\{asset.image_path.stem}\\" for asset in assets)
     if len(lines) < GRAPHICAL_CHOICE_COUNT or lines[-GRAPHICAL_CHOICE_COUNT:] != expected:
@@ -40,7 +44,9 @@ def draft_review_detail(
     assets: tuple[CropArtifact, ...],
 ) -> str | None:
     """Return a manual-review reason when a draft's choice contract is unsafe."""
-    has_graphical_template = markdown.lstrip().startswith(f"\\{GRAPHICAL_CHOICE_TEMPLATE}\\")
+    has_graphical_template = any(
+        markdown.lstrip().startswith(f"\\{label}\\") for label in GRAPHICAL_CHOICE_TEMPLATES
+    )
     if not assets:
         return "graphical-choice assets are missing" if has_graphical_template else None
     if len(assets) != GRAPHICAL_CHOICE_COUNT:
@@ -76,7 +82,7 @@ def selected_assets(
     """Parse persisted choices into a safe ordered typeset contract."""
     candidates = [asset for asset in assets if asset.role == "graphical_choice"]
     if not candidates:
-        if markdown.lstrip().startswith(f"\\{GRAPHICAL_CHOICE_TEMPLATE}\\"):
+        if any(markdown.lstrip().startswith(f"\\{label}\\") for label in GRAPHICAL_CHOICE_TEMPLATES):
             raise ManualReviewRequiredError(item_number, "graphical-choice assets are missing")
         return ()
     try:

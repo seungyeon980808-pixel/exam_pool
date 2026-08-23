@@ -62,6 +62,19 @@ def test_text_choices_keep_content_joined_to_circled_markers() -> None:
     assert _choice_texts(words, 0) == ("ㄱ", "ㄴ", "ㄷ", "ㄱ,ㄷ", "ㄴ,ㄷ")
 
 
+def test_text_choices_keep_formula_glued_before_the_next_marker() -> None:
+    words = [
+        _word(0, 0, "①"), _word(20, 0, "A"),
+        _word(160, 0, "②"), _word(180, 0, "B"),
+        _word(320, 0, "③"), _word(340, 0, "C"),
+        _word(0, 20, "④"),
+        _word(20, 20, "[[formula:D]]⑤"),
+        _word(160, 20, "E"),
+    ]
+
+    assert _choice_texts(words, 0) == ("A", "B", "C", "[[formula:D]]", "E")
+
+
 def test_hyhwp_equation_font_decodes_all_corpus_symbols() -> None:
     # Given: every previously unregistered non-structural glyph in the corpus.
     raw = "\ue003\ue004\ue00d\ue00f\ue010\ue011\ue012\ue013\ue015\ue016\ue044\ue045\ue04f\ue052\ue055\ue056\ue099\ue0a4\ue0a7\ue0ad\ue0bb\ue0e5\ue0e7\ue0e9\ue0ea\ue0ef\ue0f4\ue0fb\ue101"

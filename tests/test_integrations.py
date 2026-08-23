@@ -12,13 +12,78 @@ from fastapi import HTTPException
 
 from app import db
 from app.integrations import palette_registry
-from app.integrations.hwppalette import HwpPaletteProvider
+from app.integrations.hwppalette import HwpPaletteError, HwpPaletteProvider
 from app.routes_integrations import (_evidence_summary, _paint_test_markdown, integration_status,
                                      preview_question, review_report, typeset_set)
 from app.routes_question import ChoiceIn, QuestionIn
 
 
 class TestHwpPaletteContract(unittest.TestCase):
+    def test_nested_table_is_inline_and_uses_the_parent_cell_width(self):
+        runtime = Path(__file__).resolve().parents[1] / "vendor" / "hwp_typesetter"
+        with patch.object(sys, "path", [str(runtime), *sys.path]):
+            hwp_engine = importlib.import_module("hwp_palette.hwp.hwp_engine")
+
+        hwp = MagicMock()
+        hwp.GetPos.return_value = (7, 0, 0)
+        hwp.get_col_width.return_value = 52.0
+        hwp.MiliToHwpUnit.side_effect = lambda value: round(value * 100)
+        table_creation = hwp.HParameterSet.HTableCreation
+
+        with patch.object(hwp_engine, "hwp", hwp):
+            hwp_engine.create_table_autofit(5, 3)
+
+        self.assertEqual(table_creation.WidthType, 2)
+        self.assertEqual(table_creation.WidthValue, 4160)
+        self.assertTrue(table_creation.TableProperties.TreatAsChar)
+        self.assertEqual(table_creation.TableProperties.Width, 4160)
+        hwp.CreateSet.assert_called_once_with("Table")
+        inline_properties = hwp.CreateSet.return_value
+        inline_properties.SetItem.assert_called_once_with("TreatAsChar", True)
+
+    def test_nested_table_exit_returns_to_its_parent_cell(self):
+        runtime = Path(__file__).resolve().parents[1] / "vendor" / "hwp_typesetter"
+        with patch.object(sys, "path", [str(runtime), *sys.path]):
+            hwp_engine = importlib.import_module("hwp_palette.hwp.hwp_engine")
+
+        hwp = MagicMock()
+        positions = iter(((9, 0, 0), (7, 0, 1)))
+        hwp.GetPos.side_effect = lambda: next(positions)
+
+        with patch.object(hwp_engine, "hwp", hwp):
+            reached = hwp_engine.exit_table(parent_list_id=7)
+
+        self.assertTrue(reached)
+        self.assertEqual(
+            hwp.HAction.Run.call_args_list,
+            [unittest.mock.call("Cancel"), unittest.mock.call("CloseEx"),
+             unittest.mock.call("MoveRight")],
+        )
+
+    def test_experiment_picture_uses_compact_material_box_frame(self):
+        runtime = Path(__file__).resolve().parents[1] / "vendor" / "hwp_typesetter"
+        with patch.object(sys, "path", [str(runtime), *sys.path]):
+            engine = importlib.import_module("hwp_palette.hwp.engine_library")
+
+        hwp = MagicMock()
+        hwp.get_col_width.return_value = 108.0
+        hwp.get_row_height.return_value = 87.0
+        hwp.get_cell_margin.return_value = {}
+        hwp.get_col_num.return_value = 1
+        hwp.get_row_num.return_value = 1
+        hwp.MiliToHwpUnit.side_effect = lambda value: round(value * 100)
+        picture = MagicMock()
+        hwp.insert_picture.return_value = picture
+
+        with patch.object(engine.hwp_engine, "in_table", return_value=True), \
+             patch.object(engine, "_image_size_mm", return_value=(80.0, 160.0)):
+            engine._insert_picture_sized(
+                hwp, "experiment.png", max_bounds_mm=(43.0, 43.5),
+            )
+
+        picture.Properties.SetItem.assert_any_call("Width", 2175)
+        picture.Properties.SetItem.assert_any_call("Height", 4350)
+
     def test_embedded_runtime_deletes_only_the_table_containing_unused_bogi(self):
         runtime = Path(__file__).resolve().parents[1] / "vendor" / "hwp_typesetter"
         with patch.object(sys, "path", [str(runtime), *sys.path]):
@@ -109,6 +174,65 @@ class TestHwpPaletteContract(unittest.TestCase):
             "ParagraphShape", hwp.HParameterSet.HParaShape.HSet,
         )
 
+    def test_large_experiment_template_starts_on_a_fresh_page(self):
+        runtime = Path(__file__).resolve().parents[1] / "vendor" / "hwp_typesetter"
+        with patch.object(sys, "path", [str(runtime), *sys.path]):
+            engine = importlib.import_module("hwp_palette.hwp.engine_library")
+
+        hwp = MagicMock()
+        ops = [
+            ("line", "앞 문항", None),
+            ("template", {"label": "수능AI실제실험형"}, []),
+        ]
+        with patch.object(engine, "_h", return_value=hwp), \
+             patch.object(engine, "insert_plain"), \
+             patch.object(engine, "_find_template_marker", return_value=False):
+            engine.execute_library_plan(ops, lambda _item: "fragment.hwp")
+
+        self.assertEqual(
+            [call.args[0] for call in hwp.HAction.Run.call_args_list],
+            ["BreakPara", "BreakPage"],
+        )
+
+    def test_long_atomic_boxed_question_starts_on_a_fresh_page(self):
+        runtime = Path(__file__).resolve().parents[1] / "vendor" / "hwp_typesetter"
+        with patch.object(sys, "path", [str(runtime), *sys.path]):
+            engine = importlib.import_module("hwp_palette.hwp.engine_library")
+            parser = importlib.import_module("hwp_palette.model.parser")
+
+        hwp = MagicMock()
+        boxed_passage = parser.MultiLine((
+            "문두",
+            parser.Table(1, 1, (("가" * 420,),)),
+        ))
+        ops = [
+            ("line", "앞 문항", None),
+            ("template", {"label": "수능AI실제합답형"}, [boxed_passage]),
+        ]
+        with patch.object(engine, "_h", return_value=hwp), \
+             patch.object(engine, "insert_plain"), \
+             patch.object(engine, "_find_template_marker", return_value=False):
+            engine.execute_library_plan(ops, lambda _item: "fragment.hwp")
+
+        self.assertEqual(
+            [call.args[0] for call in hwp.HAction.Run.call_args_list],
+            ["BreakPara", "BreakPage"],
+        )
+
+    def test_first_experiment_template_does_not_skip_an_empty_column(self):
+        runtime = Path(__file__).resolve().parents[1] / "vendor" / "hwp_typesetter"
+        with patch.object(sys, "path", [str(runtime), *sys.path]):
+            engine = importlib.import_module("hwp_palette.hwp.engine_library")
+
+        hwp = MagicMock()
+        ops = [("template", {"label": "수능AI실제실험형"}, [])]
+        with patch.object(engine, "_h", return_value=hwp), \
+             patch.object(engine, "insert_plain"), \
+             patch.object(engine, "_find_template_marker", return_value=False):
+            engine.execute_library_plan(ops, lambda _item: "fragment.hwp")
+
+        hwp.HAction.Run.assert_not_called()
+
     def test_parser_moves_an_unfinished_question_clause_after_intervening_photo_slots(self):
         runtime = Path(__file__).resolve().parents[1] / "vendor" / "hwp_typesetter"
         with patch.object(sys, "path", [str(runtime), *sys.path]):
@@ -194,6 +318,58 @@ class TestHwpPaletteContract(unittest.TestCase):
                     "Height", hwp.MiliToHwpUnit(round(height, 2)),
                 )
 
+    def test_generated_table_uses_eighty_percent_of_the_available_width(self):
+        runtime = Path(__file__).resolve().parents[1] / "vendor" / "hwp_typesetter"
+        with patch.object(sys, "path", [str(runtime), *sys.path]):
+            hwp_engine = importlib.import_module("hwp_palette.hwp.hwp_engine")
+        hwp = MagicMock()
+        hwp.MiliToHwpUnit.side_effect = lambda value: round(value * 100)
+        hwp.CurSelectedCtrl._com_obj = MagicMock()
+
+        with patch.object(hwp_engine, "hwp", hwp), \
+             patch.object(hwp_engine, "S", {"layout": {"column_width_mm": 100.0}}), \
+             patch.object(hwp_engine, "in_table", return_value=False):
+            hwp_engine.create_table_autofit(2, 2)
+
+        creation = hwp.HParameterSet.HTableCreation
+        self.assertEqual(creation.WidthType, 2)
+        self.assertEqual(creation.WidthValue, 8000)
+
+    def test_nested_generated_table_uses_eighty_percent_of_the_host_cell(self):
+        runtime = Path(__file__).resolve().parents[1] / "vendor" / "hwp_typesetter"
+        with patch.object(sys, "path", [str(runtime), *sys.path]):
+            hwp_engine = importlib.import_module("hwp_palette.hwp.hwp_engine")
+        hwp = MagicMock()
+        hwp.get_col_width.return_value = 50.0
+        hwp.MiliToHwpUnit.side_effect = lambda value: round(value * 100)
+        hwp.CurSelectedCtrl._com_obj = MagicMock()
+
+        with patch.object(hwp_engine, "hwp", hwp), \
+             patch.object(hwp_engine, "in_table", return_value=True):
+            hwp_engine.create_table_autofit(2, 2)
+
+        creation = hwp.HParameterSet.HTableCreation
+        self.assertEqual(creation.WidthValue, 4000)
+
+    def test_generated_table_centers_every_cell_value(self):
+        runtime = Path(__file__).resolve().parents[1] / "vendor" / "hwp_typesetter"
+        with patch.object(sys, "path", [str(runtime), *sys.path]):
+            engine = importlib.import_module("hwp_palette.hwp.engine_library")
+        hwp = MagicMock()
+        hwp.GetPos.return_value = (0, 0, 0)
+
+        with patch.object(engine, "_h", return_value=hwp), \
+             patch.object(engine.hwp_engine, "create_table_autofit"), \
+             patch.object(engine.hwp_engine, "exit_table"), \
+             patch.object(engine, "insert_plain"):
+            engine.insert_table(2, 2, [["거리", "속력"], ["1", "4"]])
+
+        centered = [
+            call for call in hwp.HAction.Run.call_args_list
+            if call.args == ("ParagraphShapeAlignCenter",)
+        ]
+        self.assertEqual(len(centered), 4)
+
     def test_table_picture_excludes_cell_inner_margins_from_contain_width(self):
         runtime = Path(__file__).resolve().parents[1] / "vendor" / "hwp_typesetter"
         with patch.object(sys, "path", [str(runtime), *sys.path]):
@@ -232,6 +408,87 @@ class TestHwpPaletteContract(unittest.TestCase):
             engine._insert_picture_sized(hwp, "wide.png")
 
         hwp.set_row_height.assert_called_once_with(27.0)
+
+    def test_large_single_cell_grows_to_seventy_percent_readable_scale(self):
+        runtime = Path(__file__).resolve().parents[1] / "vendor" / "hwp_typesetter"
+        with patch.object(sys, "path", [str(runtime), *sys.path]):
+            engine = importlib.import_module("hwp_palette.hwp.engine_library")
+        hwp = MagicMock()
+        row_height = [29.0]
+        column_width = [61.0]
+        hwp.get_col_width.side_effect = lambda: column_width[0]
+        hwp.get_row_height.side_effect = lambda: row_height[0]
+        hwp.get_cell_margin.return_value = {
+            "left": 1.3, "right": 1.3, "top": 1.0, "bottom": 1.0,
+        }
+        hwp.get_col_num.return_value = 1
+        hwp.get_row_num.return_value = 1
+        hwp.insert_picture.return_value = MagicMock()
+        hwp.MiliToHwpUnit.side_effect = lambda value: round(value * 100)
+        hwp.set_row_height.side_effect = lambda value: row_height.__setitem__(0, value)
+        hwp.set_col_width.side_effect = (
+            lambda value, **_kwargs: column_width.__setitem__(0, value)
+        )
+
+        with patch.object(engine.hwp_engine, "in_table", return_value=True), \
+             patch.object(engine, "_image_size_mm", return_value=(98.425, 44.662)):
+            engine._insert_picture_sized(hwp, "q18.png")
+
+        calls = hwp.insert_picture.return_value.Properties.SetItem.call_args_list
+        width = calls[0].args[1]
+        height = calls[1].args[1]
+        self.assertGreaterEqual(width / 100 / 98.425, 0.70)
+        self.assertGreaterEqual(height / 100 / 44.662, 0.70)
+
+    def test_small_single_cell_grows_to_seventy_percent_readable_scale(self):
+        runtime = Path(__file__).resolve().parents[1] / "vendor" / "hwp_typesetter"
+        with patch.object(sys, "path", [str(runtime), *sys.path]):
+            engine = importlib.import_module("hwp_palette.hwp.engine_library")
+        hwp = MagicMock()
+        row_height = [14.0]
+        column_width = [43.0]
+        hwp.get_col_width.side_effect = lambda: column_width[0]
+        hwp.get_row_height.side_effect = lambda: row_height[0]
+        hwp.get_cell_margin.return_value = {
+            "left": 1.0, "right": 1.0, "top": 1.0, "bottom": 1.0,
+        }
+        hwp.get_col_num.return_value = 1
+        hwp.get_row_num.return_value = 1
+        hwp.insert_picture.return_value = MagicMock()
+        hwp.MiliToHwpUnit.side_effect = lambda value: round(value * 100)
+        hwp.set_row_height.side_effect = lambda value: row_height.__setitem__(0, value)
+        hwp.set_col_width.side_effect = (
+            lambda value, **_kwargs: column_width.__setitem__(0, value)
+        )
+
+        with patch.object(engine.hwp_engine, "in_table", return_value=True), \
+             patch.object(engine, "_image_size_mm", return_value=(48.4725, 21.1875)):
+            engine._insert_picture_sized(hwp, "q12.png")
+
+        calls = hwp.insert_picture.return_value.Properties.SetItem.call_args_list
+        width = calls[0].args[1]
+        height = calls[1].args[1]
+        self.assertGreaterEqual(width / 100 / 48.4725, 0.70)
+        self.assertGreaterEqual(height / 100 / 21.1875, 0.70)
+        hwp.TableCellAlignCenterTop.assert_called_once_with()
+
+    def test_pdf_crop_sidecar_is_authoritative_for_native_print_size(self):
+        runtime = Path(__file__).resolve().parents[1] / "vendor" / "hwp_typesetter"
+        with patch.object(sys, "path", [str(runtime), *sys.path]):
+            engine = importlib.import_module("hwp_palette.hwp.engine_library")
+        from PIL import Image
+
+        with tempfile.TemporaryDirectory() as directory:
+            image_path = Path(directory) / "q18.png"
+            Image.new("L", (1163, 529), "white").save(image_path)
+            image_path.with_suffix(".json").write_text(json.dumps({
+                "bbox": [112.8, 755.701, 391.8, 882.301],
+            }), encoding="utf-8")
+
+            width_mm, height_mm = engine._image_size_mm(image_path)
+
+        self.assertAlmostEqual(width_mm, 279.0 * 25.4 / 72.0, places=3)
+        self.assertAlmostEqual(height_mm, 126.6 * 25.4 / 72.0, places=3)
 
     def test_exam_style_conversion_cannot_change_table_picture_aspect(self):
         runtime = Path(__file__).resolve().parents[1] / "vendor" / "hwp_typesetter"
@@ -596,7 +853,7 @@ class TestHwpPaletteContract(unittest.TestCase):
                 )
         self.assertNotEqual(first, second)
 
-    def test_conversion_photo_dirs_override_historical_same_stem_assets(self):
+    def test_conversion_photo_dirs_replace_historical_assets(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "palette"
             old_dir = Path(tmp) / "job-old"
@@ -621,7 +878,28 @@ class TestHwpPaletteContract(unittest.TestCase):
             config = json.loads((root / "data" / "config.json").read_text(encoding="utf-8"))
 
         self.assertEqual(resolved, current.resolve())
-        self.assertEqual(Path(config["photo_dirs"][0]), current_dir.resolve())
+        self.assertEqual(config["photo_dirs"], [str(current_dir.resolve())])
+
+    def test_conversion_photo_lookup_does_not_fall_back_after_scope_is_registered(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "palette"
+            current_dir = Path(tmp) / "job-current"
+            (root / "hwp_palette").mkdir(parents=True)
+            (root / "hwp_palette" / "cli.py").write_text("", encoding="utf-8")
+            (root / "data").mkdir()
+            current_dir.mkdir()
+            (root / "data" / "config.json").write_text("{}", encoding="utf-8")
+            provider = HwpPaletteProvider(root)
+            provider.register_photo_dirs((current_dir,))
+
+            with patch.object(
+                provider,
+                "photo_dirs",
+                side_effect=AssertionError("historical fallback lookup was used"),
+            ):
+                resolved = provider.resolve_photo("missing")
+
+        self.assertIsNone(resolved)
 
     def test_photo_resolution_rejects_ambiguous_fallback_same_stem(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -677,6 +955,37 @@ class TestHwpPaletteContract(unittest.TestCase):
                 self.assertEqual(terminated, {True: [456, 123], False: []}[is_windows])
                 self.assertEqual(process.killed, not is_windows)
                 self.assertEqual(process.wait_timeouts, [5])
+
+    def test_failed_preview_kills_the_broken_hwp_process_before_retry(self):
+        # Given: the isolated HWP process reports a COM server fault after recording its pid.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "palette"
+            cache = Path(tmp) / "cache"
+            (root / "hwp_palette").mkdir(parents=True)
+            (root / "hwp_palette" / "cli.py").write_text("", encoding="utf-8")
+            provider = HwpPaletteProvider(root)
+
+            class FailedProcess:
+                returncode = 1
+                pid = 123
+
+                def __init__(self, args):
+                    self.args = args
+
+                def communicate(self, timeout=None):
+                    Path(self.args[self.args.index("--hwp-pid-file") + 1]).write_text(
+                        "456", encoding="ascii",
+                    )
+                    return "", "pywintypes.com_error: (-2147417851, 'server exception')"
+
+            with patch("app.integrations.hwppalette.data_dir", return_value=cache), \
+                 patch("app.integrations.hwppalette.subprocess.Popen",
+                       side_effect=lambda args, **_kwargs: FailedProcess(args)), \
+                 patch("app.integrations.hwppalette._cleanup_timed_out_process") as cleanup:
+                with self.assertRaises(HwpPaletteError):
+                    provider.render_preview("\\template\\\n1", scope="set")
+
+        cleanup.assert_called_once()
 
     def test_question_preview_accepts_unsaved_editor_payload(self):
         payload = QuestionIn(

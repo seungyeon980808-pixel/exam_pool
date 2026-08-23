@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import json
 from pathlib import Path
 import sys
@@ -31,21 +30,18 @@ from app.pdf_hwp_pipeline import DetectionResult, build_editable_draft, detect_i
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "PDF" / "p1_2024_11.pdf"
+P2_2026_SOURCE = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일\p2_2026_11.pdf")
 sys.path.insert(0, str(ROOT / "vendor" / "hwp_typesetter"))
 from hwp_palette.hwp import engine_library, hwp_engine  # noqa: E402
 
 
-def test_detection_reselects_large_hapdap_template_from_real_q2_final_crop(
+def test_detection_persists_real_q2_as_editable_table_without_raster_asset(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Given: real q2's expanded mixed-region crop but a stale pre-expansion small label.
+    # Given: real q2, whose source material is now recovered as editable text/table/formulas.
     real_detection = detect_items(SOURCE)
     item2 = next(item for item in real_detection.items if item.item_number == 2)
     real_draft = build_editable_draft(SOURCE, item2, tmp_path / "real-q2")
-    stale_markdown = real_draft.palette_markdown.replace(
-        "\\수능합답1대사진5선지\\", "\\수능합답1소사진5선지\\", 1,
-    )
-    stale_draft = replace(real_draft, palette_markdown=stale_markdown)
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "conversion.db")
     monkeypatch.setattr(db, "_inited", False)
     monkeypatch.setattr(routes_pdf_hwp, "conversion_root", lambda: tmp_path / "pdf_hwp")
@@ -57,7 +53,7 @@ def test_detection_reselects_large_hapdap_template_from_real_q2_final_crop(
         source, real_detection.source_hash, real_detection.page_count, (item2,),
     ))
     monkeypatch.setattr(
-        routes_pdf_hwp.pipeline, "build_editable_draft", lambda *_args, **_kwargs: stale_draft,
+        routes_pdf_hwp.pipeline, "build_editable_draft", lambda *_args, **_kwargs: real_draft,
     )
     job_id = client.post("/api/pdf-hwp/jobs", json={}).json()["id"]
     with SOURCE.open("rb") as source_file:
@@ -66,26 +62,23 @@ def test_detection_reselects_large_hapdap_template_from_real_q2_final_crop(
             files={"file": (SOURCE.name, source_file, "application/pdf")},
         )
 
-    # When: detection persists the final authoritative figure contract.
+    # When: detection persists the structured draft.
     response = client.post(f"/api/pdf-hwp/jobs/{job_id}/detect")
-    item = response.json()["items"][0]
-    figure = next(asset for asset in response.json()["assets"] if asset["role"] == "figure")
-
-    # Then: the full bbox/hash/dimensions and large template agree before typesetting.
-    assert response.status_code == 200
-    assert item["draft"]["palette_markdown"].splitlines()[0] == "\\수능합답1대사진5선지\\"
-    assert figure["metadata"]["image_bbox"] == pytest.approx(
-        [89.9, 561.71240234375, 418.56, 621.3529052734375]
-    )
-    assert [figure["metadata"]["width_px"], figure["metadata"]["height_px"]] == [1370, 249]
-    assert figure["metadata"]["display_size"] == "large"
-    assert figure["sha256"] == "5fd82a3e598ec2d26823457e2d2c01567f5fa0626ccce4401d4d19f02e74b30b"
+    payload = response.json()
+    assert response.status_code == 200, payload
+    item = payload["items"][0]
+    # Then: the table and formulas stay editable instead of being flattened to a figure.
+    markdown = item["draft"]["palette_markdown"]
+    assert item["status"] == "ready"
+    assert markdown.splitlines()[0] == "\\수능AI실제합답형\\"
+    assert "\\표4*2\\" in markdown
+    assert "\\수식{" in markdown
+    assert not [asset for asset in payload["assets"] if asset["role"] in {"figure", "figure_panel"}]
 
 
 @pytest.mark.parametrize(
     ("item_number", "expected_label", "expected_size"),
     [
-        (2, "수능합답1대사진5선지", "large"),
         (11, "수능합답1소사진5선지", "small"),
         (12, "수능합답1소사진5선지", "small"),
         (15, "수능합답1소사진5선지", "small"),
@@ -111,9 +104,9 @@ def test_real_single_hapdap_items_use_final_crop_size_without_item_overrides(
 
 
 def test_final_contract_blocks_asset_changed_after_routing(tmp_path: Path) -> None:
-    # Given: real q2 metadata followed by an unexpected final PNG replacement.
-    item2 = next(item for item in detect_items(SOURCE).items if item.item_number == 2)
-    draft = build_editable_draft(SOURCE, item2, tmp_path / "q2-hash")
+    # Given: real q11 metadata followed by an unexpected final PNG replacement.
+    item11 = next(item for item in detect_items(SOURCE).items if item.item_number == 11)
+    draft = build_editable_draft(SOURCE, item11, tmp_path / "q11-hash")
     path = draft.figure_assets[0].image_path
     with Image.open(path) as opened:
         changed = opened.convert("RGB")
@@ -122,7 +115,7 @@ def test_final_contract_blocks_asset_changed_after_routing(tmp_path: Path) -> No
 
     # When: persistence reconciles the final artifact.
     result = reconcile_final_figure_contract(
-        2, draft.palette_markdown, draft.figure_assets,
+        11, draft.palette_markdown, draft.figure_assets,
     )
 
     # Then: the ambiguous replacement cannot silently retain a template.
@@ -130,12 +123,62 @@ def test_final_contract_blocks_asset_changed_after_routing(tmp_path: Path) -> No
     assert result.detail == "final figure asset hash mismatch"
 
 
-def test_real_q2_insertion_dimensions_preserve_full_crop_aspect(
+def test_final_contract_keeps_one_composite_when_panel_split_is_uncertain(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given: one readable full figure whose (가)/(나) panel split is not authoritative.
+    source = source_artifact(tmp_path, SourceArtifactSpec(
+        name="uncertain-composite",
+        panel_bboxes=((0.0, 0.0, 300.0, 100.0),),
+        captions=(),
+        drawing_count=0,
+        image_count=1,
+    ))
+    routed = route_figure("그림 (가), (나)를 비교한다.", source)
+    asset = routed.assets[0]
+    markdown = (
+        "\\수능정답1대사진5선지\\\n7\n본문\n"
+        f"\\{asset.image_path.stem}\\\n발문\n1\n2\n3\n4\n5"
+    )
+
+    # When: the final handoff validates the readable composite PNG.
+    result = reconcile_final_figure_contract(7, markdown, (asset,))
+
+    # Then: uncertain segmentation is a warning, not a lost structured question.
+    assert isinstance(result, FinalFigureContract)
+    assert routes_pdf_hwp._figure_review_error((asset,)) is None
+    monkeypatch.setattr(
+        routes_pdf_hwp.palette_registry,
+        "active_template",
+        lambda _style, _label: {
+            "label": "수능정답1대사진5선지",
+            "slot_count": 9,
+            "slot_names": ["문항번호", "문두", "사진1", "발문", "1", "2", "3", "4", "5"],
+        },
+    )
+    preflighted = preflight_unit(
+        ConversionUnit(
+            item_number=7,
+            palette_markdown=result.palette_markdown,
+            figure_assets=(FigureAsset(
+                asset.image_path,
+                FigureAssetMetadata.model_validate_json(
+                    asset.provenance_path.read_text(encoding="utf-8"),
+                ),
+            ),),
+        ),
+        LayoutStyle.SUNEUNG,
+    )
+    assert preflighted.item_number == 7
+
+
+def test_real_q15_insertion_dimensions_preserve_full_crop_aspect(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Given: q2's final 1370x249 full mixed-region PNG and the production figure frame.
-    item2 = next(item for item in detect_items(SOURCE).items if item.item_number == 2)
-    draft = build_editable_draft(SOURCE, item2, tmp_path / "q2-aspect")
+    # Given: q15's final 1277x254 wide figure and the production figure frame.
+    item15 = next(item for item in detect_items(SOURCE).items if item.item_number == 15)
+    draft = build_editable_draft(SOURCE, item15, tmp_path / "q15-aspect")
     path = draft.figure_assets[0].image_path
     monkeypatch.setattr(hwp_engine, "S", {
         "layout": {"column_width_mm": 93.99, "figure_frame_width_mm": 114.3,
@@ -147,8 +190,8 @@ def test_real_q2_insertion_dimensions_preserve_full_crop_aspect(
     assert native is not None
     fitted = engine_library._fit_picture_size_mm(*native)
 
-    # Then: fitting changes scale only, never the authoritative full-crop aspect.
-    assert fitted[0] / fitted[1] == pytest.approx(1370 / 249, rel=0.002)
+    # Then: fitting changes scale only, never the image's authoritative physical aspect.
+    assert fitted[0] / fitted[1] == pytest.approx(native[0] / native[1], rel=0.002)
 
 
 @pytest.mark.parametrize("item_number", [4, 9])
@@ -176,7 +219,7 @@ def test_final_contract_promotes_real_assets_when_registered_small_cell_scales_b
     assert "대사진" in result.palette_markdown.splitlines()[0]
 
 
-@pytest.mark.parametrize("item_number", [11, 12, 15, 16, 18])
+@pytest.mark.parametrize("item_number", [11, 12, 15, 16])
 def test_final_contract_keeps_real_hapdap_small_assets_above_half_scale(
     tmp_path: Path,
     item_number: int,
@@ -195,8 +238,50 @@ def test_final_contract_keeps_real_hapdap_small_assets_above_half_scale(
     assert result.layout is not None
     assert result.layout.layout is FigureLayout.ONE_SMALL
     assert result.layout.minimum_projected_scale >= result.layout.readability_threshold
-    expected_prefix = "수능정답" if item_number == 18 else "수능합답"
-    assert result.palette_markdown.splitlines()[0] == f"\\{expected_prefix}1소사진5선지\\"
+    assert result.palette_markdown.splitlines()[0] == "\\수능합답1소사진5선지\\"
+
+
+def test_final_contract_promotes_medium_direct_figure_to_large_slot(tmp_path: Path) -> None:
+    item = next(value for value in detect_items(SOURCE).items if value.item_number == 18)
+    draft = build_editable_draft(SOURCE, item, tmp_path / "medium-direct-18")
+
+    result = reconcile_final_figure_contract(18, draft.palette_markdown, draft.figure_assets)
+
+    assert isinstance(result, FinalFigureContract)
+    assert result.layout is not None
+    assert result.layout.layout is FigureLayout.ONE_LARGE
+    assert result.layout.minimum_projected_scale >= result.layout.readability_threshold
+    assert result.palette_markdown.splitlines()[0] == "\\수능정답1대사진5선지\\"
+
+
+@pytest.mark.parametrize(("item_number", "expected_label"), (
+    (8, "\\수능합답1소사진5선지\\"),
+    (10, "\\수능합답1대사진5선지\\"),
+    (14, "\\수능정답1소사진5선지\\"),
+    (18, "\\수능정답1소사진5선지\\"),
+))
+def test_real_p2_single_figure_template_preserves_source_placement(
+    tmp_path: Path,
+    item_number: int,
+    expected_label: str,
+) -> None:
+    if not P2_2026_SOURCE.is_file():
+        pytest.skip("p2_2026_11 source PDF is unavailable")
+    item = next(
+        value for value in detect_items(P2_2026_SOURCE).items
+        if value.item_number == item_number
+    )
+    draft = build_editable_draft(
+        P2_2026_SOURCE, item, tmp_path / f"p2-placement-{item_number}",
+    )
+
+    result = reconcile_final_figure_contract(
+        item_number, draft.palette_markdown, draft.figure_assets,
+        source_item=item,
+    )
+
+    assert isinstance(result, FinalFigureContract)
+    assert result.palette_markdown.splitlines()[0] == expected_label
 
 
 def test_final_contract_rebuilds_proven_three_panel_hapdap_slots_from_stale_composite(
@@ -239,6 +324,110 @@ def test_final_contract_rebuilds_proven_three_panel_hapdap_slots_from_stale_comp
     ]
     assert lines[9:] == [
         "발문", "ㄱ 내용", "ㄴ 내용", "ㄷ 내용", "ㄱ", "ㄴ", "ㄱ,ㄷ", "ㄴ,ㄷ", "ㄱ,ㄴ,ㄷ",
+    ]
+
+
+def test_final_contract_rebuilds_text_only_direct_into_registered_hapdap_three_small(
+    tmp_path: Path,
+) -> None:
+    boxes = (
+        (0.0, 0.0, 90.0, 130.0),
+        (100.0, 0.0, 190.0, 130.0),
+        (200.0, 0.0, 290.0, 130.0),
+    )
+    captions = tuple(
+        {"text": text, "bbox": (box[0] + 30.0, 110.0, box[0] + 60.0, 126.0)}
+        for text, box in zip(("(가)", "(나)", "(다)"), boxes, strict=True)
+    )
+    source = source_artifact(tmp_path, SourceArtifactSpec(
+        name="text-only-three", panel_bboxes=boxes, captions=captions,
+        drawing_count=0, image_count=1,
+    ))
+    routed = route_figure("(가), (나), (다)를 비교한다.", source)
+    stale = "\n".join((
+        "\\수능AI실제직접형\\", "18", "문두", "발문", "3",
+        "①", "②", "③", "④", "⑤",
+    ))
+
+    result = reconcile_final_figure_contract(7, stale, routed.assets)
+
+    assert isinstance(result, FinalFigureContract)
+    lines = result.palette_markdown.splitlines()
+    assert lines[0] == "\\수능합답3소사진5선지\\"
+    assert lines[3:9] == [
+        f"\\{routed.assets[0].image_path.stem}\\", "(가)",
+        f"\\{routed.assets[1].image_path.stem}\\", "(나)",
+        f"\\{routed.assets[2].image_path.stem}\\", "(다)",
+    ]
+    assert lines[9] == "발문 [3점]"
+    assert lines[10:13] == ["-", "-", "-"]
+    assert lines[13:] == ["①", "②", "③", "④", "⑤"]
+
+
+def test_final_contract_rebuilds_direct_one_large_into_registered_hapdap_three_small(
+    tmp_path: Path,
+) -> None:
+    boxes = (
+        (0.0, 0.0, 90.0, 130.0),
+        (100.0, 0.0, 190.0, 130.0),
+        (200.0, 0.0, 290.0, 130.0),
+    )
+    captions = tuple(
+        {"text": text, "bbox": (box[0] + 30.0, 110.0, box[0] + 60.0, 126.0)}
+        for text, box in zip(("(가)", "(나)", "(다)"), boxes, strict=True)
+    )
+    source = source_artifact(tmp_path, SourceArtifactSpec(
+        name="direct-three", panel_bboxes=boxes, captions=captions,
+        drawing_count=0, image_count=1,
+    ))
+    routed = route_figure("(가), (나), (다)를 비교한다.", source)
+    stale = "\n".join((
+        "\\수능정답1대사진5선지\\", "8", "문두", "\\old-composite\\", "발문",
+        "①", "②", "③", "④", "⑤",
+    ))
+
+    result = reconcile_final_figure_contract(7, stale, routed.assets)
+
+    assert isinstance(result, FinalFigureContract)
+    lines = result.palette_markdown.splitlines()
+    assert lines[0] == "\\수능합답3소사진5선지\\"
+    assert lines[3:9] == [
+        f"\\{routed.assets[0].image_path.stem}\\", "(가)",
+        f"\\{routed.assets[1].image_path.stem}\\", "(나)",
+        f"\\{routed.assets[2].image_path.stem}\\", "(다)",
+    ]
+    assert lines[9:] == ["발문", "-", "-", "-", "①", "②", "③", "④", "⑤"]
+
+
+def test_final_contract_rebuilds_abc_three_panel_hapdap_slots(tmp_path: Path) -> None:
+    boxes = (
+        (0.0, 0.0, 90.0, 130.0),
+        (100.0, 0.0, 190.0, 130.0),
+        (200.0, 0.0, 290.0, 130.0),
+    )
+    captions = tuple(
+        {"text": text, "bbox": (box[0] + 30.0, 110.0, box[0] + 60.0, 126.0)}
+        for text, box in zip(("A", "B", "C"), boxes, strict=True)
+    )
+    source = source_artifact(tmp_path, SourceArtifactSpec(
+        name="abc-three", panel_bboxes=boxes, captions=captions,
+        drawing_count=0, image_count=1,
+    ))
+    routed = route_figure("그림 A, B, C는 예를 나타낸 것이다.", source)
+    stale = "\n".join((
+        "\\수능합답1대사진5선지\\", "5", "문두", "\\old-composite\\", "발문",
+        "ㄱ 내용", "ㄴ 내용", "ㄷ 내용", "ㄱ", "ㄴ", "ㄱ,ㄷ", "ㄴ,ㄷ", "ㄱ,ㄴ,ㄷ",
+    ))
+
+    result = reconcile_final_figure_contract(7, stale, routed.assets)
+
+    assert isinstance(result, FinalFigureContract)
+    lines = result.palette_markdown.splitlines()
+    assert lines[0] == "\\수능합답3소사진5선지\\"
+    assert lines[3:9] == [
+        f"\\{routed.assets[0].image_path.stem}\\", "A",
+        f"\\{routed.assets[1].image_path.stem}\\", "B",
+        f"\\{routed.assets[2].image_path.stem}\\", "C",
     ]
 
 

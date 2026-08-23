@@ -12,6 +12,7 @@ hwp_engine(코어)이 '한글을 어떻게 조작하는가'를 맡는다면, 이
 한글 조작은 전부 hwp_engine 의 것을 그대로 쓴다(연결 인스턴스를 공유하기 위함).
 """
 
+import json
 import time
 
 import pathlib
@@ -55,6 +56,36 @@ CHARSHAPE_FIELD_LABELS = ["굵게", "기울임", "밑줄", "글자색", "자간"
 # **빈칸 채우기 전에 반드시 다른 마커로 치환**해야 한다 — 안 그러면 본문 표시가
 # 빈칸으로 잡아먹힌다. execute_library_plan 이 그 순서를 지킨다.
 BODY_ANCHOR = "\\본문\\"
+
+# 한 단 안에서 쪼개지면 읽기 어려운 대형 조각. 시험지의 실험형은 한 단 전체를
+# 거의 채우므로, 앞 문항 뒤에 올 때는 머리말 아래의 새 쪽에서 시작한다.
+NEW_PAGE_TEMPLATE_LABELS: Final = frozenset({
+    "수능AI실제실험형", "수능합답실험1대사진5선지", "수능AI실제직접형새쪽",
+})
+ATOMIC_BOX_PAGE_BREAK_CHARS: Final = 380
+
+
+def _cell_text_length(value):
+    if isinstance(value, str):
+        return len(value)
+    if isinstance(value, list):
+        return sum(len(str(segment.get("text") or "")) for segment in value)
+    return len(str(value or ""))
+
+
+def _template_needs_new_page(item, fills):
+    """Return whether an atomic template needs the full next page flow."""
+    label = str(item.get("label") or item.get("name") or "").strip("\\ ")
+    if label in NEW_PAGE_TEMPLATE_LABELS:
+        return True
+    return any(
+        isinstance(line, md_parser.Table)
+        and (line.rows, line.cols) == (1, 1)
+        and bool(line.grid) and bool(line.grid[0])
+        and _cell_text_length(line.grid[0][0]) >= ATOMIC_BOX_PAGE_BREAK_CHARS
+        for value in fills if isinstance(value, md_parser.MultiLine)
+        for line in value.lines
+    )
 
 
 def _charshape_get(cs, label):
@@ -187,6 +218,46 @@ def set_paragraph_word_boundary_wrap(text, character_ratio=85):
     hwp.MoveSelParaEnd()
     hwp.set_font(Ratio=character_ratio)
     act.Run("Cancel")
+    return True
+
+
+def set_matching_paragraph_character_ratio(
+        text, apply_matches, character_ratio=90, wrapped_only=False,
+        required_paragraph_text=(),
+):
+    """Condense selected ordered matches without changing their font height."""
+    hwp = _h()
+    hwp.HAction.Run("MoveDocBegin")
+    for should_apply in apply_matches:
+        while True:
+            if not find_text(text):
+                return False
+            hwp.HAction.Run("Cancel")
+            if not required_paragraph_text:
+                break
+            hwp.MoveParaBegin()
+            hwp.MoveSelParaEnd()
+            paragraph = hwp_engine.read_selection_direct()
+            hwp.HAction.Run("Cancel")
+            if all(marker in paragraph for marker in required_paragraph_text):
+                break
+            hwp.HAction.Run("MoveParaEnd")
+        if should_apply:
+            hwp.MoveParaBegin()
+            start = tuple(hwp.GetPos()) if wrapped_only else None
+            wrapped = True
+            if wrapped_only:
+                hwp.HAction.Run("MoveLineEnd")
+                line_end = tuple(hwp.GetPos())
+                hwp.HAction.Run("MoveParaEnd")
+                paragraph_end = tuple(hwp.GetPos())
+                wrapped = line_end != paragraph_end
+                hwp.SetPos(*start)
+            if wrapped:
+                hwp.MoveSelParaEnd()
+                hwp.set_font(Ratio=character_ratio)
+                hwp.HAction.Run("Cancel")
+        hwp.HAction.Run("MoveParaEnd")
     return True
 
 
@@ -326,6 +397,16 @@ def _image_size_mm(path):
     JPEG처럼 pHYs 청크가 없는 형식도 단 폭 제한을 받아야 한다. DPI가 없는 파일은
     화면 이미지의 관례값 96dpi로 계산한 뒤 아래 삽입기가 단 폭에 맞춰 축소한다.
     """
+    sidecar = pathlib.Path(path).with_suffix(".json")
+    try:
+        bbox = json.loads(sidecar.read_text(encoding="utf-8")).get("bbox")
+        if isinstance(bbox, list) and len(bbox) == 4:
+            width_points = float(bbox[2]) - float(bbox[0])
+            height_points = float(bbox[3]) - float(bbox[1])
+            if width_points > 0 and height_points > 0:
+                return width_points * 25.4 / 72.0, height_points * 25.4 / 72.0
+    except (FileNotFoundError, OSError, TypeError, ValueError, json.JSONDecodeError):
+        pass
     png_size = _png_size_mm(path)
     if png_size:
         return png_size
@@ -371,6 +452,11 @@ def _contain_picture_size_mm(
 
 GRAPHICAL_CHOICE_LABEL_CELL_WIDTH_MM = 4.0
 GRAPHICAL_CHOICE_IMAGE_CELL_WIDTH_MM = 33.333
+MINIMUM_READABLE_PICTURE_SCALE = 0.70
+PICTURE_SCALE_ROUNDING_MARGIN = 0.001
+SINGLE_PICTURE_CELL_MIN_WIDTH_MM = 30.0
+SMALL_SINGLE_PICTURE_CELL_MAX_WIDTH_MM = 55.0
+LARGE_SINGLE_CELL_MAX_WIDTH_MM = 90.0
 
 
 def _is_graphical_choice_picture_cell(hwp):
@@ -432,7 +518,40 @@ def _table_picture_bounds_mm(hwp):
     return max(width_mm, 0.1), max(height_mm, 0.1)
 
 
-def _insert_picture_sized(hwp, path):
+def _grow_large_single_picture_cell(hwp, size):
+    """Grow a one-picture row when fixed cell bounds would make it unreadable."""
+    cell_width = float(hwp.get_col_width())
+    if cell_width < SINGLE_PICTURE_CELL_MIN_WIDTH_MM:
+        return False
+    width_mm, height_mm = _table_picture_bounds_mm(hwp)
+    source_width, source_height = size
+    target_scale = MINIMUM_READABLE_PICTURE_SCALE + PICTURE_SCALE_ROUNDING_MARGIN
+    required_width = source_width * target_scale + cell_width - width_mm
+    if width_mm / source_width < MINIMUM_READABLE_PICTURE_SCALE:
+        if required_width > LARGE_SINGLE_CELL_MAX_WIDTH_MM:
+            return False
+        hwp.set_col_width(required_width, as_="mm")
+        width_mm, height_mm = _table_picture_bounds_mm(hwp)
+    if height_mm / source_height >= MINIMUM_READABLE_PICTURE_SCALE:
+        return False
+    hwp.set_row_height(source_height * target_scale + 2.0)
+    return True
+
+
+def _top_align_small_single_picture_cell(hwp):
+    """Keep compact source-side figures aligned with the first stem line."""
+    width_mm = float(hwp.get_col_width())
+    if not (
+        SINGLE_PICTURE_CELL_MIN_WIDTH_MM <= width_mm
+        < SMALL_SINGLE_PICTURE_CELL_MAX_WIDTH_MM
+        and (hwp.get_row_num(), hwp.get_col_num()) == (1, 1)
+    ):
+        return False
+    hwp.TableCellAlignCenterTop()
+    return True
+
+
+def _insert_picture_sized(hwp, path, max_bounds_mm=None):
     r"""그림 삽입. 셀 밖이면 PNG 에 새겨진 실제 크기로, 셀 안이면 셀에 맞춘다.
 
     셀 안에서는 원본 전체를 삽입한 뒤 셀 폭과 높이에 contain-fit 한다. 한글의
@@ -470,8 +589,16 @@ def _insert_picture_sized(hwp, path):
     table_picture_size = None
     if in_table and size:
         _prepare_graphical_choice_grid_cell(hwp)
+        _grow_large_single_picture_cell(hwp, size)
+        _top_align_small_single_picture_cell(hwp)
+        bounds_mm = _table_picture_bounds_mm(hwp)
+        if max_bounds_mm is not None:
+            bounds_mm = tuple(
+                min(actual, maximum)
+                for actual, maximum in zip(bounds_mm, max_bounds_mm, strict=True)
+            )
         table_picture_size = _contain_picture_size_mm(
-            *size, *_table_picture_bounds_mm(hwp),
+            *size, *bounds_mm,
             allow_upscale=_is_one_small_picture_cell(hwp),
         )
         width_mm, height_mm = table_picture_size
@@ -569,6 +696,7 @@ def insert_table(rows, cols, grid):
     만들어졌으니 사용자가 한글에서 마저 채우면 된다. 변환을 통째로 실패시키는
     것보다 낫다.
     """
+    parent_list_id = _h().GetPos()[0]
     hwp_engine.create_table_autofit(rows, cols)
     act = _h().HAction
     for r in range(rows):
@@ -576,6 +704,7 @@ def insert_table(rows, cols, grid):
         for c in range(cols):
             if r or c:                      # 첫 칸은 이미 커서가 있다
                 act.Run("TableRightCell")
+            act.Run("ParagraphShapeAlignCenter")
             value = row[c] if c < len(row) else None
             if value is None:
                 continue                    # '-' 이거나 값이 없는 칸
@@ -583,7 +712,7 @@ def insert_table(rows, cols, grid):
                 insert_rich_line(value)     # 사진·서식이 섞인 칸
             else:
                 insert_plain(value)
-    hwp_engine.exit_table()
+    hwp_engine.exit_table(parent_list_id=parent_list_id)
 
 
 # ── 빈칸(\) 처리 ──────────────────────────────────────
@@ -756,6 +885,7 @@ def fill_slots(anchor, fills, end_para=None, slot_count=None, slot_names=None):
 
     def _put(value, slot_name=""):
         nonlocal filled, grow
+        picture_bounds_mm = (43.0, 43.5) if slot_name == "실험과정" else None
         if value is None:
             act.Run("Delete")
         elif isinstance(value, md_parser.MultiLine):
@@ -770,7 +900,7 @@ def fill_slots(anchor, fills, end_para=None, slot_count=None, slot_names=None):
                     insert_table(line_value.rows, line_value.cols,
                                  line_value.grid)
                 elif isinstance(line_value, list):
-                    insert_rich_line(line_value)
+                    insert_rich_line(line_value, picture_bounds_mm=picture_bounds_mm)
                     _set_current_paragraph_word_boundary_wrap()
                 else:
                     insert_plain(line_value)
@@ -778,7 +908,7 @@ def fill_slots(anchor, fills, end_para=None, slot_count=None, slot_names=None):
             filled += 1
         elif isinstance(value, list):
             delete_selection()
-            insert_rich_line(value)
+            insert_rich_line(value, picture_bounds_mm=picture_bounds_mm)
             _set_current_paragraph_word_boundary_wrap()
             filled += 1
         else:
@@ -829,7 +959,8 @@ def fill_slots(anchor, fills, end_para=None, slot_count=None, slot_names=None):
                         f"({filled}/{want}개 채움)")
             break
         used += 1
-        _put(value)
+        name = str(slot_names[index]).strip() if slot_names and index < len(slot_names) else ""
+        _put(value, name)
     # 남은 빈칸만 청소한다. slot_count 를 알면 "이 템플릿에 남은 개수"가 정확한
     # 상한이 된다 — 그만큼만 지우므로 아래쪽 사용자 문서는 절대 안 건드린다.
     remaining = None if slot_count is None else max(int(slot_count) - used, 0)
@@ -2228,7 +2359,7 @@ def apply_default_format(fmt, text=None):
         insert_plain(text)
 
 
-def insert_rich_line(segments):
+def insert_rich_line(segments, picture_bounds_mm=None):
     r"""서식 구간이 섞인 한 줄을 삽입한다 (개선안 27 — \굵게{내용}).
 
     구간마다 [삽입 전 위치 기록 → 삽입 → 그 구간만 다시 선택 → 서식 적용]을
@@ -2273,7 +2404,7 @@ def insert_rich_line(segments):
             except Exception as e:
                 applog.exc("사진 삽입 전 위치 기록 실패 — 삽입 후 커서를 못 되돌린다", e)
             try:
-                _insert_picture_sized(hwp, image)
+                _insert_picture_sized(hwp, image, max_bounds_mm=picture_bounds_mm)
             except Exception as e:
                 applog.exc(f"사진 삽입 실패 ({image}) — 자리 표시 텍스트로 대체", e)
                 insert_plain(f"[사진 실패: {image}]")
@@ -2534,6 +2665,10 @@ def execute_library_plan(ops, template_path_fn, form_path_fn=None):
     for op in ops:
         if not first:
             act.Run("BreakPara")
+            if op[0] == "template" and _template_needs_new_page(op[1], op[2]):
+                # 조각 파일 안의 쪽 나누기는 InsertFile 과정에서 보존되지 않는다.
+                # 따라서 실제 출력 문서에 마커를 심는 시점에 쪽을 넘긴다.
+                act.Run("BreakPage")
         first = False
         if op[0] == "line":
             if op[1]:

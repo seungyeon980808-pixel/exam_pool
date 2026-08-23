@@ -498,7 +498,12 @@ def _read_block(lines, start, lookup, warnings):
         if formula_start >= 0:
             parsed_formula = _try_formula(s, formula_start, warnings)
             formula_owns_tail = bool(parsed_formula and parsed_formula[0] == len(s))
-        if s.endswith('}') and not s.endswith('\\}') and not formula_owns_tail:
+        label_owns_tail = bool(
+            s.endswith('\\}')
+            and LIB_TOKEN_RE.fullmatch(s[:-1].strip())
+        )
+        escaped_close = s.endswith('\\}') and not label_owns_tail
+        if s.endswith('}') and not escaped_close and not formula_owns_tail:
             s = s[:-1]
             closed = True
         inner.append(s)

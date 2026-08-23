@@ -123,3 +123,25 @@ def test_vector_cluster_excludes_disconnected_page_separator(tmp_path: Path) -> 
     # Then: the page separator cannot expand the selected figure or its drawing count.
     assert metadata["bbox"] == [round(float(value), 3) for value in expected]
     assert metadata["drawing_count"] == 2
+
+
+def test_vector_cluster_excludes_page_border_that_crosses_source_bbox(tmp_path: Path) -> None:
+    # Given: an old exam PDF has one page-border drawing that crosses every item,
+    # while the requested prompt contains a smaller self-contained diagram.
+    source_pdf = tmp_path / "vector-with-page-border.pdf"
+    source_bbox = (70.0, 170.0, 350.0, 300.0)
+    with fitz.open() as document:
+        page = document.new_page(width=420, height=360)
+        page.draw_rect(fitz.Rect(20, 20, 400, 340), color=(0, 0, 0), width=1)
+        page.draw_rect(fitz.Rect(120, 190, 280, 260), color=(0, 0, 0), width=1)
+        page.draw_line(fitz.Point(120, 225), fitz.Point(280, 225), color=(0, 0, 0), width=1)
+        document.save(source_pdf)
+    item = DetectedItem(1, 7, 0, source_bbox, "도형을 나타낸 것이다.")
+
+    # When: vector objects are selected inside the requested prompt region.
+    artifact = crop_region(source_pdf, item, source_bbox, tmp_path / "output", "figure")
+    metadata = json.loads(artifact.provenance_path.read_text(encoding="utf-8"))
+
+    # Then: the page border cannot win the component score or escape the prompt.
+    assert metadata["bbox"] == [120.0, 190.0, 280.0, 260.0]
+    assert metadata["drawing_count"] == 2

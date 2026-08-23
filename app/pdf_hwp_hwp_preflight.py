@@ -10,6 +10,7 @@ from typing import Final
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from .integrations import palette_registry
+from .pdf_hwp_final_figure_contract import final_figure_metadata_requires_review
 from .pdf_hwp_pipeline_models import (
     ConversionUnit,
     FigureAsset,
@@ -21,10 +22,23 @@ from .pdf_hwp_pipeline_models import (
 
 _TEMPLATE_TOKEN = re.compile(r"^\\([^\\\r\n]+)\\$")
 _GRAPHICAL_CHOICE_TEMPLATE: Final = "수능정답1대사진그림5선지"
+_GRAPHICAL_CHOICE_NO_PROMPT_TEMPLATE: Final = "수능정답0사진그림5선지"
+_INLINE_FIGURE_TEMPLATES: Final = frozenset({
+    "수능AI실제비교선지형",
+    "수능AI실제실험형",
+})
 _GRAPHICAL_CHOICE_SLOTS: Final = (
     "문항번호", "문두", "사진1", "발문",
     "선지사진1", "선지사진2", "선지사진3", "선지사진4", "선지사진5",
 )
+_GRAPHICAL_CHOICE_NO_PROMPT_SLOTS: Final = (
+    "문항번호", "문두", "발문",
+    "선지사진1", "선지사진2", "선지사진3", "선지사진4", "선지사진5",
+)
+_GRAPHICAL_CHOICE_CONTRACTS: Final = {
+    _GRAPHICAL_CHOICE_TEMPLATE: _GRAPHICAL_CHOICE_SLOTS,
+    _GRAPHICAL_CHOICE_NO_PROMPT_TEMPLATE: _GRAPHICAL_CHOICE_NO_PROMPT_SLOTS,
+}
 _STATIC_PAIR_CAPTIONS: Final = {
     "수능정답2소사진무캡션5선지": ("(가)", "(나)"),
     "수능정답2대사진5선지": ("(가)", "(나)"),
@@ -98,7 +112,7 @@ def _slot_type(name: str) -> str:
     compact = name.strip().replace(" ", "").lower()
     if compact.startswith(("선지사진", "choicephoto", "choicefigure", "choiceimage")):
         return "choice_figure"
-    if compact.startswith(("사진", "photo", "figure", "image")):
+    if compact.startswith(("사진", "photo", "figure", "image")) or compact in {"자료", "material"}:
         return "figure"
     if compact.startswith(("캡션", "caption")) or re.fullmatch(
         r"\((?:가|나|다|라|마|바|사|아)\)", compact,
@@ -135,7 +149,7 @@ def preflight_unit(unit: ConversionUnit, layout_style: LayoutStyle) -> Preflight
         raise _manual(unit, "figure panel indices are not contiguous")
     if any(asset.metadata.asset_count != len(assets) for asset in assets):
         raise _manual(unit, "figure asset_count metadata is inconsistent")
-    if any(asset.metadata.manual_review_required for asset in assets):
+    if final_figure_metadata_requires_review(tuple(asset.metadata for asset in assets)):
         raise _manual(unit, "figure metadata requires manual review")
     choice_assets = unit.graphical_choice_assets
     expected_choice_indices = tuple(range(1, len(choice_assets) + 1))
@@ -159,14 +173,18 @@ def preflight_unit(unit: ConversionUnit, layout_style: LayoutStyle) -> Preflight
     figure_slots = tuple(index for index, kind in enumerate(slot_types) if kind == "figure")
     choice_slots = tuple(index for index, kind in enumerate(slot_types) if kind == "choice_figure")
     caption_slots = tuple(index for index, kind in enumerate(slot_types) if kind == "caption")
-    if len(figure_slots) != len(assets):
+    # The legacy experiment fragment keeps its figure token inside the passage.
+    # The revised 14-slot fragment declares ``사진1`` explicitly; its registered
+    # contract is authoritative and should follow the ordinary ordered-slot path.
+    inline_figures = label in _INLINE_FIGURE_TEMPLATES and not figure_slots
+    if not inline_figures and len(figure_slots) != len(assets):
         raise _manual(
             unit,
             f"figure slot count {len(figure_slots)} does not match asset count {len(assets)}",
         )
     if choice_assets and (
-        label != _GRAPHICAL_CHOICE_TEMPLATE
-        or template.slot_names != _GRAPHICAL_CHOICE_SLOTS
+        label not in _GRAPHICAL_CHOICE_CONTRACTS
+        or template.slot_names != _GRAPHICAL_CHOICE_CONTRACTS[label]
     ):
         raise _manual(unit, "graphical choices require the registered five-choice template")
     if len(choice_slots) != len(choice_assets):
@@ -185,7 +203,7 @@ def preflight_unit(unit: ConversionUnit, layout_style: LayoutStyle) -> Preflight
         raise _manual(unit, "static-caption template unexpectedly declares caption slots")
     if static_captions is not None and captions != static_captions:
         raise _manual(unit, "figure captions do not match registered static captions")
-    if static_captions is None and len(caption_slots) != len(captions):
+    if static_captions is None and caption_slots and len(caption_slots) != len(captions):
         raise _manual(
             unit,
             f"caption slot count {len(caption_slots)} does not match caption count {len(captions)}",
@@ -195,12 +213,18 @@ def preflight_unit(unit: ConversionUnit, layout_style: LayoutStyle) -> Preflight
     if len(values) != template.slot_count:
         raise _manual(unit, "template value count does not match registered slot count")
     expected_figures = tuple(f"\\{asset.image_path.stem}\\" for asset in assets)
-    if tuple(values[index] for index in figure_slots) != expected_figures:
+    if inline_figures and any(token not in "\n".join(values) for token in expected_figures):
+        raise _manual(unit, "inline figure values do not match ordered captionless assets")
+    if not inline_figures and tuple(values[index] for index in figure_slots) != expected_figures:
         raise _manual(unit, "figure slot values do not match ordered captionless assets")
     expected_choices = tuple(f"\\{asset.image_path.stem}\\" for asset in choice_assets)
     if tuple(values[index] for index in choice_slots) != expected_choices:
         raise _manual(unit, "graphical choice slot values do not match ordered assets")
-    if static_captions is None and tuple(values[index] for index in caption_slots) != captions:
+    if (
+        static_captions is None
+        and caption_slots
+        and tuple(values[index] for index in caption_slots) != captions
+    ):
         raise _manual(unit, "caption slot values do not match separate caption text")
 
     hashes = tuple(_asset_hash(unit, asset) for asset in (*assets, *choice_assets))

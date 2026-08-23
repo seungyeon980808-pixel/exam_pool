@@ -104,7 +104,12 @@ def select_vector_figure(page: fitz.Page, source_bbox: BBox) -> VectorSelection:
     source = fitz.Rect(source_bbox)
     source_drawings = tuple(
         DrawingRegion(_bbox(fitz.Rect(drawing["rect"]))) for drawing in page.get_drawings()
-        if _touches(fitz.Rect(drawing["rect"]), source)
+        if source.contains(fitz.Rect(drawing["rect"]))
+        or (
+            fitz.Rect(drawing["rect"]).get_area() > 0
+            and (fitz.Rect(drawing["rect"]) & source).get_area()
+            >= fitz.Rect(drawing["rect"]).get_area() * 0.5
+        )
     )
     texts = _texts(page, source)
     captions = tuple(region for region in texts if _CAPTION_RE.fullmatch(region.text))
@@ -112,7 +117,11 @@ def select_vector_figure(page: fitz.Page, source_bbox: BBox) -> VectorSelection:
         return VectorSelection(_bbox(source), (), captions, tuple(
             region for region in texts if region not in captions
         ), 0, len(texts))
-    drawings = _main_drawing_component(source_drawings)
+    # When the bounded prompt region contains no PDF text, disconnected vector
+    # components are still part of one outlined diagram (axis labels, battery
+    # symbols, and units in older KICE files).  Keeping only the largest
+    # connected component silently drops those semantic labels.
+    drawings = source_drawings if not texts else _main_drawing_component(source_drawings)
     cluster = fitz.Rect(drawings[0].bbox)
     for drawing in drawings[1:]:
         cluster |= fitz.Rect(drawing.bbox)

@@ -110,6 +110,7 @@ def test_preview_fetches_the_same_captionless_png_hash_owned_by_hwp(
         page = browser.new_page(viewport={"width": 1280, "height": 900})
         page.goto(f"{origin}/static/index.html")
         page.locator('[data-tab="pdf-hwp"]').click()
+        page.get_by_text("변환 상세 보기", exact=True).click()
         image = page.locator(".ph-source-preview img")
         image.wait_for()
         asset_url = image.get_attribute("src") or ""

@@ -3,15 +3,33 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import re
 
 import fitz
 from PIL import Image
 import pytest
 
 import app.pdf_hwp_draft as draft_extractor
+import app.pdf_hwp_pipeline as pdf_pipeline
+from app.pdf_hwp_crop_assets import crop_region
 from app.pdf_hwp_equation_font import EquationFontContext
 from app.formula_markup import to_hwppalette_markup
 
+from app.pdf_hwp_final_figure_contract import FinalFigureContract, reconcile_final_figure_contract
+from app.pdf_hwp_hwp_preflight import preflight_unit
+from app.pdf_hwp_roundtrip_crop_audit import (
+    CropAuditIssue,
+    CropSourceRequest,
+    audit_crop_geometry,
+    read_crop_geometry,
+)
+from app.pdf_hwp_pipeline_models import (
+    FigureAsset,
+    FigureAssetMetadata,
+    FigureArrangement,
+    GraphicalChoiceAsset,
+    GraphicalChoiceAssetMetadata,
+)
 from app.pdf_hwp_pipeline import (
     ConversionRequest,
     ConversionUnit,
@@ -25,12 +43,22 @@ from app.pdf_hwp_pipeline import (
     typeset_conversion,
     build_editable_draft,
     UnsupportedDraftLayoutError,
+    ConversionTypesetError,
     _typeset_timeout_seconds,
 )
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일\p1_2024_11.pdf")
+LOCAL_PDF = ROOT / "PDF"
+EBS_PHYSICS = Path(r"C:\Users\user\Desktop\project\31_hwp_palette\2027 수능특강 물리학 I 원본.pdf")
+
+
+def _exam_pdf(name: str) -> Path:
+    for candidate in (Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일") / name, LOCAL_PDF / name):
+        if candidate.is_file():
+            return candidate
+    pytest.skip(f"missing exam PDF {name}")
 
 
 class _RecordingTypesetter:
@@ -60,6 +88,26 @@ class _RecordingTypesetter:
         return GeneratedDocument(hwp_path=hwp_path, pdf_path=pdf_path, rendered_pages=(render_path,))
 
 
+class _TransientHwpTypesetter(_RecordingTypesetter):
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls = 0
+
+    def typeset(
+        self,
+        markdown: str,
+        output_dir: Path,
+        layout_style: LayoutStyle,
+        asset_dirs: tuple[Path, ...],
+    ) -> GeneratedDocument:
+        self.calls += 1
+        if self.calls == 1:
+            raise ConversionTypesetError(
+                detail="pywintypes.com_error: (-2147417851, 'server exception')",
+            )
+        return super().typeset(markdown, output_dir, layout_style, asset_dirs)
+
+
 def test_real_typeset_timeout_scales_for_multi_item_documents() -> None:
     single = "\\수능합답1대사진5선지\\\n1\nstem"
     batch = "\n\n".join(single.replace("\n1\n", f"\n{number}\n") for number in range(1, 20))
@@ -85,6 +133,250 @@ def test_detect_items_finds_real_item20_with_stable_source_identity() -> None:
     assert "20." in item20.source_text
     assert "확인 사항" not in item20.source_text
     assert "저작권" not in item20.source_text
+
+
+def test_detect_items_keeps_choices_below_large_last_item_gap(tmp_path: Path) -> None:
+    # Given: a last-in-column item has a large diagram gap before its question and choices.
+    source = tmp_path / "last-item-with-large-gap.pdf"
+    font = "C:/Windows/Fonts/malgun.ttf"
+    with fitz.open() as document:
+        page = document.new_page(width=420, height=1000)
+        page.insert_text((50, 100), "7.", fontsize=12)
+        page.insert_text((80, 130), "STEM", fontsize=12)
+        page.insert_text((80, 160), "STEM CONTINUED", fontsize=12)
+        page.insert_text((80, 190), "STEM CONTINUED AGAIN", fontsize=12)
+        page.insert_text(
+            (80, 800), "저항값의 비는?", fontsize=12,
+            fontname="malgun", fontfile=font,
+        )
+        page.insert_text(
+            (80, 850), "① 1:2  ② 1:4  ③ 2:1  ④ 2:3  ⑤ 4:1", fontsize=12,
+            fontname="malgun", fontfile=font,
+        )
+        document.save(source)
+
+    # When: the generic detector considers trimming trailing page matter.
+    detected = detect_items(source)
+
+    # Then: answer choices below the gap remain part of the item.
+    assert len(detected.items) == 1
+    assert "⑤" in detected.items[0].source_text
+    assert detected.items[0].bbox[3] > 850
+
+
+@pytest.mark.parametrize("item_number", [11, 14])
+def test_old_exam_grid_vector_choices_crop_five_cells(
+    tmp_path: Path, item_number: int,
+) -> None:
+    # Given: 2008 Physics uses 3+2 or 2+2+1 vector-graph choice grids.
+    source = _exam_pdf("p1_2008_11.pdf")
+    item = next(
+        value for value in detect_items(source).items
+        if value.item_number == item_number
+    )
+
+    # When: the editable draft extracts graphical choices.
+    draft = build_editable_draft(source, item, tmp_path / f"q{item_number}")
+
+    # Then: every numbered graph is preserved as one ordered choice asset.
+    assert len(draft.graphical_choice_assets) == 5
+    assert all(asset.width_px > 200 for asset in draft.graphical_choice_assets)
+    assert all(asset.height_px > 150 for asset in draft.graphical_choice_assets)
+
+
+def test_inline_image_without_xref_renders_from_pdf_coordinates(tmp_path: Path) -> None:
+    # Given: a 2013 source stores item 12's prompt as an inline image with xref 0.
+    source = _exam_pdf("p1_2013_11.pdf")
+    item = next(
+        value for value in detect_items(source).items
+        if value.item_number == 12
+    )
+
+    # When: the draft extracts the prompt figure.
+    draft = build_editable_draft(source, item, tmp_path / "q12")
+
+    # Then: coordinate rendering preserves the figure without an invalid-xref crash.
+    assert len(draft.figure_assets) >= 1
+    assert draft.figure_assets[0].width_px > 200
+    assert draft.figure_assets[0].height_px > 100
+
+
+def test_ebs_textbook_detects_large_two_digit_question_markers_only() -> None:
+    # Given: the EBS textbook resets two-digit question numbers by test section.
+    if not EBS_PHYSICS.is_file():
+        pytest.skip("missing EBS Physics source")
+
+    # When: the generic source detector recognizes the textbook layout.
+    detected = detect_items(EBS_PHYSICS)
+    by_page = {
+        page: [item.item_number for item in detected.items if item.page_number == page]
+        for page in (13, 14)
+    }
+
+    # Then: visible large 01–08 markers are questions, not graph ticks or page numbers.
+    assert by_page == {13: [1, 2, 3, 4], 14: [5, 6, 7, 8]}
+    assert len(detected.items) == 278
+    assert [item.item_number for item in detected.items] == list(range(1, 279))
+    assert all(item.page_number < 193 for item in detected.items)
+    last = detected.items[-1]
+    with fitz.open(EBS_PHYSICS) as document:
+        assert last.bbox[3] <= round(document[last.page_number - 1].rect.height - 48, 3)
+
+
+def test_excessive_page_vectors_use_source_preserving_fallback() -> None:
+    source = _exam_pdf("c2_2013_11.pdf")
+    item = next(value for value in detect_items(source).items if value.item_number == 2)
+
+    assert pdf_pipeline._requires_exact_source_fallback(source, item) is True
+
+
+def test_dense_ebs_vector_page_remains_editable() -> None:
+    if not EBS_PHYSICS.is_file():
+        pytest.skip("missing EBS physics PDF")
+    item = next(
+        value for value in detect_items(EBS_PHYSICS).items
+        if value.item_number == 219
+    )
+
+    assert pdf_pipeline._requires_exact_source_fallback(EBS_PHYSICS, item) is False
+
+
+def test_ebs_mixed_raster_vector_prompt_keeps_complete_editable_figure(
+    tmp_path: Path,
+) -> None:
+    if not EBS_PHYSICS.is_file():
+        pytest.skip("missing EBS physics PDF")
+    item = next(
+        value for value in detect_items(EBS_PHYSICS).items
+        if value.item_number == 206
+    )
+
+    draft = build_editable_draft(EBS_PHYSICS, item, tmp_path)
+    contract = reconcile_final_figure_contract(
+        item.item_number, draft.palette_markdown, draft.figure_assets,
+    )
+
+    assert len(draft.choice_texts) == 5
+    assert isinstance(contract, FinalFigureContract)
+    assert draft.figure_assets[0].width_px > draft.figure_assets[0].height_px * 3
+    assert draft.figure_assets[0].height_px > 100
+
+
+def test_ebs_wrapped_prose_preserves_source_line_reading_order(
+    tmp_path: Path,
+) -> None:
+    if not EBS_PHYSICS.is_file():
+        pytest.skip("missing EBS physics PDF")
+    item = next(
+        value for value in detect_items(EBS_PHYSICS).items
+        if value.item_number == 1
+    )
+
+    draft = build_editable_draft(EBS_PHYSICS, item, tmp_path)
+
+    assert (
+        "물체 [[formula:A]], 포물선 운동 하는 물체 [[formula:B]], "
+        "일정한 속력으로 원운동 하는 물체 [[formula:C]]의 운동을 각각 "
+        "일정한 시간 간격으로 나타낸 것이다."
+    ) in draft.source_text
+
+
+def test_ebs_wide_mixed_diagram_is_not_cropped_to_a_horizontal_strip(
+    tmp_path: Path,
+) -> None:
+    if not EBS_PHYSICS.is_file():
+        pytest.skip("missing EBS physics PDF")
+    item = next(
+        value for value in detect_items(EBS_PHYSICS).items
+        if value.item_number == 96
+    )
+
+    draft = build_editable_draft(EBS_PHYSICS, item, tmp_path)
+
+    assert len(draft.figure_assets) == 1
+    assert draft.figure_assets[0].height_px > 250
+
+
+@pytest.mark.parametrize(
+    ("item_number", "ordered_statement"),
+    [
+        (206, r"ㄴ. 파동의 진행 속력은 [[formula:\frac{1}{2}fA]]이다."),
+        (249, r"ㄱ. [[formula:\lambda=\frac{4}{3}x_0]]이다."),
+    ],
+)
+def test_ebs_statement_formula_stays_with_its_source_marker(
+    tmp_path: Path,
+    item_number: int,
+    ordered_statement: str,
+) -> None:
+    if not EBS_PHYSICS.is_file():
+        pytest.skip("missing EBS physics PDF")
+    item = next(
+        value for value in detect_items(EBS_PHYSICS).items
+        if value.item_number == item_number
+    )
+
+    draft = build_editable_draft(EBS_PHYSICS, item, tmp_path)
+
+    assert ordered_statement in draft.source_text
+
+
+@pytest.mark.parametrize("item_number", [3, 184, 232])
+def test_ebs_proven_prompt_boundary_rasterizes_as_one_separate_figure(
+    tmp_path: Path,
+    item_number: int,
+) -> None:
+    if not EBS_PHYSICS.is_file():
+        pytest.skip("missing EBS physics PDF")
+    item = next(
+        value for value in detect_items(EBS_PHYSICS).items
+        if value.item_number == item_number
+    )
+
+    draft = build_editable_draft(EBS_PHYSICS, item, tmp_path)
+    contract = reconcile_final_figure_contract(
+        item.item_number, draft.palette_markdown, draft.figure_assets,
+    )
+
+    assert len(draft.choice_texts) == 5
+    assert isinstance(contract, FinalFigureContract)
+
+
+@pytest.mark.parametrize("item_number", [146, 215])
+def test_ebs_vector_only_prompt_emits_a_nonblank_separate_figure(
+    tmp_path: Path,
+    item_number: int,
+) -> None:
+    if not EBS_PHYSICS.is_file():
+        pytest.skip("missing EBS physics PDF")
+    item = next(
+        value for value in detect_items(EBS_PHYSICS).items
+        if value.item_number == item_number
+    )
+
+    draft = build_editable_draft(EBS_PHYSICS, item, tmp_path)
+    contract = reconcile_final_figure_contract(
+        item.item_number, draft.palette_markdown, draft.figure_assets,
+    )
+
+    assert len(draft.choice_texts) == 5
+    assert len(draft.figure_assets) == 1
+    assert draft.figure_assets[0].height_px > 100
+    assert isinstance(contract, FinalFigureContract)
+
+
+def test_previously_exhausted_iterator_source_now_builds_editable_draft(
+    tmp_path: Path,
+) -> None:
+    source = _exam_pdf("b1_2013_11.pdf")
+    item = next(value for value in detect_items(source).items if value.item_number == 9)
+
+    draft = build_editable_draft(source, item, tmp_path)
+
+    assert draft.item_number == 9
+    assert len(draft.choice_texts) == 5
+    assert len(draft.figure_assets) == 1
+    assert draft.source_image.image_path.is_file()
 
 
 def test_crop_item_writes_high_resolution_png_and_complete_provenance(tmp_path: Path) -> None:
@@ -141,6 +433,26 @@ def test_typeset_conversion_combines_units_and_reports_durable_outputs(tmp_path:
     assert manifest["layout_style"] == "suneung"
     assert manifest["hwp_sha256"] == hashlib.sha256(result.hwp_path.read_bytes()).hexdigest()
     assert manifest["pdf_sha256"] == hashlib.sha256(result.pdf_path.read_bytes()).hexdigest()
+
+
+def test_typeset_conversion_restarts_hwp_once_after_transient_com_server_fault(
+    tmp_path: Path,
+) -> None:
+    # Given: HWP faults once while applying a paragraph shape, then accepts a fresh process.
+    typesetter = _TransientHwpTypesetter()
+    request = ConversionRequest(
+        job_key="transient-hwp",
+        units=(ConversionUnit(item_number=1, palette_markdown="\\direct\\\n1\nquestion"),),
+        output_dir=tmp_path,
+        layout_style=LayoutStyle.SUNEUNG,
+    )
+
+    # When: the conversion pipeline typesets the document.
+    result = typeset_conversion(request, typesetter=typesetter)
+
+    # Then: the transient HWP process is replaced once and the file remains downloadable.
+    assert typesetter.calls == 2
+    assert result.hwp_path.is_file()
 
 
 def test_typeset_conversion_rejects_empty_job_before_hwp_automation(tmp_path: Path) -> None:
@@ -240,42 +552,24 @@ def test_build_editable_draft_decodes_verified_real_equation_glyphs_without_near
     assert all(token not in combined for token in ("0i25", "0i4", "[[formula:[]]", "[[formula:l]]"))
 
 
-def test_build_editable_draft_excludes_text_layer_inside_embedded_prompt_raster(
+def test_build_editable_draft_recovers_prompt_table_and_formulas_without_rasterizing(
     tmp_path: Path,
 ) -> None:
-    # Given: item 2, whose embedded prompt raster also has a selectable text layer.
+    # Given: item 2, whose reactions and data table have a trustworthy text layer.
     item2 = next(item for item in detect_items(SOURCE).items if item.item_number == 2)
 
-    # When: the prompt raster is inserted as the item's figure asset.
+    # When: the prompt material is rebuilt as native table/formula markup.
     draft = build_editable_draft(SOURCE, item2, tmp_path)
 
-    # Then: text represented by that raster is not duplicated into the editable stem.
-    assert "MeV" not in draft.source_text
+    # Then: every semantic value remains editable and no redundant raster is emitted.
+    assert "MeV" in draft.source_text
     assert "3i27" not in draft.source_text
     assert "17i6" not in draft.source_text
+    assert "[[formula:+3.27]]" in draft.source_text
+    assert "[[formula:+17.6]]" in draft.source_text
     assert "두 가지 핵반응" in draft.source_text
-    provenance = json.loads(draft.figure_assets[0].provenance_path.read_text(encoding="utf-8"))
-    figure_bbox = fitz.Rect(provenance["bbox"])
-    with fitz.open(SOURCE) as document:
-        words = document[item2.page_number - 1].get_text(
-            "words", clip=fitz.Rect(item2.bbox), sort=True,
-        )
-    reaction_bbox = fitz.Rect(next(word[:4] for word in words if word[4] == "(가)"))
-    table_bbox = fitz.Rect(next(word[:4] for word in words if word[4] == "입자"))
-    assert figure_bbox.contains(reaction_bbox)
-    assert figure_bbox.contains(table_bbox)
-    assert figure_bbox.width > 250
-    with Image.open(draft.figure_assets[0].image_path).convert("L") as rendered:
-        x_scale = rendered.width / figure_bbox.width
-        y_scale = rendered.height / figure_bbox.height
-        for source_box in (reaction_bbox, table_bbox):
-            pixel_box = (
-                round((source_box.x0 - figure_bbox.x0) * x_scale),
-                round((source_box.y0 - figure_bbox.y0) * y_scale),
-                round((source_box.x1 - figure_bbox.x0) * x_scale),
-                round((source_box.y1 - figure_bbox.y0) * y_scale),
-            )
-            assert rendered.crop(pixel_box).getbbox() is not None
+    assert "\\표4*2\\" in draft.palette_markdown
+    assert draft.figure_assets == ()
 
 
 def test_real_prompt_figure_adjacency_preserves_complete_source_sentences(tmp_path: Path) -> None:
@@ -476,6 +770,112 @@ def test_partial_mixed_prompt_region_requires_manual_review(
     )
 
 
+@pytest.mark.parametrize(("item_number", "source_bbox", "object_bbox"), (
+    (2, (81.78, 487.245, 362.40, 627.405), (148.20, 535.141, 356.40, 641.341)),
+    (5, (430.44, 807.045, 758.58, 909.361), (653.58, 815.161, 752.58, 903.361)),
+    (18, (81.78, 674.445, 397.80, 888.301), (112.80, 755.701, 391.80, 882.301)),
+))
+def test_embedded_image_prompt_keeps_object_union_and_editable_prose(
+    tmp_path: Path,
+    item_number: int,
+    source_bbox: tuple[float, float, float, float],
+    object_bbox: tuple[float, float, float, float],
+) -> None:
+    source = _exam_pdf("p1_2019_11.pdf")
+    item = next(value for value in detect_items(source).items
+                if value.item_number == item_number)
+    source_image = crop_region(source, item, source_bbox, tmp_path, "source")
+
+    result = draft_extractor._crop_prompt_region(
+        source, item, source_bbox, tmp_path, source_image,
+    )
+    payload = json.loads(result.provenance_path.read_text(encoding="utf-8"))
+
+    assert payload["asset_mode"] == "pdf_figure_object_crop_hd"
+    assert payload["bbox"] == pytest.approx(object_bbox)
+    assert payload["protected_texts"] == []
+    assert payload["excluded_body_spans"]
+
+
+@pytest.mark.parametrize(("item_number", "stem", "ask", "asset_count"), (
+    (2, "그림 (가)는 병원에서", "이에 대한 설명으로", 2),
+    (5, "그림과 같이 위성이", "이에 대한 설명으로", 1),
+    (18, "그림 (가)와 같이", "(나)의 상황에 대한", 1),
+))
+def test_real_embedded_image_draft_preserves_prompt_and_excludes_prose(
+    tmp_path: Path,
+    item_number: int,
+    stem: str,
+    ask: str,
+    asset_count: int,
+) -> None:
+    source = _exam_pdf("p1_2019_11.pdf")
+    item = next(value for value in detect_items(source).items
+                if value.item_number == item_number)
+
+    draft = build_editable_draft(source, item, tmp_path / str(item_number))
+
+    assert stem in draft.palette_markdown
+    assert ask in draft.palette_markdown
+    assert len(draft.figure_assets) == asset_count
+    for asset in draft.figure_assets:
+        payload = json.loads(asset.provenance_path.read_text(encoding="utf-8"))
+        geometry = read_crop_geometry(CropSourceRequest(
+            source, item.page_number, item_number, item.bbox,
+            tuple(payload["bbox"]), draft.palette_markdown, True,
+        ))
+        assert CropAuditIssue.CROP_CONTAMINATION not in audit_crop_geometry(geometry).issues
+
+
+def test_p1_2019_boxed_text_q6_stays_editable_and_outside_image_fix(
+    tmp_path: Path,
+) -> None:
+    source = _exam_pdf("p1_2019_11.pdf")
+    item = next(value for value in detect_items(source).items if value.item_number == 6)
+
+    draft = build_editable_draft(source, item, tmp_path)
+
+    assert draft.figure_assets == ()
+    assert "\\표1*1\\" in draft.palette_markdown
+
+
+@pytest.mark.parametrize(
+    ("paper", "item_number", "table_token"),
+    [("b2_2026_11", 5, "\\표3*2\\"), ("c1_2027_06", 8, "\\표1*1\\")],
+)
+def test_table_prompt_stays_editable_without_redundant_mixed_region_raster(
+    tmp_path: Path, paper: str, item_number: int, table_token: str,
+) -> None:
+    source = _exam_pdf(f"{paper}.pdf")
+    item = next(value for value in detect_items(source).items if value.item_number == item_number)
+
+    draft = build_editable_draft(source, item, tmp_path / f"{paper}-q{item_number}")
+    result = reconcile_final_figure_contract(
+        item_number, draft.palette_markdown, draft.figure_assets,
+    )
+
+    assert draft.figure_assets == ()
+    assert table_token in draft.palette_markdown
+    assert isinstance(result, FinalFigureContract)
+
+
+def test_vertical_pair_keeps_gutter_captions_from_emptying_the_lower_panel(tmp_path: Path) -> None:
+    source = _exam_pdf("c1_2026_09.pdf")
+    item = next(value for value in detect_items(source).items if value.item_number == 18)
+
+    draft = build_editable_draft(source, item, tmp_path / "c1-vertical")
+    metadata = [
+        json.loads(asset.provenance_path.read_text(encoding="utf-8"))
+        for asset in draft.figure_assets
+    ]
+    result = reconcile_final_figure_contract(18, draft.palette_markdown, draft.figure_assets)
+
+    assert len(metadata) == 2
+    assert all(entry["image_bbox"][3] > entry["image_bbox"][1] for entry in metadata)
+    assert all("empty panel geometry" not in entry.get("review_reasons", []) for entry in metadata)
+    assert isinstance(result, FinalFigureContract)
+
+
 def test_equation_decoder_never_decodes_unverified_font_or_codepoint() -> None:
     # Given: a known codepoint under the wrong font and an unknown codepoint under HyhwpEQ.
     wrong_font = draft_extractor._EquationDecoder(frozenset({"OtherEquationFont"}))
@@ -502,7 +902,7 @@ def test_build_editable_draft_supports_every_editable_real_item_layout(tmp_path:
         for item in detected
     )
 
-    # Then: every item has an editable prompt, five choices, and its source figure/material.
+    # Then: every item has an editable prompt, five choices, and its source material.
     assert [draft.item_number for draft in drafts] == [*range(1, 21)]
     assert all(draft.palette_markdown.strip() for draft in drafts)
     assert all(draft.source_text.strip() for draft in drafts)
@@ -510,10 +910,14 @@ def test_build_editable_draft_supports_every_editable_real_item_layout(tmp_path:
         len(draft.choice_texts) == 5 or len(draft.graphical_choice_assets) == 5
         for draft in drafts
     )
-    assert all(draft.figure_assets for draft in drafts)
+    assert all(
+        draft.figure_assets
+        or (draft.item_number == 2 and "\\표4*2\\" in draft.palette_markdown)
+        for draft in drafts
+    )
     assert {draft.item_number: len(draft.figure_assets) for draft in drafts} == {
         1: 1,
-        2: 1,
+        2: 0,
         3: 3,
         4: 2,
         5: 1,
@@ -546,11 +950,8 @@ def test_build_editable_draft_supports_every_editable_real_item_layout(tmp_path:
     assert not any(0xE000 <= ord(char) <= 0xF8FF for char in combined)
     assert "저작권은 한국교육과정평가원에 있습니다" not in combined
     item2 = next(draft for draft in drafts if draft.item_number == 2)
-    item2_provenance = json.loads(item2.figure_assets[0].provenance_path.read_text(encoding="utf-8"))
-    assert item2_provenance["bbox"][0] < 110
-    assert item2_provenance["bbox"][2] > 390
-    assert item2_provenance["bbox"][1] > 550
-    assert item2_provenance["bbox"][3] < 630
+    assert "\\표4*2\\" in item2.palette_markdown
+    assert item2.figure_assets == ()
 
 
 def test_real_figure_routing_distinguishes_two_panel_large_and_small_assets(tmp_path: Path) -> None:
@@ -564,13 +965,14 @@ def test_real_figure_routing_distinguishes_two_panel_large_and_small_assets(tmp_
     item18 = build_editable_draft(SOURCE, items[18], tmp_path / "item-18")
 
     # Then: two source scenes retain readable large-photo slots, while one-scene
-    # figures never acquire a ghost (나) slot and use measured large/small geometry.
+    # figures never acquire a ghost (나) slot. A medium single graph is promoted
+    # to the large cell when the small cell would shrink it below readability.
     assert len(item20.figure_assets) == 2
     assert item20.palette_markdown.startswith("\\수능정답2대사진5선지\\\n")
     assert len(item19.figure_assets) == 1
     assert item19.palette_markdown.startswith("\\수능정답1대사진5선지\\\n")
     assert len(item18.figure_assets) == 1
-    assert item18.palette_markdown.startswith("\\수능정답1소사진5선지\\\n")
+    assert item18.palette_markdown.startswith("\\수능정답1대사진5선지\\\n")
 
 
 def test_real_q3_splits_embedded_labels_into_three_captionless_panels(tmp_path: Path) -> None:
@@ -670,6 +1072,8 @@ def test_build_editable_draft_extracts_real_graphical_choices_in_marker_order(tm
     ]
     assert [entry["choice_index"] for entry in metadata] == [1, 2, 3, 4, 5]
     assert all(entry["asset_count"] == 5 for entry in metadata)
+    assert all(entry["manual_review_required"] is False for entry in metadata)
+    assert all(entry["review_reasons"] == [] for entry in metadata)
 
 
 def test_build_editable_draft_keeps_malformed_graphical_choices_in_manual_review(
@@ -685,3 +1089,325 @@ def test_build_editable_draft_keeps_malformed_graphical_choices_in_manual_review
     assert captured.value.item_number == 17
     assert captured.value.detail == "graphical answer choices require manual review"
     assert captured.value.source_image.image_path.is_file()
+
+
+def test_real_2026_06_q5_crops_stacked_vector_choice_rows(tmp_path: Path) -> None:
+    # Given: ①–⑤ mark five arrow rows drawn as vectors, not five choice images.
+    source = _exam_pdf("p1_2026_06.pdf")
+    item = next(value for value in detect_items(source).items if value.item_number == 5)
+
+    # When: draft extraction reaches the empty-text stacked choice band.
+    draft = build_editable_draft(source, item, tmp_path / "q5")
+    boxes = [
+        json.loads(asset.provenance_path.read_text(encoding="utf-8"))["source_bbox"]
+        for asset in draft.graphical_choice_assets
+    ]
+
+    # Then: each marker row becomes one aligned choice crop, not invented images.
+    assert draft.choice_texts == ()
+    assert len(draft.graphical_choice_assets) == 5
+    assert len(draft.figure_assets) == 1
+    assert draft.palette_markdown.splitlines()[0] == "\\수능정답1대사진그림5선지\\"
+    assert all(box[2] - box[0] > 40 for box in boxes)
+    assert all(boxes[index][3] <= boxes[index + 1][1] + 0.01 for index in range(4))
+    assert len({round(box[0], 1) for box in boxes}) == 1
+    assert len({round(box[2], 1) for box in boxes}) == 1
+
+
+@pytest.mark.parametrize("paper,item_number", [
+    ("p1_2021_06", 2),
+    ("p1_2022_06", 1),
+    ("p1_2025_06", 13),
+])
+def test_real_item_without_text_below_figure_still_builds_a_draft(
+    tmp_path: Path, paper: str, item_number: int,
+) -> None:
+    source = _exam_pdf(f"{paper}.pdf")
+    item = next(value for value in detect_items(source).items if value.item_number == item_number)
+
+    draft = build_editable_draft(source, item, tmp_path)
+
+    assert draft.palette_markdown.strip()
+    assert draft.source_text.strip()
+
+
+def test_raster_only_pdf_detects_each_image_page_for_source_preservation(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "question-image.pdf"
+    pixmap = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 320, 180), False)
+    pixmap.clear_with(255)
+    image = fitz.open(stream=pixmap.tobytes("png"), filetype="png")
+    pdf = fitz.open("pdf", image.convert_to_pdf())
+    pdf.save(source)
+    pdf.close()
+    image.close()
+
+    detected = detect_items(source)
+
+    assert len(detected.items) == 1
+    assert detected.items[0].page_number == 1
+    assert detected.items[0].item_number == 1
+    assert detected.items[0].bbox == (0.0, 0.0, 240.0, 135.0)
+
+
+@pytest.mark.parametrize("page_number,item_number", [(13, 1), (70, 96), (174, 249)])
+def test_ebs_items_build_editable_text_choices_and_separate_figure_draft(
+    tmp_path: Path, page_number: int, item_number: int,
+) -> None:
+    source = Path(
+        r"C:\Users\user\Desktop\project\31_hwp_palette\2027 수능특강 물리학 I 원본.pdf"
+    )
+    if not source.is_file():
+        pytest.skip("missing EBS physics PDF")
+    item = next(
+        value for value in detect_items(source).items
+        if value.page_number == page_number and value.item_number == item_number
+    )
+
+    draft = build_editable_draft(source, item, tmp_path / f"p{page_number}-q{item_number}")
+
+    assert draft.palette_markdown.strip()
+    assert draft.palette_markdown.splitlines()[0] != "\\수능원문1대사진\\"
+    assert len(draft.choice_texts) == 5
+    assert draft.source_text.strip()
+    assert "[26023-" not in draft.source_text
+    assert re.match(r"^\d{2}\s", draft.source_text) is None
+    assert draft.source_image not in draft.figure_assets
+    assert isinstance(
+        reconcile_final_figure_contract(item_number, draft.palette_markdown, draft.figure_assets),
+        FinalFigureContract,
+    )
+
+
+def test_ebs_q2_keeps_body_editable_and_crops_only_the_three_panel_figure(
+    tmp_path: Path,
+) -> None:
+    source = Path(
+        r"C:\Users\user\Desktop\project\31_hwp_palette\2027 수능특강 물리학 I 원본.pdf"
+    )
+    if not source.is_file():
+        pytest.skip("missing EBS physics PDF")
+    item = next(
+        value for value in detect_items(source).items
+        if value.page_number == 13 and value.item_number == 2
+    )
+
+    draft = build_editable_draft(source, item, tmp_path / "q2")
+    metadata = json.loads(draft.figure_assets[0].provenance_path.read_text(encoding="utf-8"))
+
+    assert draft.source_text.startswith(
+        "그림 (가)는 등속 원운동을 하는 학생 [[formula:A]], "
+        "(나)는 그네에서 왕복 운동을 하는 학생 [[formula:B]]"
+    )
+    assert metadata["bbox"][1] > 460
+
+
+@pytest.mark.parametrize(
+    ("item_number", "expected"),
+    [
+        (5, r"[[formula:d_2=\frac{3}{2}d_1]]"),
+        (8, r"[[formula:\frac{v_1}{v_2}]]은?"),
+        (9, r"[[formula:\frac{v_1}{v_2}]]는?"),
+        (10, r"[[formula:\frac{a_2}{a_1}]]는?"),
+    ],
+)
+def test_ebs_legacy_equation_fonts_become_semantic_editable_formulas(
+    tmp_path: Path, item_number: int, expected: str,
+) -> None:
+    if not EBS_PHYSICS.is_file():
+        pytest.skip("missing EBS physics PDF")
+    item = next(value for value in detect_items(EBS_PHYSICS).items if value.item_number == item_number)
+
+    draft = build_editable_draft(EBS_PHYSICS, item, tmp_path / f"q{item_number}")
+
+    assert expected in draft.source_text
+    assert re.search(r";\d+[!@#$%^&*()];", draft.source_text) is None
+
+
+@pytest.mark.parametrize(
+    ("item_number", "expected"),
+    [
+        (18, r"[[formula:\sqrt{\frac{gh}{3}}]]"),
+        (70, r"[[formula:3d\sqrt{\frac{k_1}{m}}]]"),
+        (71, r"[[formula:v_3=\sqrt{\frac{2E_0}{m}}]]"),
+        (73, r"[[formula:x=4\sqrt{\frac{m}{k}}v]]"),
+        (76, r"[[formula:2\sqrt{\frac{E_0}{5m}}]]"),
+        (78, r"[[formula:3\sqrt{\frac{5m}{k}}]]"),
+        (236, r"[[formula:\sqrt{\frac{3}{2}}]]"),
+    ],
+)
+def test_ebs_stacked_radicals_become_semantic_formulas(
+    tmp_path: Path, item_number: int, expected: str,
+) -> None:
+    if not EBS_PHYSICS.is_file():
+        pytest.skip("missing EBS physics PDF")
+    item = next(value for value in detect_items(EBS_PHYSICS).items if value.item_number == item_number)
+
+    draft = build_editable_draft(EBS_PHYSICS, item, tmp_path / f"root-q{item_number}")
+
+    assert expected in draft.source_text
+
+
+def test_ebs_multiline_root_choices_keep_their_denominators(tmp_path: Path) -> None:
+    if not EBS_PHYSICS.is_file():
+        pytest.skip("missing EBS physics PDF")
+    item = next(value for value in detect_items(EBS_PHYSICS).items if value.item_number == 47)
+
+    draft = build_editable_draft(EBS_PHYSICS, item, tmp_path / "q47-root-choices")
+
+    assert draft.choice_texts == (
+        r"[[formula:\frac{m\sqrt{2gh}}{3t}]]",
+        r"[[formula:\frac{m\sqrt{2gh}}{2t}]]",
+        r"[[formula:\frac{2m\sqrt{2gh}}{3t}]]",
+        r"[[formula:\frac{m\sqrt{2gh}}{t}]]",
+        r"[[formula:\frac{4m\sqrt{2gh}}{3t}]]",
+    )
+
+
+def test_real_2021_06_q1_keeps_ordered_three_panel_captions(tmp_path: Path) -> None:
+    source = _exam_pdf("p1_2021_06.pdf")
+    item = next(value for value in detect_items(source).items if value.item_number == 1)
+
+    draft = build_editable_draft(source, item, tmp_path / "q1")
+    metadata = [
+        json.loads(asset.provenance_path.read_text(encoding="utf-8"))
+        for asset in draft.figure_assets
+    ]
+    result = reconcile_final_figure_contract(1, draft.palette_markdown, draft.figure_assets)
+
+    assert [entry["caption_text"] for entry in metadata] == ["(가)", "(나)", "(다)"]
+    assert all(entry["caption_bbox"] is not None for entry in metadata)
+    assert isinstance(result, FinalFigureContract)
+
+
+def test_real_unlabeled_three_illustrations_use_one_hapdap_photo(tmp_path: Path) -> None:
+    source = _exam_pdf("p1_2021_06.pdf")
+    item = next(value for value in detect_items(source).items if value.item_number == 2)
+
+    draft = build_editable_draft(source, item, tmp_path / "q2")
+
+    assert len(draft.figure_assets) == 1
+    assert draft.palette_markdown.startswith("\\수능합답1")
+    assert "(가)" not in "\n".join(
+        json.loads(asset.provenance_path.read_text(encoding="utf-8")).get("caption_text", "")
+        for asset in draft.figure_assets
+    )
+
+
+def test_real_graphical_choice_multiline_passage_fills_the_photo_slot(tmp_path: Path) -> None:
+    source = _exam_pdf("p1_2021_06.pdf")
+    item = next(value for value in detect_items(source).items if value.item_number == 5)
+
+    draft = build_editable_draft(source, item, tmp_path / "q5")
+    result = reconcile_final_figure_contract(5, draft.palette_markdown, draft.figure_assets)
+    markdown = result.palette_markdown if isinstance(result, FinalFigureContract) else draft.palette_markdown
+    assets = tuple(
+        FigureAsset(
+            artifact.image_path,
+            FigureAssetMetadata.model_validate_json(artifact.provenance_path.read_text(encoding="utf-8")),
+        )
+        for artifact in draft.figure_assets
+    )
+    choices = tuple(
+        GraphicalChoiceAsset(
+            artifact.image_path,
+            GraphicalChoiceAssetMetadata.model_validate_json(
+                artifact.provenance_path.read_text(encoding="utf-8"),
+            ),
+        )
+        for artifact in draft.graphical_choice_assets
+    )
+
+    assert len(draft.graphical_choice_assets) == 5
+    assert draft.palette_markdown.splitlines()[2].startswith("{")
+    preflight_unit(
+        ConversionUnit(5, markdown, assets, choices),
+        LayoutStyle.SUNEUNG,
+    )
+
+
+def test_real_abc_three_panel_captions_keep_separate_geometry(tmp_path: Path) -> None:
+    source = _exam_pdf("p1_2022_06.pdf")
+    item = next(value for value in detect_items(source).items if value.item_number == 5)
+
+    draft = build_editable_draft(source, item, tmp_path / "abc")
+    metadata = [
+        json.loads(asset.provenance_path.read_text(encoding="utf-8"))
+        for asset in draft.figure_assets
+    ]
+    result = reconcile_final_figure_contract(5, draft.palette_markdown, draft.figure_assets)
+
+    assert [entry["caption_text"] for entry in metadata] == ["A", "B", "C"]
+    assert all(entry["caption_bbox"] is not None for entry in metadata)
+    assert isinstance(result, FinalFigureContract)
+
+
+def test_real_caption_titles_below_three_panels_keep_geometry(tmp_path: Path) -> None:
+    source = _exam_pdf("e1_2026_09.pdf")
+    item = next(value for value in detect_items(source).items if value.item_number == 1)
+
+    draft = build_editable_draft(source, item, tmp_path / "e1-titles")
+    metadata = [
+        json.loads(asset.provenance_path.read_text(encoding="utf-8"))
+        for asset in draft.figure_assets
+    ]
+    result = reconcile_final_figure_contract(1, draft.palette_markdown, draft.figure_assets)
+
+    assert [entry["caption_text"] for entry in metadata] == ["(가)", "(나)", "(다)"]
+    assert all(entry["caption_bbox"] is not None for entry in metadata)
+    assert isinstance(result, FinalFigureContract)
+    assert result.palette_markdown.splitlines()[0] == "\\수능합답3소사진5선지\\"
+
+
+def test_real_inquiry_steps_do_not_force_three_panel_split(tmp_path: Path) -> None:
+    source = _exam_pdf("e1_2025_11.pdf")
+    item = next(value for value in detect_items(source).items if value.item_number == 4)
+
+    draft = build_editable_draft(source, item, tmp_path / "e1-inquiry")
+    metadata = [
+        json.loads(asset.provenance_path.read_text(encoding="utf-8"))
+        for asset in draft.figure_assets
+    ]
+    result = reconcile_final_figure_contract(4, draft.palette_markdown, draft.figure_assets)
+
+    assert all(not entry.get("manual_review_required") for entry in metadata)
+    assert isinstance(result, FinalFigureContract)
+
+
+def test_real_direct_three_panel_uses_registered_hapdap_template(tmp_path: Path) -> None:
+    source = _exam_pdf("c1_2026_11.pdf")
+    item = next(value for value in detect_items(source).items if value.item_number == 18)
+
+    draft = build_editable_draft(source, item, tmp_path / "c1-three")
+    result = reconcile_final_figure_contract(18, draft.palette_markdown, draft.figure_assets)
+
+    assert isinstance(result, FinalFigureContract)
+    assert result.palette_markdown.splitlines()[0] == "\\수능합답3소사진5선지\\"
+    assert len(draft.figure_assets) == 3
+
+
+def test_real_two_column_graphical_choices_pair_by_overlap(tmp_path: Path) -> None:
+    source = _exam_pdf("c1_2026_11.pdf")
+    item = next(value for value in detect_items(source).items if value.item_number == 4)
+
+    draft = build_editable_draft(source, item, tmp_path / "c1-choices")
+
+    assert len(draft.graphical_choice_assets) == 5
+    assert draft.palette_markdown.lstrip().startswith("\\수능정답0사진그림5선지\\")
+
+
+def test_real_abc_captions_left_of_panels_still_have_geometry(tmp_path: Path) -> None:
+    source = _exam_pdf("p1_2026_09.pdf")
+    item = next(value for value in detect_items(source).items if value.item_number == 1)
+
+    draft = build_editable_draft(source, item, tmp_path / "abc-left")
+    metadata = [
+        json.loads(asset.provenance_path.read_text(encoding="utf-8"))
+        for asset in draft.figure_assets
+    ]
+    result = reconcile_final_figure_contract(1, draft.palette_markdown, draft.figure_assets)
+
+    assert [entry["caption_text"] for entry in metadata] == ["A", "B", "C"]
+    assert all(entry["caption_bbox"] is not None for entry in metadata)
+    assert isinstance(result, FinalFigureContract)

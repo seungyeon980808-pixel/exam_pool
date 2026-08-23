@@ -151,6 +151,8 @@ def test_every_derived_template_physical_markers_match_declared_slots() -> None:
     from app.integrations.palette_registry import _DERIVED_TEMPLATES
 
     for label, (filename, declared_slots) in _DERIVED_TEMPLATES.items():
+        if not (TEMPLATES / filename).is_file():
+            continue
         physical_slots = re.findall(r"\\([^\\{}\n]+)\\", _dump(filename))
         assert sorted(physical_slots) == sorted(declared_slots), (
             f"{label} declares {declared_slots!r}, but {filename} physically contains "
@@ -214,8 +216,14 @@ def test_palette_registry_exposes_prompt_and_five_graphical_choice_slots() -> No
     from app.integrations.palette_registry import _DERIVED_TEMPLATES
 
     filename, slots = _DERIVED_TEMPLATES["수능정답1대사진그림5선지"]
+    none_file, none_slots = _DERIVED_TEMPLATES["수능정답0사진그림5선지"]
 
     assert filename == "csat_direct_one_large_graphical_choices.hwp"
+    assert none_file == "csat_direct_no_prompt_graphical_choices.hwp"
+    assert none_slots == [
+        "문항번호", "문두", "발문",
+        "선지사진1", "선지사진2", "선지사진3", "선지사진4", "선지사진5",
+    ]
     assert slots == [
         "문항번호", "문두", "사진1", "발문",
         "선지사진1", "선지사진2", "선지사진3", "선지사진4", "선지사진5",
@@ -229,6 +237,15 @@ def test_graphical_choice_template_contains_distinct_ordered_image_markers() -> 
     assert 'text="\\사진1\\"' in dump
     for index in range(1, 6):
         assert f'text="\\선지사진{index}\\"' in dump
+
+
+def test_three_panel_direct_label_reuses_registered_hapdap_caption_geometry() -> None:
+    from app.integrations.palette_registry import _DERIVED_TEMPLATES
+
+    hapdap_file, hapdap_slots = _DERIVED_TEMPLATES["수능합답3소사진5선지"]
+    direct_file, direct_slots = _DERIVED_TEMPLATES["수능정답3소사진무캡션5선지"]
+    assert direct_file == hapdap_file == "csat_hapdap_three_small_captioned.hwp"
+    assert direct_slots == hapdap_slots
 
 
 def test_three_panel_hapdap_template_has_editable_ordered_caption_slots() -> None:

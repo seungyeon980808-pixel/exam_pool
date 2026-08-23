@@ -87,6 +87,11 @@ def _active_slot_contract() -> dict[str, int]:
     contract.update({label: spec["slot_count"]
                      for label, spec in export_palette.SUNEUNG_TEMPLATES.items()
                      if label != "수능합답1사진5선지" or label in active_labels})
+    active_package = palette_registry.active_palette_package("suneung")
+    if active_package is not None:
+        record, _ = active_package
+        contract.update({str(label): int(count)
+                         for label, count in (record.get("contract") or {}).items()})
     return contract
 
 

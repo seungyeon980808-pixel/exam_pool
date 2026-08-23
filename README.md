@@ -20,6 +20,7 @@
 | **근거 문서** | 교과서·교육과정 PDF 폴더를 색인해 근거를 즉시 검색 |
 | **수업 기록** | 수업 녹취 텍스트를 붙여넣으면 교과서와 같은 인덱스에 들어가 함께 검색된다 |
 | **환경설정** | 출제 범위 설정 + 롤링 백업·복구 (하루 1회 자동, 최근 3시점 보관) |
+| **PDF/HWP 변환** | PDF 또는 클립보드 이미지를 문항 구조로 분석해 본문·발문·보기·선지·수식을 편집 가능한 HWP로 변환. 자료 그림은 원본 이미지로 유지 |
 
 **AI·인터넷 연결이 필요 없다.** 근거 확인은 전문 검색(SQLite FTS5), 오답은 왜곡 유형 프리셋, 선지는 조합 프리셋, 검토는 규칙 체크리스트로 해결한다. 시험 데이터가 외부로 나가지 않는다.
 
@@ -35,6 +36,26 @@ run.bat
 ```
 
 `run.bat`을 더블클릭하면 로컬 서버가 뜨고 브라우저가 자동으로 열린다 (http://127.0.0.1:8632).
+
+### PDF/HWP 단독 변환 앱
+
+`PDF-HWP 웹앱 실행.bat`을 더블클릭한다. 변환 전용 화면이
+<http://127.0.0.1:8633>에서 열린다.
+
+- PDF: 텍스트·글꼴·글자 좌표·벡터 도형을 분석한다.
+- 클립보드 이미지/PNG/JPG: 로컬 PaddleOCR로 글자와 위치를 복원한다.
+- 본문·지문·발문·보기·선지: 편집 가능한 한글 텍스트로 만든다.
+- 인식 가능한 수식: 한글 수식 개체로 만든다.
+- 문항 자료 그림·그래프: 원래 순서와 비율을 유지한 이미지로 넣는다.
+
+이미지 OCR 런타임은 처음 실행할 때만 `data/pdf_hwp_ocr_runtime/`에 설치된다.
+이 디렉터리와 OCR 모델·사용자 PDF·변환 결과는 Git에 포함되지 않는다.
+
+개발 환경에서 OCR까지 한 번에 설치하려면 다음 명령을 사용한다.
+
+```bash
+pip install -e ".[pdf-hwp,dev]"
+```
 
 ---
 
@@ -93,6 +114,8 @@ app/
   routes_lesson.py   수업 기록 API
   routes_config.py   백업 · 복구 API
   pdf_indexer.py     PyMuPDF 추출 + FTS5 색인/검색
+  pdf_hwp_*.py       PDF·이미지 문항 분석, 구조 복원, HWP 검증
+  pdf_hwp_webapp.py  변환 단독 앱 진입점
   lessons.py         수업 기록을 같은 FTS5 인덱스에 얹기
   export_palette.py  hwppalette 문법 변환기
   reports.py         정답표 · 이원목적분류표
@@ -107,6 +130,8 @@ static/
   js/qbank.js        문항 Pool        js/set.js       세트 관리 · 제출 서류
   js/doc.js          근거 문서        js/lesson.js    수업 기록
   js/config.js       환경설정 · 백업
+  pdf-hwp.html       PDF/HWP 단독 변환 화면
+  js/pdf-hwp*.js     변환 화면 동작
 tools/               성취기준 추출 도구
 tests/               단위 테스트 (한글·PDF 없이 실행)
 data/                DB · 백업 (git 제외)
@@ -115,7 +140,7 @@ data/                DB · 백업 (git 제외)
 ## 테스트
 
 ```bash
-python -m unittest discover -s tests
+python -m pytest
 ```
 
 ---

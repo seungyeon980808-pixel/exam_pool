@@ -4,14 +4,18 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import re
 import shutil
 from typing import Final
 
 import fitz
 
 from .exam_items import detect_items as detect_page_items
+from .pdf_hwp_ebs_detection import detect_ebs_textbook_items
 from .integrations.hwppalette import HwpPaletteError, hwppalette_provider
 from .pdf_hwp_hwp_preflight import preflight_units
+from .pdf_hwp_hwp_retry import TypesetInvocation, typeset_with_transient_restart
+from .pdf_hwp_raster_ocr import read_sidecar
 from .pdf_hwp_pipeline_models import (
     ConversionRequest,
     ConversionResourceLockedError,
@@ -37,6 +41,7 @@ from .pdf_hwp_pipeline_models import (
 
 
 DEFAULT_CROP_DPI: Final = 300
+_MAX_EDITABLE_PAGE_VECTORS: Final = 10_000
 
 
 def _sha256(path: Path) -> str:
@@ -61,6 +66,16 @@ def _trim_trailing_page_matter(page: fitz.Page, bbox: tuple[float, float, float,
     previous_end = y0
     for start, end in occupied:
         if start - previous_end >= 72 and previous_end - y0 >= 60:
+            trailing_words = page.get_text(
+                "words", clip=fitz.Rect(x0, start, x1, y1),
+            )
+            if any(
+                marker in str(word[4])
+                for word in trailing_words
+                for marker in "①②③④⑤"
+            ):
+                previous_end = max(previous_end, end)
+                continue
             return (x0, y0, x1, round(start - 8, 3))
         previous_end = max(previous_end, end)
     return bbox
@@ -75,20 +90,70 @@ def detect_items(source_pdf: Path) -> DetectionResult:
         raise InvalidSourcePdfError(source_pdf=source, detail=str(exc)) from exc
     found: list[DetectedItem] = []
     with document:
-        for page_index, page in enumerate(document):
-            for raw in detect_page_items(page):
-                raw_bbox = tuple(round(float(raw[key]), 3) for key in ("x0", "y0", "x1", "y1"))
-                bbox = _trim_trailing_page_matter(page, raw_bbox)
-                clip = fitz.Rect(bbox)
-                found.append(
-                    DetectedItem(
-                        page_number=page_index + 1,
-                        item_number=int(raw["num"]),
-                        column=int(raw["col"]),
-                        bbox=bbox,
-                        source_text=page.get_text(clip=clip).strip(),
-                    )
+        ocr_words = read_sidecar(source)
+        if ocr_words:
+            markers = tuple(
+                (int(match.group(1)), word)
+                for word in ocr_words
+                if (match := re.match(r"^\s*(\d{1,2})\s*\.\s*", word.text)) is not None
+            )
+            for marker_index, (item_number, marker) in enumerate(markers):
+                next_y = (
+                    markers[marker_index + 1][1].bbox[1]
+                    if marker_index + 1 < len(markers) else document[0].rect.y1
                 )
+                selected = tuple(
+                    word for word in ocr_words
+                    if word.bbox[1] >= marker.bbox[1] - 2 and word.bbox[1] < next_y
+                )
+                if not selected:
+                    continue
+                found.append(DetectedItem(
+                    page_number=1,
+                    item_number=item_number,
+                    column=0,
+                    bbox=(
+                        max(0.0, min(word.bbox[0] for word in selected) - 8),
+                        max(0.0, min(word.bbox[1] for word in selected) - 8),
+                        min(document[0].rect.x1, max(word.bbox[2] for word in selected) + 8),
+                        min(document[0].rect.y1, max(word.bbox[3] for word in selected) + 8),
+                    ),
+                    source_text="\n".join(word.text for word in selected),
+                ))
+        ebs_items = None if ocr_words else detect_ebs_textbook_items(document)
+        if ebs_items is not None:
+            found.extend(ebs_items)
+        else:
+            for page_index, page in enumerate(document):
+                for raw in detect_page_items(page):
+                    raw_bbox = tuple(round(float(raw[key]), 3) for key in ("x0", "y0", "x1", "y1"))
+                    bbox = _trim_trailing_page_matter(page, raw_bbox)
+                    clip = fitz.Rect(bbox)
+                    found.append(
+                        DetectedItem(
+                            page_number=page_index + 1,
+                            item_number=int(raw["num"]),
+                            column=int(raw["col"]),
+                            bbox=bbox,
+                            source_text=page.get_text(clip=clip).strip(),
+                        )
+                    )
+            if not found:
+                raster_pages = tuple(
+                    page for page in document
+                    if not page.get_text().strip() and bool(page.get_images())
+                )
+                if len(raster_pages) == document.page_count:
+                    found.extend(
+                        DetectedItem(
+                            page_number=page.number + 1,
+                            item_number=page.number + 1,
+                            column=0,
+                            bbox=tuple(round(float(value), 3) for value in page.rect),
+                            source_text=f"[raster source page {page.number + 1}]",
+                        )
+                        for page in raster_pages
+                    )
         page_count = document.page_count
     return DetectionResult(
         source_pdf=source,
@@ -143,6 +208,40 @@ def crop_item(
     return CropArtifact(image_path, provenance_path, pixmap.width, pixmap.height)
 
 
+def _requires_exact_source_fallback(source_pdf: Path, item: DetectedItem) -> bool:
+    """Avoid pathological vector segmentation while preserving the exact item."""
+    try:
+        with fitz.open(source_pdf) as document:
+            if item.page_number > document.page_count:
+                return False
+            return len(document[item.page_number - 1].get_cdrawings()) > _MAX_EDITABLE_PAGE_VECTORS
+    except (fitz.FileDataError, FileNotFoundError, OSError):
+        return False
+
+
+def _exact_source_draft(
+    item: DetectedItem, source_image: CropArtifact, warning: str,
+) -> DraftArtifact:
+    from .pdf_hwp_figure_routing import stamp_single_prompt_figure
+
+    exact_image = stamp_single_prompt_figure(source_image)
+    markdown = "\n".join((
+        "\\수능원문1대사진\\",
+        f"\\{exact_image.image_path.stem}\\",
+    ))
+    return DraftArtifact(
+        item.item_number,
+        markdown,
+        item.source_text,
+        (),
+        exact_image,
+        exact_image,
+        (warning,),
+        (exact_image,),
+        (),
+    )
+
+
 def build_editable_draft(
     source_pdf: Path,
     item: DetectedItem,
@@ -154,7 +253,27 @@ def build_editable_draft(
     from .pdf_hwp_draft import build_draft
 
     source_image = crop_item(source_pdf, item, output_dir, dpi=DEFAULT_CROP_DPI)
-    return build_draft(source_pdf.resolve(), item, output_dir.resolve(), source_image, layout_style)
+    if read_sidecar(source_pdf):
+        from .pdf_hwp_raster_draft import build_raster_draft
+
+        return build_raster_draft(
+            source_pdf.resolve(), item, output_dir.resolve(), source_image, layout_style,
+        )
+    if _requires_exact_source_fallback(source_pdf, item):
+        return _exact_source_draft(
+            item, source_image, "excessive vector complexity preserved as source image",
+        )
+    try:
+        return build_draft(
+            source_pdf.resolve(), item, output_dir.resolve(), source_image, layout_style,
+        )
+    except StopIteration as exc:
+        raise UnsupportedDraftLayoutError(
+            item.page_number,
+            item.item_number,
+            "editable row iterator exhausted; source image preserved",
+            source_image,
+        ) from exc
 
 
 class HwpPaletteTypesetter:
@@ -228,11 +347,16 @@ def typeset_conversion(
     request.output_dir.mkdir(parents=True, exist_ok=True)
     units = preflight_units(request.units, request.layout_style)
     markdown = "\n\n".join(unit.palette_markdown.strip() for unit in units) + "\n"
+    if request.header_subject.strip():
+        markdown = f"\\수능과목머리말\\\n{request.header_subject.strip()}\n{markdown}"
     if progress is not None:
         progress(PipelineProgress(PipelinePhase.TYPESETTING, 0, total))
     try:
-        generated = selected.typeset(
-            markdown, request.output_dir, request.layout_style, request.asset_dirs,
+        generated = typeset_with_transient_restart(
+            selected,
+            TypesetInvocation(
+                markdown, request.output_dir, request.layout_style, request.asset_dirs,
+            ),
         )
     except PermissionError as exc:
         raise ConversionResourceLockedError(detail=str(exc)) from exc

@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 from urllib.request import urlopen
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import expect, sync_playwright
 from pydantic import JsonValue
 
 
@@ -123,21 +123,23 @@ def test_failed_job_exposes_item_errors_in_native_disclosures() -> None:
                 failed,
             )
             page.locator('[data-tab="pdf-hwp"]').click()
+            page.get_by_text("변환 상세 보기", exact=True).click()
 
             current = page.locator("#pdfHwpCurrent")
-            assert current.get_by_text(
+            expect(current.get_by_text(
                 "작업 20 · 성공 0개 · 실패 20개 · 결과 0개", exact=True,
-            ).is_visible()
+            )).to_be_visible()
             current.get_by_text("실패 문항 20개 자세히 보기", exact=True).click()
-            assert current.get_by_text("1번 · PDF 1쪽", exact=True).is_visible()
-            assert current.get_by_text(
+            expect(current.get_by_text("1번 · PDF 1쪽", exact=True)).to_be_visible()
+            expect(current.get_by_text(
                 "PDF 문자·그림 선지 인식에 실패했습니다.", exact=True,
-            ).first.is_visible()
+            ).first).to_be_visible()
 
+            page.get_by_text("이전 변환 작업", exact=True).click()
             history = page.locator("#pdfHwpJobs .ph-job-card").first
-            assert history.get_by_text("성공 0개 · 실패 20개 · 결과 0개", exact=True).is_visible()
+            expect(history.get_by_text("성공 0개 · 실패 20개 · 결과 0개", exact=True)).to_be_visible()
             history.get_by_text("실패 문항 20개 자세히 보기", exact=True).click()
-            assert history.get_by_text("20번 · PDF 2쪽", exact=True).is_visible()
+            expect(history.get_by_text("20번 · PDF 2쪽", exact=True)).to_be_visible()
             browser.close()
     finally:
         server.terminate()
@@ -180,16 +182,19 @@ def test_partial_failure_typesets_ready_items_and_keeps_failure_details() -> Non
                 partial,
             )
             page.locator('[data-tab="pdf-hwp"]').click()
+            page.get_by_text("변환 상세 보기", exact=True).click()
 
-            assert page.get_by_role("textbox", name="1번 HWP 변환 내용").is_visible()
-            assert page.get_by_text("실패 문항 1개 자세히 보기", exact=True).first.is_visible()
+            expect(page.get_by_role("textbox", name="1번 HwpPalette용 조판 텍스트")).to_be_visible()
+            expect(page.get_by_text("실패 문항 1개 자세히 보기", exact=True).first).to_be_visible()
             button = page.get_by_role("button", name="성공한 1개 문항으로 HWP 만들기")
             assert button.is_enabled()
             button.click()
-            page.get_by_role("link", name="편집용 HWP 받기").first.wait_for()
+            primary_download = page.get_by_role("link", name="p1_2027_06_converted.hwp 받기")
+            expect(primary_download).to_be_visible()
 
             assert page.evaluate("window.typesetCalls") == 1
-            assert page.get_by_role("link", name="확인용 PDF 받기").first.is_visible()
+            page.get_by_text("이전 변환 작업", exact=True).click()
+            expect(page.get_by_role("link", name="확인용 PDF 받기").first).to_be_visible()
             browser.close()
     finally:
         server.terminate()

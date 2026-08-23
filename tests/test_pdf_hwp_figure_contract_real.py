@@ -55,7 +55,7 @@ def test_real_key_items_route_by_size_arrangement_and_readability(tmp_path: Path
     assert routed[4].layout_metadata.minimum_projected_scale >= 0.5
     assert routed[9].layout_metadata.minimum_projected_scale >= 0.5
     assert routed[13].layout_metadata.panel_width_points == pytest.approx((187.755, 111.045))
-    assert routed[14].figure_assets[0].metadata.panel_mode is PanelMode.SINGLE
+    assert routed[14].figure_assets[0].metadata.panel_mode is PanelMode.COMPOSITE
     assert routed[14].manual_review_required is False
     assert all(
         asset.metadata.caption_in_image is False

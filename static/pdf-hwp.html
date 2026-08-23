@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PDF → HWP</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/icon.svg" />
+  <link rel="stylesheet" href="/static/css/neis.css?v=0.5.3-responsive-a11y" />
+  <link rel="stylesheet" href="/static/css/authoring-apple.css?v=0.7.2-control-fix" />
+  <link rel="stylesheet" href="/static/css/pdf-hwp.css?v=0.2.1-output-list" />
+</head>
+<body class="ph-standalone-body" data-clear-conversion-history-on-refresh="true">
+  <header class="ph-product-bar">
+    <a class="ph-product-brand" href="/" aria-label="PDF HWP 처음 화면">
+      <img src="/assets/icon.svg" alt="" />
+      <span>PDF → HWP</span>
+    </a>
+    <span class="ph-product-note">외부 AI 전송 없음 · 수능형 시험지</span>
+  </header>
+
+  <div id="appStatus" class="nz-app-status hidden" role="status" aria-live="polite"></div>
+
+  <main class="ph-standalone-main">
+    <section id="tab-pdf-hwp" class="ph-page" aria-labelledby="pdfHwpTitle">
+      <header class="ph-heading ph-simple-heading">
+        <div>
+          <p class="ph-eyebrow">PDF → HWP</p>
+          <h1 id="pdfHwpTitle">PDF를 놓으면 <span class="ph-keep">HWP가 됩니다</span></h1>
+          <p>문항 분석부터 수능형 조판까지 자동으로 진행합니다. <span class="ph-keep">완료된 HWP 파일만 받아가세요.</span></p>
+        </div>
+        <button type="button" class="nz-tb" id="pdfHwpRefresh" onclick="EP.pdfHwpRefresh()">상태 새로고침</button>
+      </header>
+
+      <div class="ph-simple-workbench">
+        <form class="ph-panel ph-upload-panel" id="pdfHwpForm" onsubmit="return false">
+          <div class="ph-step-label"><span aria-hidden="true">01</span> PDF 등록</div>
+          <label class="ph-file-field ph-dropzone" for="pdfHwpFile" id="pdfHwpDropzone">
+            <span class="ph-file-title">PDF·이미지를 놓으세요</span>
+            <span class="ph-file-help" id="pdfHwpFileHelp">파일을 선택하거나 클립보드 이미지를 Ctrl+V로 붙여넣으세요.</span>
+            <input id="pdfHwpFile" name="file" type="file" accept="application/pdf,.pdf,image/png,image/jpeg,image/webp" aria-label="PDF, PNG, JPEG 또는 WebP 파일 선택" aria-describedby="pdfHwpFileHelp" multiple required />
+            <span class="ph-file-action" aria-hidden="true">또는 파일 찾기</span>
+            <span class="ph-file-name" id="pdfHwpFileName">선택된 파일 없음</span>
+          </label>
+          <p class="ph-upload-note">출력 양식: 수능형 시험지</p>
+          <div class="ph-actions"><button type="button" class="nz-tb blu" id="pdfHwpStart" disabled onclick="EP.pdfHwpStart()">변환 시작</button></div>
+        </form>
+
+        <section class="ph-panel ph-progress-panel ph-simple-progress" aria-labelledby="pdfHwpProgressTitle">
+          <div class="ph-progress-head">
+            <div><div class="ph-step-label"><span aria-hidden="true">02</span> 자동 변환</div><h2 id="pdfHwpProgressTitle">변환 진행 상황</h2></div>
+            <span class="ph-time-estimate" id="pdfHwpTotalElapsed">총 진행 0초</span>
+          </div>
+          <div class="ph-status" id="pdfHwpStatus" role="status" aria-live="polite" aria-atomic="true" data-tone="idle">
+            <span class="ph-status-mark" aria-hidden="true"></span>
+            <div><strong>파일을 선택해 주세요</strong><p>선택 후 변환 시작 버튼을 누르면 문항 분석과 HWP 조판을 진행합니다.</p></div>
+          </div>
+          <div class="ph-progress-track" aria-hidden="true"><span id="pdfHwpProgressBar"></span></div>
+          <div class="ph-progress-meta"><span id="pdfHwpPhase">대기 중</span><span id="pdfHwpElapsed">해당 파일 0초 / 총 진행 0초</span></div>
+          <ol class="ph-steps" id="pdfHwpSteps" aria-label="변환 단계">
+            <li data-step="upload">파일 업로드</li>
+            <li data-step="detect">문항 분석</li>
+            <li data-step="convert">HWP 조판</li>
+            <li data-step="complete">파일 준비</li>
+          </ol>
+          <div class="ph-actions">
+            <button type="button" class="nz-tb blu hidden" id="pdfHwpTypeset" disabled onclick="EP.pdfHwpTypeset()">HWP 파일로 만들기</button>
+            <button type="button" class="nz-tb hidden" id="pdfHwpRetry" onclick="EP.pdfHwpRetry()">실패 단계 다시 시도</button>
+          </div>
+          <div class="ph-output-card hidden" id="pdfHwpOutput" aria-live="polite"></div>
+        </section>
+      </div>
+
+      <details class="ph-palette-tools" id="pdfHwpPalette">
+        <summary><span>양식 직접 수정</span><span>현재 전체 양식 받기 · 수정본 등록</span></summary>
+        <div class="ph-palette-tools-body">
+          <div>
+            <strong id="pdfHwpPaletteName">현재 양식 확인 중</strong>
+            <p>전체 양식을 받아 HwpPalette에서 수정한 뒤, 내보낸 <code>.hwpal</code>을 다시 등록하세요.</p>
+          </div>
+          <div class="ph-palette-actions">
+            <a class="nz-tb" id="pdfHwpPaletteDownload" href="/api/pdf-hwp/palette/download" download hidden>현재 전체 양식 받기</a>
+            <label class="nz-tb blu" for="pdfHwpPaletteFile">수정본 등록</label>
+            <input id="pdfHwpPaletteFile" type="file" accept=".hwpal,application/octet-stream" />
+          </div>
+          <p class="ph-palette-status" id="pdfHwpPaletteStatus" role="status" aria-live="polite"></p>
+        </div>
+      </details>
+
+      <details class="ph-advanced-review" id="pdfHwpAdvancedReview">
+        <summary><span>변환 상세 보기</span><span>원문 미리보기 · HwpPalette 조판 텍스트</span></summary>
+        <div class="ph-main-workspace" aria-label="문항 검토 작업공간">
+          <section class="ph-document-panel ph-source-panel" aria-labelledby="pdfHwpSourceTitle">
+            <div class="ph-pane-heading"><div><p class="ph-eyebrow">원문</p><h2 id="pdfHwpSourceTitle">PDF 원문</h2></div><span class="ph-pane-note">필요할 때만 펼쳐서 확인합니다.</span></div>
+            <details class="ph-source-details" id="pdfHwpSourceDetails">
+              <summary><span>PDF 원문 보기</span><span class="ph-source-summary-note">문항 검토 중 필요할 때 열기</span></summary>
+              <div id="pdfHwpDocumentPreview" class="ph-document-preview"><p>작업을 선택하면 PDF 원문이 표시됩니다.</p></div>
+            </details>
+          </section>
+          <section class="ph-editor-panel" aria-labelledby="pdfHwpEditorTitle">
+            <div class="ph-pane-heading"><div><p class="ph-eyebrow">고급 조판</p><h2 id="pdfHwpEditorTitle">HwpPalette 조판 텍스트</h2></div><span class="ph-pane-note">필요한 경우에만 내용을 수정하세요.</span></div>
+            <div class="ph-current-details" id="pdfHwpCurrent"></div>
+          </section>
+        </div>
+        <details class="ph-history" aria-labelledby="pdfHwpHistoryTitle">
+          <summary class="ph-history-summary"><span>이전 변환 작업</span><span>완료 파일 다시 받기</span></summary>
+          <div class="ph-history-head">
+            <div><p class="ph-eyebrow">최근 기록</p><h2 id="pdfHwpHistoryTitle">변환 작업</h2></div>
+            <p>현재 작업은 위에서 바로 HWP를 받을 수 있습니다.</p>
+          </div>
+          <div class="ph-jobs" id="pdfHwpJobs">
+            <div class="ph-empty"><strong>아직 변환 작업이 없습니다</strong><span>위에서 PDF를 선택해 첫 작업을 시작하세요.</span></div>
+          </div>
+        </details>
+      </details>
+    </section>
+  </main>
+
+  <script src="/static/js/pdf-hwp-shell.js?v=0.1.0"></script>
+  <script src="/static/js/pdf-hwp-palette.js?v=0.1.0"></script>
+  <script src="/static/js/pdf-hwp.js?v=0.2.2-clipboard-paste"></script>
+</body>
+</html>

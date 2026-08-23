@@ -26,6 +26,7 @@ ExamPool is a dense operational authoring tool. Preserve the existing calm NEIS-
 - Focus is always visible. Enter and Space activate button-like controls.
 - Dialogs move focus inside, trap Tab, close with Escape, and restore opener focus.
 - Motion is limited to existing state transitions and respects reduced-motion preferences.
+- Conversion progress advances monotonically from left to right for each job; elapsed-time refreshes and stale polling snapshots never move it backward. A new job is the only event that resets its progress to zero.
 - Tab activation changes only selected state; it never reorders the tab list. Disclosure chevrons rotate while content uses an opacity/grid reveal, with the reduced-motion fallback already defined by the workbench.
 
 ## 5. Reusable primitives and states
@@ -41,10 +42,12 @@ ExamPool is a dense operational authoring tool. Preserve the existing calm NEIS-
 - `au-preview-size-controls`: decrease and increase the rendered paper inside a fixed preview panel; the persisted zoom is independent from the panel splitter width.
 - `nz-setting-field`: compact label/control pair using the same border, radius, typography, focus, and height tokens as existing `nz-fr` inputs.
 - `au-chat-field`: content-sized compact selector; fields wrap when the chat rail narrows and never stretch merely to fill unused horizontal space.
-- `ph-upload-panel`: empty, file-selected, uploading, validation-error; a labelled PDF input and one primary conversion action.
-- `ph-job-card`: uploaded, detecting, review, converting, partial-failure, failed, completed; state is communicated by label, description, and tone rather than color alone.
-- `ph-status`: polite progress, assertive error, success, retry; progress updates preserve the user's selected file and current job context.
+- `ph-upload-panel`: empty, drop-active, pasted, uploading, validation-error; the PDF/image target accepts file selection, drag-and-drop, and Ctrl+V clipboard images without intercepting paste inside editable fields.
+- `ph-job-card`: uploaded, detecting, converting, partial-failure, failed, completed; the default surface is an abstract status summary, while item-level review remains an advanced disclosure.
+- `ph-status`: polite progress, assertive error, success, retry; progress updates preserve the user's selected file and current job context and expose the current phase plus an estimated remaining duration.
+- `ph-output-card`: lists every conversion job with a ready HWP; native checkboxes pick files, each row has a direct download, and `선택한 파일 받기` downloads the current selection. Download names are `{원본이름}_converted.hwp`.
 - `ph-output-list`: empty and ready; each recorded output exposes a direct download link from the isolated PDF→HWP API.
+- `ph-palette-tools`: collapsed, loading, ready, uploading, success, and error; a quiet advanced disclosure that downloads the complete active `.hwpal` package and activates a user-edited replacement without exposing individual template internals.
 - `ph-review-toolbar`: mixed-selection summary with native select-all/clear controls; selection is persisted per detected item and never inferred only from DOM state.
 - `ph-review-workspace`: selected/unselected and ready/incomplete states; each item pairs an owned source crop or source-page fallback beside its editable auto-draft.
 - `ph-manual-review-item`: unselectable failed-item state with its owned source crop, item number, and actionable failure message; it may coexist with editable ready items in a partial-failure workspace.
@@ -56,9 +59,11 @@ ExamPool is a dense operational authoring tool. Preserve the existing calm NEIS-
 - WCAG 2.2 AA keyboard operation and focus behavior are required for all authoring flows.
 - Dynamic status and failure messages use appropriate live-region semantics.
 - No color-only state communication.
-- PDF→HWP uploads accept PDF files only; errors identify the failed step and keep a keyboard-reachable retry action.
+- PDF→HWP uploads accept PDF, PNG, JPEG, and WebP files; errors identify the failed step and keep a keyboard-reachable retry action. Raster inputs require the editable OCR runtime contract: body, ask, formulas, and textual choices remain editable while only material figures remain images.
+- A freshly loaded client must refuse raster conversion when `/api/pdf-hwp/runtime` is absent or does not advertise editable OCR. The assertive status explains that the standalone server must be restarted, and no conversion job is created on the stale runtime.
 - Job progress is readable without motion. Any busy indicator stops under `prefers-reduced-motion`.
 - Review selection uses native checkboxes with item-number labels, exposes a live selected count, and keeps batch actions keyboard reachable.
+- Completed HWP outputs use native checkboxes with `{원본}_converted` filename labels, expose a selected count, and keep per-file plus selected-file download actions keyboard reachable.
 - Manual-review items do not expose selection controls and are excluded from selected-count and typeset readiness calculations.
 - Source imagery is supplementary to the labelled editable draft; conversion remains operable when a preview cannot load.
 
@@ -67,7 +72,7 @@ ExamPool is a dense operational authoring tool. Preserve the existing calm NEIS-
 - 375 px: navigation scrolls horizontally; dialogs fit the viewport; primary actions remain reachable.
 - 768 px: existing tablet layout is preserved.
 - 1280 px: existing desktop density and panel proportions are preserved.
-- The PDF→HWP workspace uses an intrinsic two-column grid above 720 px and one column below it. The document owns vertical scroll; job history never creates a nested page scrollbar.
+- The PDF→HWP workspace is a single focused conversion surface at every breakpoint. Internal detection/review details are progressive disclosures, not the default screen; job history never creates a nested page scrollbar.
 - Each review item uses a source/draft split at desktop and a source-above-draft stack at 720 px and below; previews are bounded by an aspect-ratio frame and never create horizontal scroll.
 
 ## 8. Accepted debt

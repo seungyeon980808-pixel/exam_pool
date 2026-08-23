@@ -270,12 +270,14 @@ def typeset(manifest: Path, receipt: Path) -> int:
             "item_count": len(units),
         }
         try:
+            from app.integrations.hwppalette_runner import subject_header_from_source
             generated = typeset_conversion(ConversionRequest(
                 job_key=f"adjacent-{subject['subject']}-{REPRESENTATIVE_SUFFIX}",
                 units=units,
                 output_dir=Path(subject["output_dir"]),
                 layout_style=LayoutStyle.SUNEUNG,
                 asset_dirs=asset_dirs,
+                header_subject=subject_header_from_source(subject["source_path"]) or "",
             ))
         except Exception as exc:
             row.update({

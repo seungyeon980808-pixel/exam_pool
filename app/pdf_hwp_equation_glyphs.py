@@ -12,6 +12,7 @@ LOCAL_FONT_SHA256: Final = (
 )
 FRACTION_BAR: Final = "\ue06d"
 RADICAL_SIGN: Final = "\ue05c"
+VECTOR_HEAD: Final = "\ue06e"
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,7 +62,9 @@ _MAPPINGS: Final = (
     _corpus(0xE09E, "\\beta", "b1_2027_06:q11", "b1_2026_11:q10"),
     _corpus(0xE0A0, "\\delta", "c1_2027_06:q7", "c1_2026_11:q6"),
     _legacy(0xE0A4, "\\theta"), _legacy(0xE0A7, "\\lambda"),
+    _corpus(0xE0AC, "{\\pi}", "p2_2026_11:q15", "local-HyhwpEQ-v1.13"),
     _legacy(0xE0AD, "\\rho"),
+    _corpus(0xE0B1, "\\phi", "e2_2023_11:q7", "e2_2023_11:q19", "local-HyhwpEQ-v1.13"),
     _corpus(0xE0B2, "\\chi", "c1_2026_06:q7", "c2_2026_11:q20"),
     _legacy(0xE0BB, "\\ell"), _legacy(0xE0E5, "a"),
     _corpus(0xE0E6, "b", "c1_2027_06:q5", "c1_2026_11:q7"),
@@ -78,6 +81,7 @@ _MAPPINGS: Final = (
     _legacy(0xE0FC, "x"), _legacy(0xE0FD, "y"),
     _corpus(0xE0FE, "z", "c1_2026_09:q20", "c1_2026_06:q14"),
     _legacy(0xE101, "|"),
+    _corpus(0xE10E, "\\varepsilon", "p2_2026_11:q7", "local-HyhwpEQ-v1.13"),
 )
 
 
@@ -92,6 +96,57 @@ STRUCTURAL_GLYPH_PROOFS: Final = {
         ord(FRACTION_BAR), "\\frac", "pdf-geometry+local-font-outline",
         ("p1_2022_09:q6", "p1_2022_06:q20"),
     ),
+    ord(VECTOR_HEAD): GlyphMapping(
+        ord(VECTOR_HEAD), "\\vec", "pdf-geometry+local-font-outline",
+        ("p2_2026_11:q1", "local-HyhwpEQ-v1.13"),
+    ),
+}
+
+# EBS textbook fonts use private-use characters for ordinary symbols.  Keep
+# these translations bound to the exact embedded font and glyph signature so
+# the same codepoint in an unrelated PDF remains untrusted.
+SCOPED_EMBEDDED_GLYPH_PROOFS: Final = {
+    (
+        0xE287, "YDVYGOStd31",
+        "3d1089d59821fcd9879d4637b0cf5e61a45e7dbbb77afe099bfef186ba537d7b",
+        8776,
+    ): GlyphMapping(
+        0xE287, "○", "exact-embedded-font+glyph",
+        ("2027-수능특강-물리학-I:q1:legend",),
+    ),
+    (
+        0xE287, "YDVYMjOStd12",
+        "f6c08680d0646580575b3142d0bb3b9d39017dd629029ba1a9e0d07cd1fdc640",
+        8776,
+    ): GlyphMapping(
+        0xE287, "○", "exact-embedded-font+glyph",
+        ("2027-수능특강-물리학-I:q1:statement",),
+    ),
+}
+
+# Some KICE PDFs embed a subsetted HyhwpEQ whose cmap codepoint remains stable
+# while its glyph id/metrics differ from the locally installed full font.  These
+# signatures are accepted only as an exact embedded-font + outline + metric
+# tuple, preserving per-occurrence verification.
+ALTERNATE_EMBEDDED_GLYPH_PROOFS: Final = {
+    (
+        0xE0EA,
+        "cbdfc892dedbc194f6b87ac288acd5525452d42e9a3a85c34bc1718781cbc7f4",
+        "7d4c5a3c5eb74ff988755a585dfb4c7445320e86f5a151ec8a34fe1a3e90bc34",
+        (501, -5),
+    ): ("f", "p1_2020_06:q6"),
+    (
+        0xE0EA,
+        "e6bdc7c27eeb7273f7ca0775ed7c2f20ae207c41f75e02b8b12960e3b727d1d3",
+        "7d4c5a3c5eb74ff988755a585dfb4c7445320e86f5a151ec8a34fe1a3e90bc34",
+        (501, -5),
+    ): ("f", "p1_2020_11:q6"),
+    (
+        0xE0EA,
+        "144bbe5d524d241bf56a7625bd542c85d542e84a79615a834deef4be411b872d",
+        "7d4c5a3c5eb74ff988755a585dfb4c7445320e86f5a151ec8a34fe1a3e90bc34",
+        (501, -5),
+    ): ("f", "p1_2020_09:q15"),
 }
 
 # Compatibility view only. Runtime authorization happens per occurrence.

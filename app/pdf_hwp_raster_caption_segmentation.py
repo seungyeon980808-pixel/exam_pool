@@ -13,6 +13,11 @@ PixelBBox = tuple[int, int, int, int]
 _INK_THRESHOLD: Final = 235
 _PANEL_LABEL_RE: Final = re.compile(r"\(([가나다])\)")
 _VALID_PANEL_LABELS: Final = (("(가)", "(나)"), ("(가)", "(나)", "(다)"))
+_VALID_THREE_PANEL_LABELS: Final = frozenset({
+    ("(가)", "(나)", "(다)"),
+    ("A", "B", "C"),
+})
+_ALL_PANEL_LABELS: Final = ("(가)", "(나)", "(다)", "A", "B", "C")
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,6 +29,28 @@ class RasterCaption:
     confidence: float
 
 
+_LABEL_PARTICLES: Final = frozenset({"", "는", "은", "이", "가", "."})
+_INQUIRY_HEADING: Final = re.compile(r"\[탐구\s*(?:과정|활동|목표|결과)\]")
+_PROCESS_STEP_TAIL: Final = re.compile(r"\((?:라|마|바|사|아)\)")
+_CAPTION_TITLE: Final = re.compile(r"^\s+\S.{0,23}$")
+
+
+def panel_label_token(text: str, labels: tuple[str, ...]) -> str | None:
+    """Map a PDF word or span onto an expected panel label without guessing."""
+    stripped = text.strip().rstrip(".")
+    if stripped in labels:
+        return stripped
+    for label in labels:
+        extra = stripped[len(label):] if stripped.startswith(label) else None
+        if extra is None:
+            continue
+        if extra in _LABEL_PARTICLES:
+            return label
+        if _CAPTION_TITLE.fullmatch(extra) and not re.search(r"[.?!다요]$", extra.strip()):
+            return label
+    return None
+
+
 def expected_panel_labels(source_text: str) -> tuple[str, ...]:
     """Read an ordered 2/3-panel label set from the authoritative item text."""
     found: list[str] = []
@@ -32,7 +59,32 @@ def expected_panel_labels(source_text: str) -> tuple[str, ...]:
         if label not in found:
             found.append(label)
     labels = tuple(found)
-    return labels if labels in _VALID_PANEL_LABELS else ()
+    if labels not in _VALID_PANEL_LABELS:
+        return ()
+    # Inquiry steps enumerate (가)~(마) as procedure, not figure captions.
+    if _INQUIRY_HEADING.search(source_text) and _PROCESS_STEP_TAIL.search(source_text):
+        return ()
+    return labels
+
+
+def infer_three_panel_labels(
+    texts: tuple[tuple[str, tuple[float, float, float, float]], ...],
+    panels: tuple[tuple[float, float, float, float], ...],
+) -> tuple[str, ...]:
+    """Read A/B/C or (가)/(나)/(다) only from the caption band under three panels."""
+    if len(panels) != 3:
+        return ()
+    band_top = min(panel[3] for panel in panels) - 2
+    band_bottom = max(panel[3] for panel in panels) + 22
+    found: list[str] = []
+    for text, bbox in sorted(texts, key=lambda item: item[1][0]):
+        token = panel_label_token(text, _ALL_PANEL_LABELS)
+        y_mid = (bbox[1] + bbox[3]) / 2
+        if token is None or token in found or not (band_top < y_mid <= band_bottom):
+            continue
+        found.append(token)
+    labels = tuple(found)
+    return labels if labels in _VALID_THREE_PANEL_LABELS else ()
 
 
 def _runs(values: tuple[int, ...]) -> tuple[tuple[int, int], ...]:
@@ -121,8 +173,8 @@ def detect_raster_captions(
             joined[-1][1] = x1
     widths = tuple(x1 - x0 for x0, x1 in joined)
     geometry_safe = (
-        2 <= len(joined) <= 3
-        and min(widths) / max(widths) >= 0.75
+        1 <= len(joined) <= 3
+        and (len(joined) == 1 or min(widths) / max(widths) >= 0.75)
         and max(widths) / width <= 0.18
     )
     has_later_ink = candidate_index < len(significant) - 1
