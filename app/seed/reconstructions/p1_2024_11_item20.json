@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "title": "2024학년도 수능 물리학Ⅰ 20번 복원",
+  "qtype": "정답형",
+  "standard_code": null,
+  "passage": "그림 (가)와 같이 질량이 [[formula:m]]인 물체 A를 높이 [[formula:9h]]인 지점에 가만히 놓았더니 A가 마찰 구간 Ⅰ을 지나 수평면에 정지한 질량이 [[formula:2m]]인 물체 B와 충돌한다. 그림 (나)는 A와 B가 충돌한 후, A는 다시 Ⅰ을 지나 높이 [[formula:H]]인 지점에서 정지하고, B는 마찰 구간 Ⅱ를 지나 높이 [[formula:\\frac{7}{2}h]]인 지점에서 정지한 순간의 모습을 나타낸 것이다. A가 Ⅰ을 한 번 지날 때 손실되는 역학적 에너지는 B가 Ⅱ를 지날 때 손실되는 역학적 에너지와 같고, 충돌에 의해 손실되는 역학적 에너지는 없다.",
+  "ask": "[[formula:H]]는? (단, 물체는 동일 연직면상에서 운동하고, 물체의 크기, 공기 저항, 마찰 구간 외의 모든 마찰은 무시한다.)",
+  "choices": [
+    {"ord": 1, "text": "[[formula:\\frac{5}{17}h]]", "is_answer": false},
+    {"ord": 2, "text": "[[formula:\\frac{7}{17}h]]", "is_answer": true},
+    {"ord": 3, "text": "[[formula:\\frac{9}{17}h]]", "is_answer": false},
+    {"ord": 4, "text": "[[formula:\\frac{11}{17}h]]", "is_answer": false},
+    {"ord": 5, "text": "[[formula:\\frac{13}{17}h]]", "is_answer": false}
+  ],
+  "answer": 2,
+  "explanation": "마찰 구간을 한 번 지날 때 손실되는 역학적 에너지를 [[formula:E]]라 하자. 충돌 직전 A의 운동 에너지는 [[formula:9mgh-E]]이다. 질량이 [[formula:m]], [[formula:2m]]인 두 물체의 일차원 탄성 충돌에서 충돌 직후 운동 에너지는 각각 충돌 직전 A의 운동 에너지의 [[formula:\\frac{1}{9}]], [[formula:\\frac{8}{9}]]이다. 따라서 B에 대해 [[formula:7mgh=\\frac{8}{9}(9mgh-E)-E]]이므로 [[formula:E=\\frac{9}{17}mgh]]이다. A에 대해 [[formula:mgH=\\frac{1}{9}(9mgh-E)-E]]이므로 [[formula:H=\\frac{7}{17}h]]이다.",
+  "figure": {
+    "provider": "source_crop_hd",
+    "rendered_image_path": "assets/item_figures/item20_source_crop_hd.png",
+    "asset_role": "original_source",
+    "source_pdf": "PDF/p1_2024_11.pdf",
+    "page_no": 4,
+    "bbox": [463.8, 718.261, 738.0, 798.661],
+    "dpi": 600,
+    "width_px": 2285,
+    "height_px": 668,
+    "aspect_ratio": 3.420659,
+    "source_hash": "3bcad0b7afa92f8b973af5edc09d78935fe7f8505e98e9bf7de0b9830e20155a"
+  },
+  "source": {
+    "document": "p1_2024_11.pdf",
+    "exam": "2024학년도 대학수학능력시험",
+    "subject": "물리학Ⅰ",
+    "item_number": 20,
+    "pdf_page": 4,
+    "printed_page": 32
+  },
+  "style_meta": {
+    "reconstruction": {
+      "enabled": true,
+      "item_number": 20,
+      "source_label": "2024학년도 대학수학능력시험 물리학Ⅰ 20번",
+      "frame_rule_exempt": true
+    }
+  },
+  "verification": {
+    "character_source": "PDF/p1_2024_11.pdf page 4 rendered at 2.5x and visually compared with the supplied clean target",
+    "print_photo_role": "layout reference only; OCR-like parenthesized fractions were rejected",
+    "answer_derivation": "independent conservation-of-energy and one-dimensional elastic-collision derivation",
+    "uncertainty_log": [
+      "standard_code is intentionally null because the source is a high-school Physics I item and no target middle-school standard was supplied."
+    ]
+  }
+}

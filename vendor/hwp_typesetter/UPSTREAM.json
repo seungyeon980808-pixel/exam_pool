@@ -1,0 +1,11 @@
+{
+  "repository": "HwpPalette",
+  "commit": "5a1c97511b4672a111e91fa13c6d0938eb3db45a",
+  "branch": "feat/post-0.3.0",
+  "packs": {
+    "csat_science": "0.1.0",
+    "school_exam": "0.1.0"
+  },
+  "schema_version": 1,
+  "synced_at": "2026-08-08T08:01:44.821176+00:00"
+}

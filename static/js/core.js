@@ -45,6 +45,7 @@ window.EP = window.EP || {};
     viewer: { docId: null, page: 1, lastPage: 1 },
     dragQid: null,
     docTypes: {},
+    authoringSessionId: null,
   };
 
   EP.LABELS = ["ㄱ", "ㄴ", "ㄷ", "ㄹ", "ㅁ"];
@@ -53,8 +54,29 @@ window.EP = window.EP || {};
 
   /* ---------- 통신 ---------- */
   EP.api = async function (url, opts) {
-    const res = await fetch(url, opts);
-    if (!res.ok) throw new Error((await res.text()).slice(0, 300));
+    let res;
+    try {
+      res = await fetch(url, opts);
+    } catch (e) {
+      const error = new Error("서버 연결 실패 — ExamPool이 실행 중인지 확인하세요.");
+      EP.showAppError(error.message);
+      throw error;
+    }
+    if (!res.ok) {
+      const raw = await res.text();
+      let message = raw;
+      try {
+        const payload = JSON.parse(raw);
+        const detail = payload.detail;
+        if (detail && typeof detail === "object") {
+          const lines = (detail.issues || []).map((item) => `- ${item.message}`);
+          message = [detail.message || "요청을 처리하지 못했습니다.", ...lines].join("\n");
+        } else if (detail) message = String(detail);
+      } catch (e) { /* keep the server text */ }
+      const error = new Error(message.slice(0, 1200));
+      EP.showAppError(error.message);
+      throw error;
+    }
     return res.json();
   };
   EP.post = (url, body) => EP.api(url, {
@@ -71,7 +93,55 @@ window.EP = window.EP || {};
   /* ---------- 공용 도구 ---------- */
   EP.esc = (s) => String(s ?? "").replace(/[&<>"]/g,
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  EP.escAttr = (s) => String(s ?? "").replace(/[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   EP.$ = (id) => document.getElementById(id);
+
+  EP.activateOnKey = function (event, action) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    if (event.target !== event.currentTarget && event.target.closest("button, input, select, textarea, a")) return;
+    event.preventDefault();
+    action();
+  };
+
+  EP.showAppError = function (message, retry) {
+    const box = EP.$("appStatus");
+    if (!box) return;
+    box.className = "nz-app-status error";
+    box.setAttribute("role", "alert");
+    box.innerHTML = "";
+    const text = document.createElement("span");
+    text.className = "message";
+    text.textContent = message || "요청을 처리하지 못했습니다. 입력 내용은 유지됩니다.";
+    box.appendChild(text);
+    if (typeof retry === "function") {
+      const retryButton = document.createElement("button");
+      retryButton.type = "button";
+      retryButton.className = "nz-tb blu";
+      retryButton.textContent = "다시 시도";
+      retryButton.onclick = () => { box.classList.add("hidden"); retry(); };
+      box.appendChild(retryButton);
+    }
+    const closeButton = document.createElement("button");
+    closeButton.type = "button";
+    closeButton.className = "nz-tb";
+    closeButton.textContent = "닫기";
+    closeButton.onclick = () => box.classList.add("hidden");
+    box.appendChild(closeButton);
+  };
+
+  EP.clearAppError = function () {
+    const box = EP.$("appStatus");
+    if (!box) return;
+    box.classList.add("hidden");
+    box.removeAttribute("role");
+    box.innerHTML = "";
+  };
+
+  EP.openTab = function (tab) {
+    const button = document.querySelector(`.nz-navi[data-tab="${tab}"]`);
+    if (button) button.click();
+  };
 
   EP.debounce = function (fn, ms) {
     let t;
@@ -91,15 +161,42 @@ window.EP = window.EP || {};
       m = document.createElement("div");
       m.id = id;
       m.className = "nz-modal";
-      m.onclick = (e) => { if (e.target === m) m.classList.add("hidden"); };
       document.body.appendChild(m);
     }
+    m.setAttribute("role", "dialog");
+    m.setAttribute("aria-modal", "true");
+    m.setAttribute("tabindex", "-1");
+    m._opener = document.activeElement;
+    if (!m.dataset.keyboardReady) {
+      m.dataset.keyboardReady = "1";
+      m.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          EP.closeModal(m.id);
+          return;
+        }
+        if (event.key !== "Tab") return;
+        const focusable = [...m.querySelectorAll(
+          'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+        )].filter((node) => node.offsetParent !== null);
+        if (!focusable.length) { event.preventDefault(); m.focus(); return; }
+        const first = focusable[0], last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      });
+    }
     m.classList.remove("hidden");
+    requestAnimationFrame(() => {
+      const target = m.querySelector('button, input, select, textarea, [href], [tabindex]:not([tabindex="-1"])');
+      (target || m).focus();
+    });
     return m;
   };
   EP.closeModal = function (id) {
     const m = EP.$(id);
-    if (m) m.classList.add("hidden");
+    if (!m) return;
+    m.classList.add("hidden");
+    if (m._opener && typeof m._opener.focus === "function") m._opener.focus();
   };
 
   /** 클립보드 복사 — 실패하면 상자를 열어 직접 복사하게 한다 */
@@ -234,14 +331,18 @@ window.EP = window.EP || {};
       if (!unitHit && !hits.length) return;
       const uEl = document.createElement("div");
       uEl.className = "nz-mi";
+      uEl.setAttribute("role", "heading");
       uEl.textContent = EP.unitLabel(u);
       tree.appendChild(uEl);
       (hits.length ? hits : u.standards).forEach((s) => {
         const e = document.createElement("div");
         e.className = "nz-mi sub";
+        e.setAttribute("role", "button");
+        e.tabIndex = 0;
         e.title = `${s.code} ${s.text}`;
         e.innerHTML = `<span class="code">${EP.esc(s.code)}</span><span class="txt">${EP.esc(s.text)}</span>`;
         e.onclick = () => EP.pickStandard(s, e);
+        e.onkeydown = (event) => EP.activateOnKey(event, e.onclick);
         tree.appendChild(e);
       });
     });
@@ -383,6 +484,10 @@ window.EP = window.EP || {};
         else EP.S.openUnits.add(u.unit_no);
         EP.renderTree();
       };
+      el.setAttribute("role", "button");
+      el.tabIndex = 0;
+      el.setAttribute("aria-expanded", open ? "true" : "false");
+      el.onkeydown = (event) => EP.activateOnKey(event, el.onclick);
       tree.appendChild(el);
       if (open) {
         u.standards.forEach((s) => {
@@ -391,6 +496,9 @@ window.EP = window.EP || {};
           e.title = `${s.code} ${s.text}`;
           e.innerHTML = `<span class="code">${EP.esc(s.code)}</span><span class="txt">${EP.esc(s.text)}</span>`;
           e.onclick = (ev) => { ev.stopPropagation(); EP.pickStandard(s, e); };
+          e.setAttribute("role", "button");
+          e.tabIndex = 0;
+          e.onkeydown = (event) => EP.activateOnKey(event, () => EP.pickStandard(s, e));
           tree.appendChild(e);
         });
       }
@@ -400,11 +508,23 @@ window.EP = window.EP || {};
     }
   };
 
-  EP.foldMenu = function () { document.querySelector(".nz-menu").classList.toggle("folded"); };
+  EP.foldMenu = function () {
+    const menu = document.querySelector(".nz-menu");
+    if (!menu) return;
+    menu.classList.toggle("folded");
+    const folded = menu.classList.contains("folded");
+    const button = EP.$("stdMenuToggle");
+    if (button) {
+      button.setAttribute("aria-expanded", folded ? "false" : "true");
+      button.setAttribute("aria-label", folded ? "성취기준 펼치기" : "성취기준 접기");
+      button.title = folded ? "성취기준 펼치기" : "성취기준 접기";
+    }
+    localStorage.setItem("ep_menu_folded", folded ? "1" : "0");
+  };
 
   /* ---------- 성취기준 전체보기 ---------- */
-  EP.openStdTable = function () { EP.$("stdModal").classList.remove("hidden"); EP.renderStdTable(); };
-  EP.closeStdTable = function () { EP.$("stdModal").classList.add("hidden"); };
+  EP.openStdTable = function () { EP.modal("stdModal"); EP.renderStdTable(); };
+  EP.closeStdTable = function () { EP.closeModal("stdModal"); };
 
   EP.renderStdTable = async function () {
     const q = (EP.$("stdModalFilter").value || "").trim().toLowerCase();
@@ -433,6 +553,25 @@ window.EP = window.EP || {};
     if (!box) return;
     if (box.classList.contains("hidden")) EP.renderStdList();
     box.classList.toggle("hidden");
+    if (!box.classList.contains("hidden")) EP.positionStdList();
+  };
+
+  EP.positionStdList = function () {
+    const box = EP.$("stdList");
+    const pick = EP.$("stdPick");
+    if (!box || !pick || box.classList.contains("hidden")) return;
+    const rect = pick.getBoundingClientRect();
+    const below = window.innerHeight - rect.bottom - 12;
+    const above = rect.top - 12;
+    const openAbove = below < 220 && above > below;
+    const height = Math.max(180, Math.min(480, openAbove ? above : below));
+    box.style.position = "fixed";
+    box.style.left = `${Math.max(8, rect.left)}px`;
+    box.style.width = `${Math.min(rect.width, window.innerWidth - 16)}px`;
+    box.style.right = "auto";
+    box.style.top = openAbove ? "auto" : `${rect.bottom + 4}px`;
+    box.style.bottom = openAbove ? `${window.innerHeight - rect.top + 4}px` : "auto";
+    box.style.maxHeight = `${height}px`;
   };
 
   EP.renderStdList = function () {
@@ -453,6 +592,7 @@ window.EP = window.EP || {};
       ? '<span class="code">' + EP.esc(st.code) + "</span>" + EP.esc(st.text)
       : "성취기준을 고르세요";
     EP.$("stdList").classList.add("hidden");
+    if (EP.updateQuestionSettingsSummary) EP.updateQuestionSettingsSummary();
   };
 
   EP.setStdValue = function (code) {
@@ -460,11 +600,12 @@ window.EP = window.EP || {};
     if (!code) {
       EP.$("stdPickText").className = "ph";
       EP.$("stdPickText").textContent = "성취기준을 고르세요";
+      if (EP.updateQuestionSettingsSummary) EP.updateQuestionSettingsSummary();
     } else EP.pickStd(code);
   };
 
   /* ---------- 탭 ---------- */
-  const TABS = ["bank", "question", "qbank", "set", "lesson", "config"];
+  const TABS = ["bank", "question", "qbank", "set", "pdf-hwp", "lesson", "config"];
 
   /** 근거 검색 패널은 하나뿐이다. 명제 Pool·문항 설계 중 지금 보는 탭으로 옮겨 붙인다.
    *  (같은 화면을 두 벌 만들면 id 가 겹치고 검색 상태도 갈라진다) */
@@ -473,12 +614,13 @@ window.EP = window.EP || {};
     if (!side) return;
     const host = EP.$("tab-" + tab) && EP.$("tab-" + tab).querySelector(".nz-qlayout");
     if (host && side.parentElement !== host) host.appendChild(side);
+    if (EP.applyWidths) EP.applyWidths();
   };
 
   /* ---------- 폭 조절 (드래그) ---------- */
   // 손잡이 두 개: 패널 왼쪽 모서리(근거 검색 전체 폭) / 결과 목록과 원문 사이.
   // 값은 % 로 저장한다 — 창 크기가 달라져도 비율이 유지된다.
-  const SIDE_W = "ep_side_w", EVLIST_W = "ep_evlist_w";
+  const SIDE_W = "ep_side_w", EVLIST_W = "ep_evlist_w", EVPREVIEW_H = "ep_evpreview_h";
 
   function dragWidth(handle, opts) {
     if (!handle) return;
@@ -505,12 +647,52 @@ window.EP = window.EP || {};
     });
   }
 
+  function dragEvidenceSplit(handle, list) {
+    if (!handle || !list) return;
+    handle.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      const side = EP.$("qside");
+      const split = list.parentElement;
+      const vertical = !!split.closest("#tab-question");
+      side.classList.add("dragging");
+      handle.classList.add("on");
+      const move = (ev) => {
+        const box = split.getBoundingClientRect();
+        if (vertical) {
+          const pct = Math.max(35, Math.min(82, ((ev.clientY - box.top) / box.height) * 100));
+          split.style.gridTemplateRows = `minmax(0, ${pct}%) 5px minmax(110px, 1fr)`;
+        } else {
+          const pct = Math.max(12, Math.min(80, ((ev.clientX - box.left) / box.width) * 100));
+          list.style.width = pct + "%";
+        }
+      };
+      const up = () => {
+        document.removeEventListener("mousemove", move);
+        document.removeEventListener("mouseup", up);
+        side.classList.remove("dragging");
+        handle.classList.remove("on");
+        if (vertical) {
+          const match = split.style.gridTemplateRows.match(/([\d.]+)%/);
+          if (match) localStorage.setItem(EVPREVIEW_H, match[1]);
+        } else {
+          localStorage.setItem(EVLIST_W, parseFloat(list.style.width));
+        }
+      };
+      document.addEventListener("mousemove", move);
+      document.addEventListener("mouseup", up);
+    });
+  }
+
   /** 저장해둔 폭을 다시 입힌다. 패널이 탭 사이를 옮겨다녀도 인라인 스타일이라 살아남는다 */
   EP.applyWidths = function () {
     const side = EP.$("qside"), list = EP.$("evList");
     const sw = localStorage.getItem(SIDE_W), lw = localStorage.getItem(EVLIST_W);
+    const previewHeight = localStorage.getItem(EVPREVIEW_H);
     if (side && sw) side.style.width = sw + "%";
     if (list && lw) list.style.width = lw + "%";
+    if (list && previewHeight && list.parentElement.closest("#tab-question")) {
+      list.parentElement.style.gridTemplateRows = `minmax(0, ${previewHeight}%) 5px minmax(110px, 1fr)`;
+    }
   };
 
   EP.initDrag = function () {
@@ -524,39 +706,51 @@ window.EP = window.EP || {};
       read: () => Math.round(parseFloat(side.style.width) * 10) / 10,
     });
     const list = EP.$("evList");
-    dragWidth(EP.$("evDrag"), {
-      key: EVLIST_W, min: 12, max: 80,
-      box: () => list.parentElement.getBoundingClientRect(),
-      pct: (ev, box) => ((ev.clientX - box.left) / box.width) * 100,
-      apply: (p) => { list.style.width = p + "%"; },
-      read: () => Math.round(parseFloat(list.style.width) * 10) / 10,
-    });
+    dragEvidenceSplit(EP.$("evDrag"), list);
     EP.applyWidths();
   };
 
   EP.initTabs = function () {
     document.querySelectorAll(".nz-navi").forEach((btn) => {
       btn.onclick = () => {
-        document.querySelectorAll(".nz-navi").forEach((b) => b.classList.remove("on"));
+        document.querySelectorAll(".nz-navi").forEach((b) => {
+          b.classList.remove("on"); b.removeAttribute("aria-current");
+        });
         btn.classList.add("on");
+        btn.setAttribute("aria-current", "page");
         const tab = btn.dataset.tab;
+        document.body.classList.toggle("question-active", tab === "question");
+        const fullscreen = EP.$("questionFullscreenBtn");
+        if (fullscreen) fullscreen.classList.toggle("hidden", tab !== "question");
         TABS.forEach((t) => {
           const el = EP.$("tab-" + t); if (el) el.hidden = t !== tab;
         });
+        const activeSection = EP.$("tab-" + tab);
+        if (activeSection) activeSection.scrollLeft = 0;
+        document.documentElement.scrollLeft = 0;
+        document.body.scrollLeft = 0;
         if (tab === "bank" || tab === "question") EP.moveSide(tab);
         if (tab === "question") {
           EP.loadPicker(); EP.renderPresets(); EP.renderChecklist();
           EP.onTypeChange(); EP.loadRefs(EP.S.editingQid);
+          if (EP.authoringInit) EP.authoringInit();
         }
         if (tab === "qbank") EP.loadQuestions();
         if (tab === "config") EP.loadConfig();
         if (tab === "set") EP.loadSets();
+        if (tab === "pdf-hwp") EP.pdfHwpInit();
         if (tab === "lesson") EP.loadLessons();
       };
     });
   };
 
   async function init() {
+    window.addEventListener("unhandledrejection", (event) => {
+      event.preventDefault();
+      const reason = event.reason;
+      const message = reason && reason.message ? reason.message : String(reason || "요청 실패");
+      EP.showAppError(`${message} 입력 내용은 유지되므로 같은 작업을 다시 시도할 수 있습니다.`);
+    });
     document.addEventListener("keydown", (e) => {
       const t = e.target.tagName;
       if (t === "INPUT" || t === "TEXTAREA" || t === "SELECT") return;
@@ -570,7 +764,20 @@ window.EP = window.EP || {};
       if (!e.target.closest(".nz-stdwrap")) { const b = EP.$("stdList"); if (b) b.classList.add("hidden"); }
       if (!e.target.closest(".nz-routinewrap")) { const b = EP.$("routineList"); if (b) b.classList.add("hidden"); }
     });
+    window.addEventListener("resize", EP.positionStdList);
+    document.addEventListener("scroll", EP.positionStdList, true);
     EP.initTabs();
+    const menu = document.querySelector(".nz-menu");
+    if (menu) {
+      menu.classList.toggle("folded", localStorage.getItem("ep_menu_folded") !== "0");
+      const button = EP.$("stdMenuToggle");
+      const folded = menu.classList.contains("folded");
+      if (button) {
+        button.setAttribute("aria-expanded", folded ? "false" : "true");
+        button.setAttribute("aria-label", folded ? "성취기준 펼치기" : "성취기준 접기");
+        button.title = folded ? "성취기준 펼치기" : "성취기준 접기";
+      }
+    }
     EP.moveSide("bank");        // 첫 화면이 명제 Pool 이다
     EP.initDrag();
     if (localStorage.getItem("ep_side_folded")) {
@@ -578,11 +785,20 @@ window.EP = window.EP || {};
       if (el) {
         el.classList.add("folded");
         el.style.width = "";     // 접힌 채로 시작하면 저장된 폭은 펼칠 때 다시 입힌다
-        EP.$("evFoldBtn").textContent = "◀";
+        EP.$("evFoldBtn").textContent = "›";
+        EP.$("evFoldBtn").setAttribute("aria-expanded", "false");
+        EP.$("evFoldBtn").setAttribute("aria-label", "근거 검색 펼치기");
+        EP.$("evFoldBtn").title = "근거 검색 펼치기";
       }
     }
-    await EP.loadStandards();
-    await EP.loadProps();
+    try {
+      await EP.loadStandards();
+      await EP.loadProps();
+      const firstRun = EP.$("firstRunGuide");
+      if (firstRun) firstRun.classList.toggle("hidden", EP.S.curProps.length > 0);
+    } catch (error) {
+      EP.showAppError(error.message, () => window.location.reload());
+    }
   }
   document.addEventListener("DOMContentLoaded", init);
 })(window.EP);

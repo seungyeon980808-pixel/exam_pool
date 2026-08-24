@@ -38,6 +38,23 @@ promo/out/work-*/
 promo/sfx/
 promo/assets/audio/
 
+# ===== 임시 산출물 =====
+build/
+dist/
+output/
+tmp/
+exports/
+.tmp/
+
+# ===== 로컬 에이전트 작업 상태 =====
+.codex/
+.omo/
+
+# ===== 일회성 복원/테스트 스크립트 =====
+tools/restore_*.py
+tools/run_real26_*.py
+tools/save_real26_*.py
+
 # ===== OS·에디터 =====
 Thumbs.db
 .DS_Store

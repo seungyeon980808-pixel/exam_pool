@@ -10,23 +10,38 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import (backup, db, routes_bank, routes_config, routes_doc, routes_lesson,
+from . import (backup, db, routes_authoring, routes_bank, routes_blueprint,
+               routes_config, routes_doc, routes_integrations, routes_lesson, routes_pdf_hwp,
                routes_question)
 from .paths import BASE_DIR, STATIC_DIR
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    db.init_db()
-    conn = db.connect()
+    from .config import logger
     try:
-        from . import pdf_indexer
-        pdf_indexer.ensure_fts(conn)
-    finally:
-        conn.close()
-    # 스키마가 준비된 뒤에 백업한다. 하루 1회만 뜨므로 켤 때마다 느려지지 않는다.
-    backup.auto_backup_if_due()
+        db.init_db()
+        conn = db.connect()
+        try:
+            from . import pdf_indexer
+            pdf_indexer.ensure_fts(conn)
+        finally:
+            conn.close()
+        backup.auto_backup_if_due()
+    except Exception as e:
+        logger.error("ExamPool 시작 실패: %s", e)
+        raise
     yield
+    try:
+        from .authoring.codex_app_server import codex_app_server
+        codex_app_server.close()
+    except Exception as e:
+        logger.warning("Codex app server 정리 실패: %s", e)
+    try:
+        from .authoring.figures import close_figure_providers
+        close_figure_providers()
+    except Exception as e:
+        logger.warning("figure provider 정리 실패: %s", e)
 
 
 app = FastAPI(title="ExamPool", lifespan=lifespan)
@@ -48,6 +63,10 @@ app.include_router(routes_question.router)
 app.include_router(routes_doc.router)
 app.include_router(routes_lesson.router)
 app.include_router(routes_config.router)
+app.include_router(routes_blueprint.router)
+app.include_router(routes_authoring.router)
+app.include_router(routes_integrations.router)
+app.include_router(routes_pdf_hwp.router)
 
 
 # ===== 성취기준 트리 =====

@@ -1,0 +1,48 @@
+[
+  {
+    "case_id": "ebs_q35",
+    "source_name": "2027 수능특강 물리학 I 원본.pdf",
+    "source_sha256": "dcd657d3f125a8a74fa4ba46c1e7b10d5cc998a42770e1059d3bbcd7561bd803",
+    "page_number": 24,
+    "item_number": 35,
+    "item_bbox": [156.409, 47.422, 575.937, 393.42],
+    "crop_bbox": [156.409, 47.422, 527.8580932617188, 228.63702392578125],
+    "text_regions": [
+      {"bbox": [57.259, 39.265, 521.575, 77.364], "character_count": 51, "word_count": 22},
+      {"bbox": [164.409, 75.713, 521.574, 87.876], "character_count": 44, "word_count": 17},
+      {"bbox": [164.409, 90.172, 372.08, 111.67], "character_count": 32, "word_count": 10}
+    ],
+    "image_bboxes": [],
+    "expected_issues": ["crop_contamination"]
+  },
+  {
+    "case_id": "ebs_q37",
+    "source_name": "2027 수능특강 물리학 I 원본.pdf",
+    "source_sha256": "dcd657d3f125a8a74fa4ba46c1e7b10d5cc998a42770e1059d3bbcd7561bd803",
+    "page_number": 25,
+    "item_number": 37,
+    "item_bbox": [54.362, 47.422, 575.937, 392.183],
+    "crop_bbox": [56.078304290771484, 47.422, 543.9240112304688, 236.66302490234375],
+    "text_regions": [
+      {"bbox": [62.362, 44.854, 533.48, 77.364], "character_count": 53, "word_count": 19},
+      {"bbox": [62.362, 75.713, 422.106, 87.876], "character_count": 44, "word_count": 15},
+      {"bbox": [62.362, 91.539, 422.104, 115.876], "character_count": 54, "word_count": 15}
+    ],
+    "image_bboxes": [],
+    "expected_issues": ["crop_contamination"]
+  },
+  {
+    "case_id": "e2_2024_09_q1",
+    "source_name": "e2_2024_09.pdf",
+    "source_sha256": "35930ee9da331a949f13f5133198912089904dde51158921f5508c79660b8ba6",
+    "page_number": 1,
+    "item_number": 1,
+    "item_bbox": [79.9, 251.205, 428.56, 534.525],
+    "crop_bbox": [272.76, 253.801, 411.36, 294.296],
+    "text_regions": [
+      {"bbox": [87.9, 259.205, 274.711, 272.504], "character_count": 17, "word_count": 6}
+    ],
+    "image_bboxes": [[278.76, 259.801, 405.36, 391.321]],
+    "expected_issues": ["crop_clipping"]
+  }
+]

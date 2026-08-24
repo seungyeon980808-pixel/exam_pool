@@ -15,6 +15,11 @@
 한글 없이 도는 순수 함수 (tests/ 에서 단독 검증).
 """
 import json
+from pathlib import Path
+import re
+
+from .formula_markup import to_hwppalette_markup
+from .pdf_hwp_experiment import split_experiment_passage
 
 SKIP = "-"          # 이 빈칸은 비운다 (hwppalette parser.SKIP_MARK)
 
@@ -32,20 +37,22 @@ SKIP = "-"          # 이 빈칸은 비운다 (hwppalette parser.SKIP_MARK)
 #   따라서 points 는 bogi 보다 먼저다. (2026-07-22 메모는 순서가 반대로 적혀 있었다)
 TEMPLATES = {
     # 54c6380dd2d545efb68214a5bfa5a5c7.hwp
+    #   ask_builtin: 조각 본문에 "이에 대한 설명으로 옳은 것을 <보기>에서 모두
+    #   고른 것은?" 이 이미 박혀 있다 → 발문을 지문 칸에 또 넣으면 두 번 나온다.
     "합답형1사진3선지": {
-        "slot_count": 12,
+        "slot_count": 12, "ask_builtin": True,
         "slots": ["num", "passage", "photo1", "points",
                   "bogi1", "bogi2", "bogi3", "c1", "c2", "c3", "c4", "c5"],
     },
     # 1d64d6825a3742f7ac62946b980d9205.hwp
     "합답형2사진3선지": {
-        "slot_count": 13,
+        "slot_count": 13, "ask_builtin": True,
         "slots": ["num", "passage", "photo1", "photo2", "points",
                   "bogi1", "bogi2", "bogi3", "c1", "c2", "c3", "c4", "c5"],
     },
     # 7e0d6662e63340089369f353124761bd.hwp
     "합답형실험3선지": {
-        "slot_count": 11,
+        "slot_count": 11, "ask_builtin": True,
         "slots": ["num", "passage", "points",
                   "bogi1", "bogi2", "bogi3", "c1", "c2", "c3", "c4", "c5"],
     },
@@ -57,50 +64,162 @@ TEMPLATES = {
         "slot_count": 8,
         "slots": ["num", "ask", "points", "c1", "c2", "c3", "c4", "c5"],
     },
+    # ── 학교 지필 양식 (조각에 발문이 박혀 있지 않아 부정발문을 쓸 수 있고,
+    #    선지가 5칸 가로 배치다). 칸 순서는 2026-08-03 에 S1..Sn 을 채워 PDF 로
+    #    떠서 눈으로 확인했다(tools/slot_dump 방식). ──
+    #   \.  \        ← 번호, 지문
+    #   ┌ 자료 상자 ┐ ← 사진
+    #   \            ← 발문 (점수는 발문 문장에 붙인다)
+    #   〈보 기〉 ㄱㄴㄷ / ① ~ ⑤
+    "학교합답1사진5선지": {
+        "slot_count": 12,
+        "slots": ["num", "passage", "photo1", "ask_points",
+                  "bogi1", "bogi2", "bogi3", "c1", "c2", "c3", "c4", "c5"],
+    },
+    #   \.  \ / 그림 \ , \ + (가)(나) 캡션 내장 / \ (\점) / 보기 / 선지
+    "학교합답2사진5선지": {
+        "slot_count": 14,
+        "slots": ["num", "passage", "photo1", "photo2", "ask", "points",
+                  "bogi1", "bogi2", "bogi3", "c1", "c2", "c3", "c4", "c5"],
+    },
+    # ── 2026-08-03 tools/make_exam_fragments.py 로 생성·등록한 3종 ──
+    # 순서는 등록 직후 insert_template_filled 에 S1..Sn 을 채워 실측 확인했다.
+    # 실험 문구 없는 합답형 — [실험 과정]/[실험 결과] 가 안 박혀 있다 (갭 7 해소)
+    "학교합답0사진5선지": {
+        "slot_count": 11,
+        "slots": ["num", "passage", "points",
+                  "bogi1", "bogi2", "bogi3", "c1", "c2", "c3", "c4", "c5"],
+    },
+    # 정답형 + 사진 1장 (사진 칸이 발문과 선지 사이 가운데 정렬)
+    "정답형1사진": {
+        "slot_count": 9,
+        "slots": ["num", "ask", "points", "photo1", "c1", "c2", "c3", "c4", "c5"],
+    },
+    # 서술형 — 번호·발문·점수 한 줄 + 답란 상자(45mm). 지문·사진은 발문 블록에 함께.
+    "서술형": {
+        "slot_count": 3,
+        "slots": ["num", "ask", "points"],
+    },
 }
+
+# 수능 조판 팩은 학교 시험 팩과 칸의 의미가 다르다. 특히 합답형은 배점 칸이
+# 질문 칸에 포함되며, 그림은 고정된 학교용 그림 상자를 쓰지 않고 발문 흐름에 넣는다.
+SUNEUNG_TEMPLATES = {
+    "수능AI실제직접형": {
+        "slot_count": 9,
+        "slots": ["num", "passage", "ask", "points", "c1", "c2", "c3", "c4", "c5"],
+    },
+    "수능AI실제합답형": {
+        "slot_count": 11, "score_in_ask": True,
+        "slots": ["num", "passage", "ask", "bogi1", "bogi2", "bogi3",
+                  "c1", "c2", "c3", "c4", "c5"],
+    },
+    "수능AI실제실험형": {
+        "slot_count": 11, "score_in_ask": True,
+        "slots": ["num", "passage", "ask", "bogi1", "bogi2", "bogi3",
+                  "c1", "c2", "c3", "c4", "c5"],
+    },
+    "수능AI실제비교선지형": {
+        "slot_count": 9,
+        "slots": ["num", "passage", "ask", "choice_header", "c1", "c2", "c3", "c4", "c5"],
+    },
+    # HwpPalette v0.4.0-beta에서 사용자가 새로 만든 수능 양식.
+    # 기존 합답형과 달리 그림이 문두 안에 섞이지 않고 전용 슬롯을 갖는다.
+    "수능합답1사진5선지": {
+        "slot_count": 12, "score_in_ask": True,
+        "slots": ["num", "passage", "photo1", "ask",
+                  "bogi1", "bogi2", "bogi3", "c1", "c2", "c3", "c4", "c5"],
+    },
+}
+
+SUNEUNG_TEMPLATE_FOR = {
+    "정답형": "수능AI실제직접형",
+    "합답형": "수능AI실제합답형",
+}
+
+
+def active_suneung_labels() -> set[str]:
+    """현재 활성화한 사용자 수능 팔레트의 호출 라벨.
+
+    팔레트 등록소가 아직 없거나 손상됐을 때는 내장 팩으로 조판할 수 있도록
+    빈 집합으로 안전하게 돌아간다. import를 함수 안에서 하는 것은 순수 변환기와
+    통합 모듈 사이의 순환 의존을 피하기 위해서다.
+    """
+    try:
+        from .integrations import palette_registry
+        packages = palette_registry.list_palettes().get("packages", [])
+    except (ImportError, OSError, ValueError):
+        return set()
+    for package in packages:
+        if "suneung" in package.get("active_for", []):
+            return {str(item.get("label") or "") for item in package.get("items", [])}
+    return set()
+
+
+def _has_active_suneung_template(label: str) -> bool:
+    """Check both imported labels and built-in derived CSAT templates.
+
+    Derived templates are materialized by the registry at render time, so they
+    do not appear in ``active_suneung_labels()``.  Treating those labels as
+    unavailable silently routes a photo question through the text-only
+    template, which folds the prompt into the passage instead of placing it
+    after the image.
+    """
+    if label in active_suneung_labels():
+        return True
+    try:
+        from .integrations import palette_registry
+        return palette_registry.active_template("suneung", label) is not None
+    except (ImportError, OSError, ValueError):
+        return False
 
 # 문항 → 템플릿 고르기. (유형, 사진 개수) 로 찾는다.
 # 값이 빈 문자열이면 hwppalette 에 아직 등록되지 않은 조합이라 평문으로 떨어진다.
 TEMPLATE_FOR = {
-    ("합답형", 1): "합답형1사진3선지",
-    ("합답형", 2): "합답형2사진3선지",
-    ("합답형", 0): "합답형실험3선지",
-    # 정답형은 사진 칸이 있는 템플릿이 아직 없다. 사진이 있어도 0사진 템플릿을 쓰고
-    # 사진은 발문 블록 안에 \파일이름\ 으로 넣는다(사진 라벨은 슬롯을 끊지 않는다).
+    # 합답형은 전부 '학교합답*' 계열을 쓴다. 옛 '합답형*3선지' 는 조각에 발문이
+    # 박혀 있어 부정발문을 표현할 수 없다(지문 칸에 또 넣으면 발문이 두 번 찍히고,
+    # 안 넣으면 '옳지 않은'이 통째로 사라진다) — 2026-08-03 실측.
+    ("합답형", 0): "학교합답0사진5선지",
+    ("합답형", 1): "학교합답1사진5선지",
+    ("합답형", 2): "학교합답2사진5선지",
     ("정답형", 0): "학교정답0사진1선지",
-    ("정답형", 1): "학교정답0사진1선지",
+    ("정답형", 1): "정답형1사진",
+    # 사진 2장 정답형 템플릿은 없다 — 0사진 템플릿을 쓰고 사진은 발문 블록 안에
+    # \파일이름\ 으로 넣는다(사진 라벨은 슬롯을 끊지 않는다).
     ("정답형", 2): "학교정답0사진1선지",
-    # 서술형은 템플릿 없이 평문 + 답란 표로 만든다 (question_to_palette 에서 분기).
-    ("서술형", 0): "",
-    ("서술형", 1): "",
-    ("서술형", 2): "",
+    ("서술형", 0): "서술형",
+    ("서술형", 1): "서술형",
+    ("서술형", 2): "서술형",
 }
-
-# ※ 남은 빈칸: 사진 없는 합답형은 '합답형실험3선지' 로 나가는데, 이 템플릿에는
-#   [실험 과정]/[실험 결과] 가 본문에 박혀 있어 실험 문항이 아니면 어색하다.
-#   hwppalette 에 '학교합답0사진5선지' 를 등록하고 ("합답형", 0) 값을 바꾸면 해결된다.
 
 # hwppalette 는 줄 첫머리의 이 낱말들을 '시험문제 문법'으로 먼저 알아채고
 # \라벨\ 템플릿 경로를 건너뛴다. 지문에 우연히 들어가면 출력이 통째로 깨지므로
 # 콜론 앞에 공백을 넣어 무력화한다 (parser.parse 의 키 목록과 같다).
 LEGACY_KEYS = ("번호:", "발문:", "문:", "자료:", "사진자료:", "실험자료:",
-               "질문:", "보기:", "선지:", "선지1:", "선지3:", "선지5:")
+               "질문:", "보기:", "선지:", "선지1:", "선지3:", "선지5:",
+               "번 호:", "발 문:", "자 료:", "사진자료:", "실험자료:",
+               "질 문:", "보 기:", "선 지:", "1선지:", "3선지:", "5선지:")
 
 
 def _photos(material: str) -> list[str]:
-    """자료 칸에서 사진 파일명을 뽑는다. 쉼표로 2개까지."""
+    """자료 칸에서 사진 파일명을 뽑는다."""
     m = (material or "").strip()
     if not m:
         return []
     parts = [p.strip() for p in m.split(",") if p.strip()]
-    return [p for p in parts if _looks_like_filename(p)][:2]
+    return [p for p in parts if _looks_like_filename(p)]
 
 
 def _looks_like_filename(s: str) -> bool:
     s = s.strip()
-    if not s or "\n" in s or len(s) > 60 or " " in s:
+    if not s or "\n" in s or len(s) > 60:
         return False
-    return "." in s or s.replace("_", "").replace("-", "").isalnum()
+    return "." in s or s.replace("_", "").replace("-", "").replace(" ", "").isalnum()
+
+
+def _photo_label(filename: str) -> str:
+    """HwpPalette indexes photo files by stem, not by their full filename."""
+    return Path(str(filename or "")).stem
 
 
 def _negatize(ask: str, is_negative: bool) -> str:
@@ -136,7 +255,10 @@ def _esc(text: str) -> str:
     **반드시 _negatize 보다 먼저** 부를 것. 순서가 바뀌면 `\\굵게{...}` 의 닫는
     괄호까지 escape 되어 굵게 서식이 통째로 깨진다.
     """
-    return (text or "").replace("}", "\\}")
+    # Formula source is preserved in the question record and converted only at
+    # the output boundary.  HwpPalette therefore receives readable symbols
+    # instead of raw ``[[formula:...]]`` control text.
+    return to_hwppalette_markup(text or "")
 
 
 def _block(text: str) -> str:
@@ -161,17 +283,19 @@ def _bogi_text(b) -> str:
     return (b.get("text") if isinstance(b, dict) else str(b)) or ""
 
 
-def _ask_cell(q: dict, photos: list[str], with_bogi: bool) -> str:
-    """발문 칸 하나에 들어갈 내용. 지문·사진·〈보기〉를 한 블록으로 합친다.
+def _ask_cell(q: dict, photos: list[str], with_bogi: bool,
+              with_passage: bool = True, suffix: str = "") -> str:
+    """발문 칸 하나에 들어갈 내용. 템플릿에 없는 요소만 여기에 합친다.
 
-    학교 정답형 템플릿에는 지문·사진 칸이 따로 없어서 이렇게 묶는다.
+    학교 정답형 템플릿에는 지문·사진 칸이 따로 없어서 묶어 넣지만, 지문 칸이
+    따로 있는 템플릿에서는 지문을 빼야 한다 — 안 그러면 지문이 두 번 나온다.
     """
     parts = []
-    if q.get("passage", "").strip():
+    if with_passage and q.get("passage", "").strip():
         parts.append(_esc(q["passage"].strip()))
     for p in photos:                    # 사진 라벨은 블록 안에서도 그림으로 들어간다
-        parts.append("\\%s\\" % p)
-    parts.append(_negatize(_esc(q.get("ask", "").strip()), q.get("is_negative")))
+        parts.append("\\%s\\" % _photo_label(p))
+    parts.append(_negatize(_esc(q.get("ask", "").strip()), q.get("is_negative")) + suffix)
 
     if with_bogi:
         bogi = _bogi_list(q)
@@ -186,51 +310,211 @@ def _ask_cell(q: dict, photos: list[str], with_bogi: bool) -> str:
     return _block("\n".join([p for p in parts if p]))
 
 
-def pick_template(q: dict) -> str:
+def pick_template(q: dict, layout_style: str = "school") -> str:
     """이 문항에 쓸 템플릿 라벨. 없으면 빈 문자열."""
+    raw_meta = q.get("style_meta") or {}
+    if isinstance(raw_meta, str):
+        try:
+            raw_meta = json.loads(raw_meta)
+        except ValueError:
+            raw_meta = {}
+    selected = str(raw_meta.get("palette_template") or "").strip()
+    if selected:
+        if layout_style == "suneung" and selected in SUNEUNG_TEMPLATES:
+            return selected
+        try:
+            from .integrations import palette_registry
+            if palette_registry.active_template(layout_style, selected):
+                return selected
+        except (ImportError, OSError, ValueError):
+            pass
+    if layout_style == "suneung":
+        if (q.get("qtype", "합답형") == "정답형"
+                and len(_photos(q.get("material", ""))) == 3
+                and _has_active_suneung_template("수능합답3소사진5선지")):
+            return "수능합답3소사진5선지"
+        if (q.get("qtype", "합답형") == "정답형"
+                and len(_photos(q.get("material", ""))) == 1
+                and _has_active_suneung_template("수능합답1대사진5선지")):
+            # The registered direct template only provides two small photo
+            # cells and injects (가)/(나) captions.  A one-photo direct item
+            # uses the large one-photo geometry; its unused 보기 slots stay
+            # empty while passage/photo/ask/choices keep the same contract.
+            return "수능합답1대사진5선지"
+        if (q.get("qtype", "합답형") == "합답형"
+                and len(_photos(q.get("material", ""))) == 1
+                and _has_active_suneung_template("수능합답1사진5선지")
+                and "수능합답1사진5선지" in active_suneung_labels()):
+            return "수능합답1사진5선지"
+        if (q.get("qtype", "합답형") == "합답형"
+                and len(_photos(q.get("material", ""))) == 1
+                and _has_active_suneung_template("수능합답1대사진5선지")):
+            return "수능합답1대사진5선지"
+        return SUNEUNG_TEMPLATE_FOR.get(q.get("qtype", "합답형"), "")
     photos = _photos(q.get("material", ""))
     return TEMPLATE_FOR.get((q.get("qtype", "합답형"), len(photos)), "")
 
 
-def question_to_palette(q: dict, choices: list[dict], num=1) -> str:
-    """문항 1개 → hwppalette 템플릿 호출 + 빈칸 값들."""
-    if q.get("qtype") == "서술형":
-        return _essay_to_palette(q, num)
+def _registered_template_spec(label: str, layout_style: str) -> dict | None:
+    """Translate user-facing HwpPalette slot names into ExamPool value slots."""
+    try:
+        from .integrations import palette_registry
+        item = palette_registry.active_template(layout_style, label)
+    except (ImportError, OSError, ValueError):
+        return None
+    if not item:
+        return None
 
-    label = pick_template(q)
+    def canonical(raw: str) -> str:
+        name = str(raw or "").strip()
+        compact = name.replace(" ", "").lower()
+        if label in {
+            "수능AI실제직접형", "수능AI실제직접형새쪽",
+            "수능AI실제비교선지형", "수능AI실제합답형",
+        }:
+            structured = {
+                "발문": "passage", "질문": "ask", "표머리": "choice_header",
+                "보기ㄱ": "bogi1", "보기ㄴ": "bogi2", "보기ㄷ": "bogi3",
+                **{f"선지{index}": f"c{index}" for index in range(1, 6)},
+            }
+            if compact in structured:
+                return structured[compact]
+        exact = {
+            "문항번호": "num", "번호": "num", "num": "num",
+            "문두": "passage", "지문": "passage", "passage": "passage",
+            "실험과정": "passage",
+            "실험내용": "experiment", "실험본문": "experiment",
+            "표": "experiment_table", "실험표": "experiment_table",
+            "결과표": "experiment_table",
+            "발문": "ask", "질문": "ask", "ask": "ask",
+            "자료": "photo2",
+            "배점": "points", "점수": "points", "points": "points",
+            "내용": "content", "내용박스": "content", "내용상자": "content",
+            "ㄱ": "bogi1", "ㄴ": "bogi2", "ㄷ": "bogi3",
+            "발언1": "bogi1", "발언2": "bogi2", "발언3": "bogi3",
+            "ㄹ": "bogi4", "ㅁ": "bogi5",
+        }
+        if compact in exact:
+            return exact[compact]
+        if compact.startswith("사진") or compact.startswith("photo"):
+            digits = "".join(ch for ch in compact if ch.isdigit())
+            return f"photo{digits or '1'}"
+        if compact in {"(가)", "(나)", "(다)"}:
+            return f"caption:{compact}"
+        if compact in {"1", "2", "3", "4", "5"}:
+            return f"c{compact}"
+        return f"unknown:{name}"
+
+    slots = [canonical(name) for name in (item.get("slot_names") or [])]
+    count = int(item.get("slot_count") or len(slots))
+    slots.extend(f"unknown:slot{index + 1}" for index in range(len(slots), count))
+    return {
+        "slot_count": count,
+        "slots": slots[:count],
+        "registered": True,
+        "score_in_ask": label in {"수능AI실제합답형", "수능AI실제실험형"},
+    }
+
+
+def question_to_palette(q: dict, choices: list[dict], num=1,
+                        layout_style: str = "school") -> str:
+    """문항 1개 → hwppalette 템플릿 호출 + 빈칸 값들."""
+    layout_style = "suneung" if layout_style == "suneung" else "school"
+    label = pick_template(q, layout_style)
+    if q.get("qtype") == "서술형" and not label:
+        return _essay_to_palette(q, num)   # 템플릿 미등록 환경 폴백
     if not label:
         return _fallback_text(q, choices, num)
 
-    spec = TEMPLATES[label]
+    spec = _registered_template_spec(label, layout_style)
+    if spec is None:
+        spec = (SUNEUNG_TEMPLATES if layout_style == "suneung" else TEMPLATES).get(label)
+    if spec is None:
+        return _fallback_text(q, choices, num)
     photos = _photos(q.get("material", ""))
     bogi = _bogi_list(q)
     ordered = sorted(choices, key=lambda c: c.get("ord", 0))
+    experiment_parts = split_experiment_passage(q.get("passage", ""))
+    has_experiment_slots = any(
+        slot in {"experiment", "experiment_table"} for slot in spec["slots"]
+    )
     # 이 템플릿에 보기 칸이 따로 있는지 — 없으면 발문 블록 안에 〈보기〉를 넣는다.
     has_bogi_slot = any(s.startswith("bogi") for s in spec["slots"])
 
     def value(slot: str) -> str:
         if slot == "num":
             return str(num)
-        if slot == "ask":
-            # 지문·사진·(보기 칸이 없으면)보기까지 한 칸에 묶는다
-            return _ask_cell(q, photos if not _has_photo_slot(spec) else [],
-                             with_bogi=not has_bogi_slot)
+        if slot in ("ask", "ask_points"):
+            # 템플릿이 안 주는 것만 이 칸에 묶는다. ask_points 는 점수 칸이 따로
+            # 없는 템플릿용 — 발문 문장 끝에 "(N점)"을 붙인다.
+            pts = _points_text(q)
+            suffix = (" (%s점)" % pts) if (slot == "ask_points" and pts != SKIP) else ""
+            if spec.get("score_in_ask") and pts != SKIP:
+                suffix = f" [{pts}점]"
+            ask_photos = [] if (layout_style == "suneung" or _has_photo_slot(spec)) else photos
+            return _ask_cell(q, ask_photos,
+                             with_bogi=not has_bogi_slot,
+                             with_passage="passage" not in spec["slots"],
+                             suffix=suffix)
         if slot == "passage":
             # 지문과 발문을 한 칸에 넣는다 (템플릿은 '\. \' 한 칸만 준다).
             # 지문이 여러 줄이면 { } 블록으로 묶어야 한다 — 안 그러면 줄 수만큼
             # 빈칸을 잡아먹어 뒤의 점수·보기·선지가 통째로 한 칸씩 밀린다.
-            psg = _esc(q.get("passage", "").strip())
+            #
+            # 단, 발문이 따로 갈 곳이 있으면(발문 칸이 있거나 조각에 이미 박혀
+            # 있으면) 지문만 넣는다 — 안 그러면 같은 발문이 두 번 찍힌다
+            # (2026-08-03 실측). 지문이 없으면 그 칸이 비므로 발문이라도 넣는다.
+            raw_passage = experiment_parts.intro if has_experiment_slots else q.get("passage", "")
+            psg = _esc(str(raw_passage).strip())
             ak = _negatize(_esc(q.get("ask", "").strip()), q.get("is_negative"))
+            if any(s in ("ask", "ask_points") for s in spec["slots"]):
+                ak = ""                 # 발문은 제 칸으로 간다
+            elif spec.get("ask_builtin"):
+                ak = "" if psg else ak  # 조각에 박혀 있다 — 지문이 없을 때만 채운다
             parts = [p for p in (psg, ak) if p]
+            if layout_style == "suneung" and not _has_photo_slot(spec):
+                photo_lines = [f"\\{_photo_label(photo)}\\" for photo in photos]
+                if label == "수능AI실제실험형" and photo_lines:
+                    marker = re.search(r"\[실험\s*결과\]", psg)
+                    if marker is not None:
+                        psg = "\n".join((
+                            psg[:marker.start()].rstrip(), *photo_lines,
+                            psg[marker.start():].lstrip(),
+                        ))
+                        parts = [p for p in (psg, ak) if p]
+                    else:
+                        parts.extend(photo_lines)
+                else:
+                    parts.extend(photo_lines)
             if not parts:
                 return SKIP
             if "\n" in psg:
                 return _block("\n".join(parts))
             return _guard(" ".join(parts)) or SKIP
-        if slot == "photo1":
-            return photos[0] if len(photos) >= 1 else SKIP
-        if slot == "photo2":
-            return photos[1] if len(photos) >= 2 else SKIP
+        if slot == "experiment":
+            raw = experiment_parts.body
+            return _block(_esc(raw)) if raw else SKIP
+        if slot == "experiment_table":
+            raw = experiment_parts.result_markup
+            return _block(_esc(raw)) if raw else SKIP
+        if slot == "choice_header":
+            raw = str(q.get("choice_header") or "").strip()
+            return _guard(_esc(raw)) if raw else SKIP
+        if slot == "content":
+            raw = str(q.get("material_text") or "").strip()
+            return _block(_esc(raw)) if raw else SKIP
+        # 사진 칸도 \파일이름\ 으로 감싼다. hwppalette 는 `\라벨\` 토큰만 그림으로
+        # 바꾸므로(parser._slot_value → build_segments), 맨 파일명을 넣으면 글자
+        # "EM26_01" 이 그대로 시험지에 박힌다 — 2026-08-03 실측으로 확인.
+        if slot.startswith("caption:"):
+            return slot.split(":", 1)[1]
+        if slot.startswith("photo"):
+            digits = "".join(ch for ch in slot if ch.isdigit())
+            index = int(digits or "1") - 1
+            return (
+                "\\%s\\" % _photo_label(photos[index])
+                if 0 <= index < len(photos) else SKIP
+            )
         if slot.startswith("bogi"):
             i = int(slot[-1]) - 1
             return _guard(_esc(_bogi_text(bogi[i]))) or SKIP if i < len(bogi) else SKIP
@@ -238,7 +522,7 @@ def question_to_palette(q: dict, choices: list[dict], num=1) -> str:
             return _points_text(q)
         if slot.startswith("c"):
             i = int(slot[1:]) - 1
-            return _choice_text(ordered[i]) if i < len(ordered) else SKIP
+            return _esc(_choice_text(ordered[i])) if i < len(ordered) else SKIP
         return SKIP
 
     lines = ["\\%s\\" % label]
@@ -271,7 +555,7 @@ def _essay_to_palette(q: dict, num: int) -> str:
     if q.get("passage", "").strip():
         body.append(_esc(q["passage"].strip()))
     for p in photos:
-        body.append("\\%s\\" % p)
+        body.append("\\%s\\" % _photo_label(p))
 
     lines = []
     if body:
@@ -313,9 +597,10 @@ def _choice_text(c: dict) -> str:
     return c.get("text", "") or SKIP
 
 
-def set_to_markdown(questions: list[tuple[dict, list[dict]]]) -> str:
+def set_to_markdown(questions: list[tuple[dict, list[dict]]],
+                    layout_style: str = "school", *, start_num: int = 1) -> str:
     """세트 전체 → hwppalette 입력. 문항 사이는 빈 줄로 구분한다."""
     blocks = []
-    for i, (q, choices) in enumerate(questions, start=1):
-        blocks.append(question_to_palette(q, choices, num=i))
+    for i, (q, choices) in enumerate(questions, start=start_num):
+        blocks.append(question_to_palette(q, choices, num=i, layout_style=layout_style))
     return "\n\n".join(blocks) + "\n"

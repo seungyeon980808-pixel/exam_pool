@@ -1,0 +1,62 @@
+{
+  "version": "1.0",
+  "domains": [
+    {
+      "domain": "science",
+      "label": "과학",
+      "types": [
+        {
+          "type_id": "science_direct",
+          "type_label": "정답형·일반",
+          "response_type": "matching",
+          "required_fields": ["prompt", "choices"],
+          "asset_slots": {"min": 0, "max": 4},
+          "serializer": "school_direct",
+          "validation": {"min_choices": 2, "max_choices": 5}
+        },
+        {
+          "type_id": "science_matching",
+          "type_label": "정합형·자료 연결",
+          "response_type": "matching",
+          "required_fields": ["passage", "prompt", "choices"],
+          "asset_slots": {"min": 1, "max": 4},
+          "serializer": "school_matching",
+          "validation": {"min_choices": 2, "max_choices": 5}
+        },
+        {
+          "type_id": "science_combined",
+          "type_label": "합답형·보기",
+          "response_type": "combined",
+          "required_fields": ["prompt", "bogi", "choices"],
+          "asset_slots": {"min": 0, "max": 4},
+          "serializer": "school_combined",
+          "validation": {"min_bogi": 2, "min_choices": 2, "max_choices": 5}
+        }
+      ]
+    },
+    {
+      "domain": "common",
+      "label": "공통",
+      "types": [
+        {
+          "type_id": "common_direct",
+          "type_label": "정답형·일반",
+          "response_type": "matching",
+          "required_fields": ["prompt", "choices"],
+          "asset_slots": {"min": 0, "max": 4},
+          "serializer": "school_direct",
+          "validation": {"min_choices": 2, "max_choices": 5}
+        },
+        {
+          "type_id": "common_combined",
+          "type_label": "합답형·보기",
+          "response_type": "combined",
+          "required_fields": ["prompt", "bogi", "choices"],
+          "asset_slots": {"min": 0, "max": 4},
+          "serializer": "school_combined",
+          "validation": {"min_bogi": 2, "min_choices": 2, "max_choices": 5}
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "run_id": "approved-first-run",
+  "exclusions": {"overnight": 52, "heldout": 8, "intersection": 0, "union": 60, "selected_overlap": 0},
+  "kice_papers": [
+    {"paper_id":"p1_2019_11","subject":"p1","source_kind":"KICE_EXAM","path":"C:\\Users\\user\\Desktop\\teach\\시험문제\\전체파일\\p1_2019_11.pdf","sha256":"402e92ce979e1d6607f7d9e7b6cd750d931e735aa6c7f6ca2dabec0975ff95bb","expected_pages":4,"expected_items":20,"sample_role":"older"},
+    {"paper_id":"p2_2026_11","subject":"p2","source_kind":"KICE_EXAM","path":"C:\\Users\\user\\Desktop\\teach\\시험문제\\전체파일\\p2_2026_11.pdf","sha256":"0f1b53649f26f6555eb446d5ccfb1cc51e857a0f63e225e285ebf49dc375a129","expected_pages":4,"expected_items":20,"sample_role":"newer"},
+    {"paper_id":"c1_2024_06","subject":"c1","source_kind":"KICE_EXAM","path":"C:\\Users\\user\\Desktop\\teach\\시험문제\\전체파일\\c1_2024_06.pdf","sha256":"5be42a497a2268b2638bb793f3cfd65597f7cc77062f5a9a4c3ea3078ea202d3","expected_pages":4,"expected_items":20,"sample_role":"stratum"},
+    {"paper_id":"c2_2023_06","subject":"c2","source_kind":"KICE_EXAM","path":"C:\\Users\\user\\Desktop\\teach\\시험문제\\전체파일\\c2_2023_06.pdf","sha256":"4ab8e5130e62710437620ed1d3b1764a0e73ef933bef8eea34771c7935590f6e","expected_pages":4,"expected_items":20,"sample_role":"stratum"},
+    {"paper_id":"b1_2024_09","subject":"b1","source_kind":"KICE_EXAM","path":"C:\\Users\\user\\Desktop\\teach\\시험문제\\전체파일\\b1_2024_09.pdf","sha256":"45942608c1c8e2635eba8ae6fcfedab74aeb2b042220dac233b3e80d3cd1bc22","expected_pages":4,"expected_items":20,"sample_role":"stratum"},
+    {"paper_id":"b2_2022_06","subject":"b2","source_kind":"KICE_EXAM","path":"C:\\Users\\user\\Desktop\\teach\\시험문제\\전체파일\\b2_2022_06.pdf","sha256":"670e8be36bd8017cc5a49d02081b17bc55df5537dec283fd5c877347bc7c023a","expected_pages":4,"expected_items":20,"sample_role":"stratum"},
+    {"paper_id":"e1_2024_06","subject":"e1","source_kind":"KICE_EXAM","path":"C:\\Users\\user\\Desktop\\teach\\시험문제\\전체파일\\e1_2024_06.pdf","sha256":"13a93c21ee12f8c8c5519aca1725217fcf0812e1d36dbb8b99d1b173dce56989","expected_pages":4,"expected_items":20,"sample_role":"stratum"},
+    {"paper_id":"e2_2023_11","subject":"e2","source_kind":"KICE_EXAM","path":"C:\\Users\\user\\Desktop\\teach\\시험문제\\전체파일\\e2_2023_11.pdf","sha256":"0d351a04cbce0cc60bda783cbb0fb75b9593ac06cb550d472403d745a125236c","expected_pages":4,"expected_items":20,"sample_role":"stratum"},
+    {"paper_id":"p2_2013_11","subject":"p2","source_kind":"KICE_EXAM","path":"C:\\Users\\user\\Desktop\\teach\\시험문제\\전체파일\\p2_2013_11.pdf","sha256":"9796476d8dc673dfe127e1aae5da6f9a241dac5ed100843b3b556db6eda078ee","expected_pages":4,"expected_items":20,"sample_role":"older"},
+    {"paper_id":"e2_2025_09","subject":"e2","source_kind":"KICE_EXAM","path":"C:\\Users\\user\\Desktop\\teach\\시험문제\\전체파일\\e2_2025_09.pdf","sha256":"5bb46bd115e09cd50da11567d5669eb301cc04db6ac9dcb984c140588878cb71","expected_pages":4,"expected_items":20,"sample_role":"newer"}
+  ],
+  "ebs_source": {
+    "source_id":"ebs_2027_physics1","source_kind":"EBS_TEXTBOOK","path":"C:\\Users\\user\\Desktop\\project\\31_hwp_palette\\2027 수능특강 물리학 I 원본.pdf","sha256":"dcd657d3f125a8a74fa4ba46c1e7b10d5cc998a42770e1059d3bbcd7561bd803","expected_pages":248,"expected_items":278,
+    "sample":[
+      {"item":1,"page":13},{"item":12,"page":15},{"item":24,"page":18},{"item":35,"page":24},{"item":37,"page":25},{"item":48,"page":35},{"item":60,"page":39},{"item":72,"page":52},{"item":84,"page":56},{"item":96,"page":70},{"item":108,"page":83},{"item":120,"page":87},{"item":132,"page":105},{"item":144,"page":108},{"item":156,"page":113},{"item":168,"page":131},{"item":180,"page":134},{"item":192,"page":139},{"item":204,"page":157},{"item":216,"page":160},{"item":228,"page":163},{"item":234,"page":166},{"item":235,"page":167},{"item":237,"page":168},{"item":238,"page":168},{"item":246,"page":172},{"item":254,"page":183},{"item":262,"page":185},{"item":270,"page":188},{"item":278,"page":192}
+    ]
+  },
+  "fixed_regressions":[
+    {"case_id":"ebs_q35_crop","source_id":"ebs_2027_physics1","item":35,"page":24,"item_bbox":[156.409,47.422,575.937,393.42],"crop_bbox":[156.409,47.422,527.8580932617188,228.63702392578125],"expected":"crop_contamination"},
+    {"case_id":"ebs_q37_crop","source_id":"ebs_2027_physics1","item":37,"page":25,"item_bbox":[54.362,47.422,575.937,392.183],"crop_bbox":[56.078304290771484,47.422,543.9240112304688,236.66302490234375],"expected":"crop_contamination"},
+    {"case_id":"ebs_q234_hapdap","source_id":"ebs_2027_physics1","item":234,"page":166,"item_bbox":[156.409,445.928,575.937,689.008],"expected":"hapdap_template_with_three_bogi_slots"},
+    {"case_id":"ebs_q235_hapdap","source_id":"ebs_2027_physics1","item":235,"page":167,"item_bbox":[54.362,47.422,575.937,394.14],"expected":"hapdap_template_with_three_bogi_slots"},
+    {"case_id":"ebs_q237_hapdap","source_id":"ebs_2027_physics1","item":237,"page":168,"item_bbox":[156.409,47.422,575.937,419.14],"expected":"hapdap_template_with_three_bogi_slots"},
+    {"case_id":"ebs_q238_hapdap","source_id":"ebs_2027_physics1","item":238,"page":168,"item_bbox":[156.409,419.14,575.937,689.008],"expected":"hapdap_template_with_three_bogi_slots"},
+    {"case_id":"e2_2024_09_q1_clipping","source_id":"e2_2024_09","item":1,"page":1,"item_bbox":[79.9,251.205,428.56,534.525],"crop_bbox":[272.76,253.801,411.36,294.296],"expected":"crop_clipping","source_kind":"KICE_EXAM","path":"C:\\Users\\user\\Desktop\\teach\\시험문제\\전체파일\\e2_2024_09.pdf","sha256":"35930ee9da331a949f13f5133198912089904dde51158921f5508c79660b8ba6"}
+  ],
+  "raster_fixture":{"source_id":"item20_original","source_kind":"RASTER_SCAN","path":"C:\\Users\\user\\Desktop\\project\\32_exam_pool\\assets\\item_figures\\item20_original.png","sha256":"cf278add312d1f6ccd2cad9d2491bc285f07a9b802c9b3fc9c6119acf2e0416c","width":1718,"height":555,"expected_pages":1,"expected_items":1,"companion_pdf_path":"C:\\Users\\user\\Desktop\\project\\32_exam_pool\\PDF\\p1_2024_11.pdf","companion_pdf_sha256":"3bcad0b7afa92f8b973af5edc09d78935fe7f8505e98e9bf7de0b9830e20155a","companion_item":20}
+}

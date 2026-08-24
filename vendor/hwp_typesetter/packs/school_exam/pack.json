@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "name": "school_exam",
+  "version": "0.1.0",
+  "description": "ExamPool 기존 학교 시험지 조판 호환 팩",
+  "templates": [
+    {"key":"direct_no_photo","name":"학교 정답형 그림 없음","label":"학교정답0사진1선지","file":"fragments/direct_no_photo.hwp","slots":["번호","질문","배점","선지1","선지2","선지3","선지4","선지5"]},
+    {"key":"direct_one_photo","name":"정답형 그림 1개","label":"정답형1사진","file":"fragments/direct_one_photo.hwp","slots":["번호","질문","배점","그림1","선지1","선지2","선지3","선지4","선지5"]},
+    {"key":"hapdap_no_photo","name":"학교 합답형 그림 없음","label":"학교합답0사진5선지","file":"fragments/hapdap_no_photo.hwp","slots":["번호","발문","배점","보기1","보기2","보기3","선지1","선지2","선지3","선지4","선지5"]},
+    {"key":"hapdap_one_photo","name":"학교 합답형 그림 1개","label":"학교합답1사진5선지","file":"fragments/hapdap_one_photo.hwp","slots":["번호","발문","그림1","질문배점","보기1","보기2","보기3","선지1","선지2","선지3","선지4","선지5"]},
+    {"key":"hapdap_two_photo","name":"학교 합답형 그림 2개","label":"학교합답2사진5선지","file":"fragments/hapdap_two_photo.hwp","slots":["번호","발문","그림1","그림2","질문","배점","보기1","보기2","보기3","선지1","선지2","선지3","선지4","선지5"]},
+    {"key":"essay","name":"서술형","label":"서술형","file":"fragments/essay.hwp","slots":["번호","질문","배점"]}
+  ]
+}

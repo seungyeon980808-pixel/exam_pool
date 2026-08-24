@@ -1,7 +1,7 @@
 /* ===== 명제 Pool — 명제 목록 · 거짓 변형 · 근거 ===== */
 (function (EP) {
   "use strict";
-  const $ = EP.$, esc = EP.esc, api = EP.api, post = EP.post, del = EP.del;
+  const $ = EP.$, esc = EP.esc, escAttr = EP.escAttr, api = EP.api, post = EP.post, del = EP.del;
 
   EP.loadProps = async function () {
     const params = new URLSearchParams();
@@ -11,6 +11,8 @@
     const rows = await api("/api/propositions?" + params);
     const allow = EP.allowedCodes();
     EP.S.curProps = allow ? rows.filter((r) => allow.has(r.standard_code)) : rows;
+    const firstRun = $("firstRunGuide");
+    if (firstRun) firstRun.classList.toggle("hidden", EP.S.curProps.length > 0);
     const tb = $("propRows");
     tb.innerHTML = "";
     let ev = 0, va = 0;
@@ -159,27 +161,49 @@
     if (allowP) rows = rows.filter((r) => allowP.has(r.standard_code));
     const detail = await Promise.all(rows.slice(0, 30).map((r) => api("/api/propositions/" + r.id)));
     const m = EP.modal("pickModal");
-    const body = detail.length ? detail.map((d) => {
-      const pj = JSON.stringify(d.proposition.text);
+    const body = detail.length ? detail.map((d, di) => {
       let html = '<div class="nz-pickgroup"><div class="nz-pickprop"><span>' + esc(d.proposition.text) + "</span>" +
-        '<button class="nz-tb mini blu" onclick=\'EP.applyPick("' + target + '",' + idx + "," + pj + "," + d.proposition.id + ",null)'>참 명제로</button></div>";
-      d.variants.forEach((v) => {
+        '<button class="nz-tb mini blu" data-pick-prop data-di="' + di + '" data-target="' + escAttr(target) + '" data-idx="' + idx + '">참 명제로</button></div>';
+      d.variants.forEach((v, vi) => {
         html += '<div class="nz-pickvar"><span class="nz-tag r">' + esc(v.distortion) + "</span><span>" + esc(v.text) + "</span>" +
-          '<button class="nz-tb mini" onclick=\'EP.applyPick("' + target + '",' + idx + "," + JSON.stringify(v.text) + ",null," + v.id + ")'>오답으로</button></div>";
+          '<button class="nz-tb mini" data-pick-prop data-di="' + di + '" data-vi="' + vi + '" data-target="' + escAttr(target) + '" data-idx="' + idx + '">오답으로</button></div>';
       });
       return html + "</div>";
     }).join("") : '<p class="nz-sub">이 성취기준에 등록된 명제가 없습니다. 명제 Pool에서 먼저 등록하세요.</p>';
 
     m.innerHTML = '<div class="nz-modal-box" style="width:min(880px,94vw)">' +
       '<div class="nz-modal-head"><b>명제에서 고르기</b><span class="nz-sub" style="margin:0 0 0 10px">' +
-      (code ? esc(code) : "전체") + " 범위 · 참 명제와 오답 변형</span>" +
+        detail.length + "개 명제</span>" +
       '<button class="nz-tb" style="margin-left:auto" onclick="EP.closeModal(\'pickModal\')">닫기</button></div>' +
-      '<div class="nz-modal-body">' + body + "</div></div>";
+      '<div class="nz-modal-body" id="pickBody">' + body + "</div></div>";
+    // 버튼 이벤트 위임 — onclick 인라이닝 없이 data 속성으로 안전하게 처리
+    document.getElementById("pickBody").addEventListener("click", function (e) {
+      const btn = e.target.closest("[data-pick-prop]");
+      if (!btn) return;
+      const di = parseInt(btn.dataset.di), vi = btn.dataset.vi;
+      const d = detail[di];
+      const target = btn.dataset.target, idx = parseInt(btn.dataset.idx);
+      const primaryEvidence = (d.evidence || [])[0];
+      const evidence = primaryEvidence
+        ? [primaryEvidence.source_label, primaryEvidence.quote].filter(Boolean).join(" — ") : "";
+      if (vi !== undefined) {
+        const variant = d.variants[parseInt(vi)];
+        EP.applyPick(target, idx, variant.text, null, variant.id, evidence,
+          `근거가 되는 참 명제를 '${variant.distortion || "개념 변형"}' 방식으로 바꾼 진술이므로 옳지 않다.`);
+      } else {
+        EP.applyPick(target, idx, d.proposition.text, d.proposition.id, null, evidence,
+          "연결된 근거가 이 보기의 내용을 직접 뒷받침하므로 옳다.");
+      }
+    });
   };
 
-  EP.applyPick = function (target, idx, text, propId, varId) {
+  EP.applyPick = function (target, idx, text, propId, varId, evidence, explanation) {
     if (target === "bogi") {
-      EP.S.bogi[idx] = Object.assign({}, EP.S.bogi[idx], { text: text, proposition_id: propId, variant_id: varId });
+      EP.S.bogi[idx] = Object.assign({}, EP.S.bogi[idx], {
+        text: text, proposition_id: propId, variant_id: varId,
+        evidence: evidence || EP.S.bogi[idx].evidence || "",
+        explanation: explanation || EP.S.bogi[idx].explanation || "",
+      });
       EP.renderBogi();
     } else {
       EP.S.choices[idx] = Object.assign({}, EP.S.choices[idx], { text: text, proposition_id: propId, variant_id: varId });

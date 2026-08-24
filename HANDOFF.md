@@ -17,8 +17,8 @@
 
 | 경로 | 역할 | 원격 |
 |---|---|---|
-| `C:\Users\user\Desktop\project\32_exam_pool` | 문서(PRD)·기출 그림·추출 스크립트. **작업 세션의 cwd** | `exam_pool` |
-| `C:\Users\user\Desktop\project\51_5E\5E_main` | **5E 앱 본체 + MCP 서버**. 도구 추가는 전부 여기 | `5E` |
+| `C:\ExamPool` | 문서(PRD)·기출 그림·추출 스크립트. **작업 세션의 cwd** | `exam_pool` |
+| `C:\5E` | **5E 앱 본체 + MCP 서버**. 도구 추가는 전부 여기 | `5E` |
 
 두 저장소 모두 **커밋·푸시 완료 상태**로 넘긴다.
 

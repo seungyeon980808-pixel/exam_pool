@@ -1,0 +1,10 @@
+{
+  "name": "pdf-hwp-workflow-fixture",
+  "items": [
+    {"number": 1, "extraction": "text", "asset_count": 0, "type_id": "science_direct"},
+    {"number": 2, "extraction": "structure_failed", "asset_count": 1, "type_id": "science_matching"},
+    {"number": 3, "extraction": "ocr", "asset_count": 2, "type_id": "science_combined"},
+    {"number": 4, "extraction": "text", "asset_count": 0, "type_id": "science_combined", "type_change": true},
+    {"number": 5, "extraction": "conversion_failed", "asset_count": 2, "type_id": "science_matching"}
+  ]
+}

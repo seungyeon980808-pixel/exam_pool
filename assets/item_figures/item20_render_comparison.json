@@ -1,0 +1,23 @@
+{
+  "selected_dpi": 600,
+  "selection_reason": "native embedded PNG already supplies 600 dpi horizontal detail",
+  "native_embedded_size_px": [
+    2285,
+    668
+  ],
+  "renders": {
+    "600": {
+      "width_px": 2285,
+      "height_px": 671,
+      "bytes": 62153,
+      "sha256": "23bc687dcff8d188e790583c13c3bf04d742b8da4e6c51876ed6502567de3296"
+    },
+    "1200": {
+      "width_px": 4570,
+      "height_px": 1341,
+      "bytes": 65407,
+      "sha256": "b8001e01a4d82342ee05b093ef319b1acf9445f12530a7abc44d4f0e198f7d52"
+    }
+  },
+  "downsample_1200_to_600_mae": 0.904146
+}

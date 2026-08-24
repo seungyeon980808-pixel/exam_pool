@@ -1,0 +1,20 @@
+{
+  "asset_mode": "source_crop_hd",
+  "image_path": "assets/item_figures/item20_source_crop_hd.png",
+  "source_pdf": "PDF/p1_2024_11.pdf",
+  "page_no": 4,
+  "bbox": [
+    463.8,
+    718.261,
+    738.0,
+    798.661
+  ],
+  "dpi": 600,
+  "width_px": 2285,
+  "height_px": 668,
+  "aspect_ratio": 3.420659,
+  "source_hash": "3bcad0b7afa92f8b973af5edc09d78935fe7f8505e98e9bf7de0b9830e20155a",
+  "asset_hash": "cc2aa8212544668d233a4632e7c5b6ca078c53f134a565a4ce2b17c09077d562",
+  "semantic_region_coverage": 1.0,
+  "selected_from": "embedded_lossless_png"
+}

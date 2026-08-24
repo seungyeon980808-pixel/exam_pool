@@ -2,7 +2,13 @@
   "mcpServers": {
     "exampool": {
       "command": "python",
-      "args": ["-m", "app.mcp_server"]
+      "args": ["-m", "app.mcp_server"],
+      "cwd": "${workspaceRoot}"
+    },
+    "5e": {
+      "command": "node",
+      "args": ["../51_5E/5E_main/tools/mcp-5e/server.js"],
+      "cwd": "${workspaceRoot}"
     }
   }
 }
