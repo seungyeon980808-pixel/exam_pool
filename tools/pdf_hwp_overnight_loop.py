@@ -19,7 +19,7 @@ from pdf_hwp_accuracy_audit import audit_pdf  # noqa: E402
 
 
 PDF_DIR = ROOT / "PDF"
-CORPUS_DIR = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일")
+CORPUS_DIR = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일"
 STATUS_DIR = ROOT / "data" / "pdf_hwp"
 STATUS_JSON = STATUS_DIR / "overnight_status.json"
 STATUS_MD = STATUS_DIR / "overnight_status.md"

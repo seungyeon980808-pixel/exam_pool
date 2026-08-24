@@ -11,8 +11,8 @@ from app.pdf_hwp_roundtrip_models import SourceProfile
 from app.pdf_hwp_roundtrip_units import prepare_units
 
 
-SOURCE = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일\p2_2013_11.pdf")
-B1_SOURCE = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일\b1_2024_09.pdf")
+SOURCE = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / "p2_2013_11.pdf"
+B1_SOURCE = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / "b1_2024_09.pdf"
 
 
 def _prepare(tmp_path: Path, *numbers: int):

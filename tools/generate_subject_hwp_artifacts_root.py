@@ -40,7 +40,7 @@ from app.pdf_hwp_pipeline_models import (  # noqa: E402
 )
 
 
-SOURCE_ROOT = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일")
+SOURCE_ROOT = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일"
 SUBJECTS = ("c1", "c2", "b1", "b2", "e1", "e2")
 REPRESENTATIVE_SUFFIX = "2027_06"
 

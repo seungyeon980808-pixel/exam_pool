@@ -192,7 +192,7 @@ def build_inventory(baseline: CorpusBaseline, output: Path) -> dict[str, object]
     payload: dict[str, object] = {
         "schema_version": 1,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-        "corpus_root": str(Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일")),
+        "corpus_root": str(Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일"),
         "paper_count": 52, "detected_item_count": baseline.detected_count,
         "expected_equation_manual_count": 163,
         "actual_equation_manual_count": len(items),

@@ -3,14 +3,18 @@ name = "exampool"
 version = "0.1.0"
 description = "중학교 과학 시험 출제 도구"
 requires-python = ">=3.10"
+license = "AGPL-3.0-only"
+authors = [
+    { name = "박승연" },
+]
 dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
-    "pymupdf>=1.24",
+    "pymupdf==1.28.0",
     "fonttools>=4.63",
     "pyperclip>=1.8",
     "playwright>=1.48",
-    "mcp>=1.26",
+    "mcp>=1.26,<2",
     "pydantic>=2.0",
     "httpx>=0.27",
     "pyhwpx",
@@ -20,8 +24,8 @@ dependencies = [
 
 [project.optional-dependencies]
 pdf-hwp = [
-    "paddleocr>=3.7,<3.8",
-    "paddlepaddle>=3.3,<3.4",
+    "paddleocr==3.7.0",
+    "paddlepaddle==3.3.1",
 ]
 installer = [
     "pyinstaller>=6.20,<7",

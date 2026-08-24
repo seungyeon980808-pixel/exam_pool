@@ -39,7 +39,7 @@ from app.pdf_hwp_pipeline_models import DetectedItem, FigureLayout  # noqa: E402
 from app.pdf_hwp_question_structure import palette_question  # noqa: E402
 
 
-SOURCE_ROOT = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일")
+SOURCE_ROOT = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일"
 SOURCE_NAME = "p1_2026_09.pdf"
 SOURCE_SHA256 = "61197f1bcc720aef13abd602f71a006d191ac5f48af6574cd43a43962c8485a6"
 ITEM_NUMBER = 3

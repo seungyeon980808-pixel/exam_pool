@@ -71,13 +71,13 @@
 
 ```bash
 # ExamPool 서버
-cd C:\Users\user\Desktop\project\32_exam_pool && run.bat   # http://127.0.0.1:8632
+cd C:\ExamPool && run.bat   # http://127.0.0.1:8632
 
 # export_palette 단위 테스트 (한글 불필요)
 python -m pytest tests/
 
 # 5E 로컬 (MCP 브릿지 활성)
-cd C:\Users\user\Desktop\project\51_5E\5E_main && run-server.bat   # ?mcp=1
+cd C:\5E && run-server.bat   # ?mcp=1
 
 # hwpPalette CLI (한컴오피스 필요)
 python -m hwp_palette.cli --markdown-file 세트.md

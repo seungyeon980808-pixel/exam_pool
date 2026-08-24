@@ -30,7 +30,7 @@ Claude Code(·Desktop)에서 ExamPool의 **명제·근거·문항**을 직접 �
 프로젝트 MCP 서버 승인 여부를 묻는다. 승인하면 끝.
 
 ```bash
-cd C:\Users\user\Desktop\project\32_exam_pool
+cd C:\ExamPool
 claude
 ```
 

@@ -94,7 +94,7 @@ def test_three_claim_choice_discards_page_header_words_at_the_right_margin() -> 
 def test_real_hapdap_fifth_choice_excludes_page_edge_subject_header(
     tmp_path: Path, pdf_name: str, item_number: int,
 ) -> None:
-    source = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일") / pdf_name
+    source = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / pdf_name
     if not source.is_file():
         pytest.skip(f"missing exam PDF {pdf_name}")
     item = next(row for row in detect_items(source).items if row.item_number == item_number)
@@ -111,7 +111,7 @@ def test_real_hapdap_fifth_choice_excludes_page_edge_subject_header(
 def test_real_q20_ask_stops_before_formula_choices(
     tmp_path: Path, pdf_name: str,
 ) -> None:
-    source = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일") / pdf_name
+    source = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / pdf_name
     if not source.is_file():
         pytest.skip(f"missing exam PDF {pdf_name}")
     item = next(row for row in detect_items(source).items if row.item_number == 20)
@@ -132,7 +132,7 @@ def test_real_q20_ask_stops_before_formula_choices(
 def test_real_structured_prompt_and_choice_headers_stay_editable(
     tmp_path: Path, item_number: int, template: str, table_mark: str,
 ) -> None:
-    source = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일\p1_2019_11.pdf")
+    source = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / "p1_2019_11.pdf"
     if not source.is_file():
         pytest.skip("missing p1_2019_11.pdf")
     item = next(row for row in detect_items(source).items if row.item_number == item_number)
@@ -151,7 +151,7 @@ def test_real_structured_prompt_and_choice_headers_stay_editable(
 
 
 def test_real_q4_experiment_visual_assets_exclude_editable_prose(tmp_path: Path) -> None:
-    source = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일\p1_2019_11.pdf")
+    source = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / "p1_2019_11.pdf"
     if not source.is_file():
         pytest.skip("missing p1_2019_11.pdf")
     item = next(row for row in detect_items(source).items if row.item_number == 4)
@@ -182,7 +182,7 @@ def test_real_q4_experiment_visual_assets_exclude_editable_prose(tmp_path: Path)
 
 
 def test_real_c1_q19_large_editable_box_starts_on_fresh_page(tmp_path: Path) -> None:
-    source = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일\c1_2024_06.pdf")
+    source = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / "c1_2024_06.pdf"
     if not source.is_file():
         pytest.skip("missing c1_2024_06.pdf")
     item = next(row for row in detect_items(source).items if row.item_number == 19)
@@ -216,7 +216,7 @@ def test_real_c1_q19_large_editable_box_starts_on_fresh_page(tmp_path: Path) -> 
 def test_real_p2_stacked_fraction_choices_remain_editable(
     tmp_path: Path, item_number: int, expected: tuple[str, ...],
 ) -> None:
-    source = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일\p2_2013_11.pdf")
+    source = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / "p2_2013_11.pdf"
     if not source.is_file():
         pytest.skip("missing p2_2013_11.pdf")
     item = next(row for row in detect_items(source).items if row.item_number == item_number)
@@ -229,7 +229,7 @@ def test_real_p2_stacked_fraction_choices_remain_editable(
 
 
 def test_real_p2_wrapped_fifth_choice_keeps_its_continuation(tmp_path: Path) -> None:
-    source = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일\p2_2013_11.pdf")
+    source = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / "p2_2013_11.pdf"
     if not source.is_file():
         pytest.skip("missing p2_2013_11.pdf")
     item = next(row for row in detect_items(source).items if row.item_number == 13)

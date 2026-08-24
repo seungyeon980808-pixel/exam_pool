@@ -9,7 +9,7 @@ const os = require('os');
 const { buildIndex } = require('../src/main/indexer');
 
 async function main() {
-  const folder = process.argv[2] || 'C:/Users/user/Desktop/학교업무/0. 메뉴얼';
+  const folder = process.argv[2] || 'C:/ExamPoolTestData/manuals';
   const dataDir = path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'docfinder');
   fs.mkdirSync(dataDir, { recursive: true });
 

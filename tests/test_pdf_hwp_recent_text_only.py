@@ -7,7 +7,7 @@ import pytest
 from app.pdf_hwp_pipeline import build_editable_draft, detect_items
 
 
-SOURCE_ROOT = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일")
+SOURCE_ROOT = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일"
 
 
 @pytest.mark.parametrize(

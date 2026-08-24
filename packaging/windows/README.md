@@ -10,7 +10,7 @@ Windows 설치 파일로 묶는다. 한글 프로그램은 재배포하지 않�
 2. 프로젝트 루트에서 의존성을 설치한다.
 
    ```powershell
-   uv sync --extra installer
+   uv sync --extra installer --no-install-project
    ```
 
 3. 설치 파일을 만든다.
@@ -23,6 +23,16 @@ Windows 설치 파일로 묶는다. 한글 프로그램은 재배포하지 않�
 폴더에 OCR 런타임을 자동으로 준비한다. 완성 파일은
 `dist/installer/ExamPool-HWP-Converter-Setup-0.1.0.exe`에 생성된다.
 설치 프로그램은 관리자 권한 없이 `%LOCALAPPDATA%\Programs` 아래에 앱을 설치한다.
+빌드 시 `collect_licenses.ps1`이 실제 Python 및 OCR 런타임의 패키지 목록과
+라이선스 파일을 수집한다. 프로젝트 라이선스, 제3자 고지, 한글 오토메이션 안내는
+설치 폴더에도 함께 들어간다.
+
+## 라이선스
+
+- ExamPool 자체 소스: `AGPL-3.0-only`
+- 저작권: `Copyright © 2026 박승연 (SOMC)`
+- 한글 프로그램: 설치본에 포함하지 않으며 사용자가 별도로 준비한다.
+- 상업적 이용: 한글과컴퓨터의 오토메이션 라이선스 조건을 별도로 확인한다.
 
 ## 배포 전 확인
 

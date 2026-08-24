@@ -49,13 +49,13 @@ from app.pdf_hwp_pipeline import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일\p1_2024_11.pdf")
+SOURCE = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / "p1_2024_11.pdf"
 LOCAL_PDF = ROOT / "PDF"
-EBS_PHYSICS = Path(r"C:\Users\user\Desktop\project\31_hwp_palette\2027 수능특강 물리학 I 원본.pdf")
+EBS_PHYSICS = Path.home() / "Desktop" / "project" / "31_hwp_palette" / "2027 수능특강 물리학 I 원본.pdf"
 
 
 def _exam_pdf(name: str) -> Path:
-    for candidate in (Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일") / name, LOCAL_PDF / name):
+    for candidate in (Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / name, LOCAL_PDF / name):
         if candidate.is_file():
             return candidate
     pytest.skip(f"missing exam PDF {name}")
@@ -1155,9 +1155,7 @@ def test_raster_only_pdf_detects_each_image_page_for_source_preservation(
 def test_ebs_items_build_editable_text_choices_and_separate_figure_draft(
     tmp_path: Path, page_number: int, item_number: int,
 ) -> None:
-    source = Path(
-        r"C:\Users\user\Desktop\project\31_hwp_palette\2027 수능특강 물리학 I 원본.pdf"
-    )
+    source = EBS_PHYSICS
     if not source.is_file():
         pytest.skip("missing EBS physics PDF")
     item = next(
@@ -1183,9 +1181,7 @@ def test_ebs_items_build_editable_text_choices_and_separate_figure_draft(
 def test_ebs_q2_keeps_body_editable_and_crops_only_the_three_panel_figure(
     tmp_path: Path,
 ) -> None:
-    source = Path(
-        r"C:\Users\user\Desktop\project\31_hwp_palette\2027 수능특강 물리학 I 원본.pdf"
-    )
+    source = EBS_PHYSICS
     if not source.is_file():
         pytest.skip("missing EBS physics PDF")
     item = next(

@@ -26,7 +26,7 @@ from app.pdf_hwp_pipeline_models import (  # noqa: E402
 )
 
 
-SOURCE_ROOT = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일")
+SOURCE_ROOT = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일"
 EVIDENCE_BASE = PROJECT_ROOT / ".omo/evidence/pdf-hwp-generalization/equation-glyphs"
 PROFILES = {
     "initial": (

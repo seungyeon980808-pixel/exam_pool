@@ -18,8 +18,8 @@ from app.pdf_hwp_roundtrip_source import (
 )
 
 
-KICE = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일\p1_2019_11.pdf")
-EBS = Path(r"C:\Users\user\Desktop\project\31_hwp_palette\2027 수능특강 물리학 I 원본.pdf")
+KICE = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / "p1_2019_11.pdf"
+EBS = Path.home() / "Desktop" / "project" / "31_hwp_palette" / "2027 수능특강 물리학 I 원본.pdf"
 RASTER = Path(__file__).resolve().parents[1] / "assets" / "item_figures" / "item20_original.png"
 EBS_ITEMS = (
     1, 12, 24, 35, 37, 48, 60, 72, 84, 96, 108, 120, 132, 144, 156,

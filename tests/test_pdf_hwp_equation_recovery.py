@@ -18,10 +18,11 @@ from app.pdf_hwp_pipeline import (
 from app.pdf_hwp_pipeline_models import UnsupportedDraftLayoutError
 
 
-CORPUS = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일")
+CORPUS = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일"
 LOCAL_PDF = Path(__file__).resolve().parents[1] / "PDF"
-EBS_PHYSICS = Path(
-    r"C:\Users\user\Desktop\project\31_hwp_palette\2027 수능특강 물리학 I 원본.pdf"
+EBS_PHYSICS = (
+    Path.home() / "Desktop" / "project" / "31_hwp_palette"
+    / "2027 수능특강 물리학 I 원본.pdf"
 )
 
 

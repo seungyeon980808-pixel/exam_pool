@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 
-CORPUS_ROOT = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일")
+CORPUS_ROOT = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일"
 EVIDENCE_ROOT = Path(".omo/evidence/pdf-hwp-generalization/equation-glyphs")
 BASELINE_ROOT = EVIDENCE_ROOT / "fresh-baseline-agent"
 BASELINE_FILES = (

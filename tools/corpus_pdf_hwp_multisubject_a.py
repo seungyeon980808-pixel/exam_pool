@@ -33,7 +33,7 @@ from tools.corpus_pdf_hwp_baseline_c import (  # noqa: E402
 )
 
 
-CORPUS_ROOT: Final = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일")
+CORPUS_ROOT: Final = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일"
 OUTPUT: Final = (
     PROJECT_ROOT
     / ".omo"

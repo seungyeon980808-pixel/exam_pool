@@ -8,7 +8,7 @@ from app.pdf_hwp_pipeline import build_editable_draft, detect_items
 from app.pdf_hwp_pipeline_models import DraftArtifact
 
 
-SOURCE = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일\e2_2023_11.pdf")
+SOURCE = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / "e2_2023_11.pdf"
 
 
 def _draft(item_number: int, output: Path) -> DraftArtifact:

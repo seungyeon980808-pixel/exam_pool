@@ -19,18 +19,18 @@ from app.pdf_hwp_kice_source_crop import observe_source_crop
 from app.pdf_hwp_roundtrip_unit_store import PreparationPayload, write_prepared_units
 
 
-EBS = Path(r"C:\Users\user\Desktop\project\31_hwp_palette\2027 수능특강 물리학 I 원본.pdf")
-KICE = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일\e2_2024_09.pdf")
-P1 = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일\p1_2019_11.pdf")
-P2 = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일\p2_2026_11.pdf")
-P2_2013 = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일\p2_2013_11.pdf")
-B1_2024 = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일\b1_2024_09.pdf")
-B2_2022 = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일\b2_2022_06.pdf")
-C1_2024 = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일\c1_2024_06.pdf")
-C2_2023 = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일\c2_2023_06.pdf")
-E1_2024 = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일\e1_2024_06.pdf")
-E2_2023 = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일\e2_2023_11.pdf")
-E2_2025 = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일\e2_2025_09.pdf")
+EBS = Path.home() / "Desktop" / "project" / "31_hwp_palette" / "2027 수능특강 물리학 I 원본.pdf"
+KICE = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / "e2_2024_09.pdf"
+P1 = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / "p1_2019_11.pdf"
+P2 = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / "p2_2026_11.pdf"
+P2_2013 = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / "p2_2013_11.pdf"
+B1_2024 = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / "b1_2024_09.pdf"
+B2_2022 = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / "b2_2022_06.pdf"
+C1_2024 = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / "c1_2024_06.pdf"
+C2_2023 = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / "c2_2023_06.pdf"
+E1_2024 = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / "e1_2024_06.pdf"
+E2_2023 = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / "e2_2023_11.pdf"
+E2_2025 = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / "e2_2025_09.pdf"
 
 
 def test_prepared_manifest_writes_profiled_schema_v2(tmp_path: Path) -> None:

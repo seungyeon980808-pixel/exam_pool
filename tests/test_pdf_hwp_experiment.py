@@ -15,9 +15,9 @@ from app.pdf_hwp_question_structure import palette_question
 from tests.pdf_hwp_figure_contract_support import SourceArtifactSpec, source_artifact
 
 
-SOURCE = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일\p1_2025_09.pdf")
-C1_2024 = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일\c1_2024_06.pdf")
-B2_2022 = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일\b2_2022_06.pdf")
+SOURCE = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / "p1_2025_09.pdf"
+C1_2024 = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / "c1_2024_06.pdf"
+B2_2022 = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / "b2_2022_06.pdf"
 
 
 def test_experiment_table_markup_uses_explicit_empty_cells() -> None:

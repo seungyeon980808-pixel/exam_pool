@@ -30,7 +30,7 @@ from app.pdf_hwp_pipeline import DetectionResult, build_editable_draft, detect_i
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "PDF" / "p1_2024_11.pdf"
-P2_2026_SOURCE = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일\p2_2026_11.pdf")
+P2_2026_SOURCE = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / "p2_2026_11.pdf"
 sys.path.insert(0, str(ROOT / "vendor" / "hwp_typesetter"))
 from hwp_palette.hwp import engine_library, hwp_engine  # noqa: E402
 

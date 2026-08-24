@@ -10,7 +10,10 @@ sys.path.insert(0, str(ROOT))
 from app.authoring.fivee_mcp import FiveEMcpClient
 
 
-SERVER = Path(r"C:\Users\user\Desktop\project\51_5E\5E_main\tools\mcp-5e\server.js")
+SERVER = (
+    Path.home() / "Desktop" / "project" / "51_5E" / "5E_main"
+    / "tools" / "mcp-5e" / "server.js"
+)
 
 
 def main() -> None:

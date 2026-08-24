@@ -28,7 +28,7 @@ import traceback
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-CORPUS_ROOT = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일")
+CORPUS_ROOT = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일"
 LATEST_FIVE = ("2027_06", "2026_11", "2026_09", "2026_06", "2025_11")
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))

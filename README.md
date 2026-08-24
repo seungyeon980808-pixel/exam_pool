@@ -2,6 +2,8 @@
 
 **근거 있는 시험 출제 도구.** 참인 명제를 근거와 함께 모아두고, 그것을 조합해 문항과 세트를 설계한 뒤 hwppalette 문법으로 내보낸다.
 
+Copyright © 2026 박승연 (SOMC) · [AGPL-3.0-only](LICENSE)
+
 ```
 5E (이미지)  →  ExamPool (내용)  →  hwppalette (편집)
 ```
@@ -22,7 +24,7 @@
 | **환경설정** | 출제 범위 설정 + 롤링 백업·복구 (하루 1회 자동, 최근 3시점 보관) |
 | **PDF/HWP 변환** | PDF 또는 클립보드 이미지를 문항 구조로 분석해 본문·발문·보기·선지·수식을 편집 가능한 HWP로 변환. 자료 그림은 원본 이미지로 유지 |
 
-**AI·인터넷 연결이 필요 없다.** 근거 확인은 전문 검색(SQLite FTS5), 오답은 왜곡 유형 프리셋, 선지는 조합 프리셋, 검토는 규칙 체크리스트로 해결한다. 시험 데이터가 외부로 나가지 않는다.
+**외부 AI API가 필요 없다.** 근거 확인은 전문 검색(SQLite FTS5), 오답은 왜곡 유형 프리셋, 선지는 조합 프리셋, 검토는 규칙 체크리스트로 해결한다. 시험 데이터가 외부로 나가지 않는다. 이미지 OCR 모델을 최초로 준비할 때만 인터넷 연결이 필요하다.
 
 ---
 
@@ -136,6 +138,13 @@ tools/               성취기준 추출 도구
 tests/               단위 테스트 (한글·PDF 없이 실행)
 data/                DB · 백업 (git 제외)
 ```
+
+## 라이선스
+
+ExamPool 자체 소스는 GNU Affero General Public License v3.0 only에 따라
+배포됩니다. 자세한 조건은 [LICENSE](LICENSE), 포함된 외부 구성 요소는
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), 한글 오토메이션 관련 안내는
+[HANCOM_AUTOMATION_NOTICE.md](HANCOM_AUTOMATION_NOTICE.md)를 확인하세요.
 
 ## 테스트
 

@@ -22,7 +22,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.13'
           architecture: x64
 
       - uses: astral-sh/setup-uv@v6
@@ -38,7 +38,7 @@ jobs:
           "INSTALLER_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Install Python dependencies
-        run: uv sync --extra installer
+        run: uv sync --extra installer --no-install-project
 
       - name: Install Inno Setup
         run: choco install innosetup --yes --no-progress
@@ -60,4 +60,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $installer = (Get-ChildItem -LiteralPath dist/installer -Filter '*.exe' -File).FullName
-          gh release create "${{ github.ref_name }}" $installer --generate-notes
+          $notesFile = "docs/releases/v$env:INSTALLER_VERSION.md"
+          if (Test-Path -LiteralPath $notesFile) {
+            gh release create "${{ github.ref_name }}" $installer --title "ExamPool HWP 변환기 v$env:INSTALLER_VERSION" --notes-file $notesFile
+          } else {
+            gh release create "${{ github.ref_name }}" $installer --title "ExamPool HWP 변환기 v$env:INSTALLER_VERSION" --generate-notes
+          }

@@ -9,6 +9,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $specPath = Join-Path $PSScriptRoot 'ExamPoolHwpConverter.spec'
 $issPath = Join-Path $PSScriptRoot 'ExamPoolHwpConverter.iss'
+$licenseCollector = Join-Path $PSScriptRoot 'collect_licenses.ps1'
 $distPath = Join-Path $projectRoot 'dist\ExamPool-HWP-Converter'
 $installerOutput = Join-Path $projectRoot 'dist\installer'
 $ocrRuntime = Join-Path $projectRoot 'data\pdf_hwp_ocr_runtime'
@@ -29,12 +30,18 @@ try {
         }
         New-Item -ItemType Directory -Force -Path $ocrRuntime | Out-Null
         & $uvCommand.Source pip install --python $PythonPath --target $ocrRuntime `
-            'paddleocr>=3.7,<3.8' 'paddlepaddle>=3.3,<3.4'
+            'paddleocr==3.7.0' 'paddlepaddle==3.3.1'
         if ($LASTEXITCODE -ne 0) {
             throw "OCR 런타임 준비에 실패했습니다. 종료 코드: $LASTEXITCODE"
         }
     }
     $env:EXAMPOOL_OCR_RUNTIME = $ocrRuntime
+
+    & $licenseCollector -PythonPath $PythonPath -OcrRuntime $ocrRuntime
+    if ($LASTEXITCODE -ne 0) {
+        throw "제3자 라이선스 수집에 실패했습니다. 종료 코드: $LASTEXITCODE"
+    }
+    $env:EXAMPOOL_LEGAL_DIR = Join-Path $projectRoot 'build\legal'
 
     & $PythonPath -m PyInstaller --noconfirm --clean $specPath
     if ($LASTEXITCODE -ne 0) {
@@ -44,9 +51,15 @@ try {
     $isccCommand = Get-Command 'ISCC.exe' -ErrorAction SilentlyContinue
     $isccPath = if ($isccCommand) { $isccCommand.Source } else { '' }
     if (-not $isccPath) {
-        $knownPath = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
-        if (Test-Path -LiteralPath $knownPath) {
-            $isccPath = $knownPath
+        $knownPaths = @(
+            (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe')
+        )
+        foreach ($knownPath in $knownPaths) {
+            if (Test-Path -LiteralPath $knownPath) {
+                $isccPath = $knownPath
+                break
+            }
         }
     }
     if (-not $isccPath) {

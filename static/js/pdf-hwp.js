@@ -498,7 +498,11 @@
     if (!job) {
       setTone(box, "idle");
       box.querySelector("strong").textContent = "파일을 선택해 주세요";
-      box.querySelector("p").textContent = "선택 후 변환 시작 버튼을 누르면 문항 분석과 HWP 조판을 진행합니다.";
+      const statusDescription = box.querySelector("p");
+      const typesetPhrase = document.createElement("span");
+      typesetPhrase.className = "ph-keep";
+      typesetPhrase.textContent = "HWP 조판";
+      statusDescription.replaceChildren("선택 후 변환 시작 버튼을 누르면 문항 분석과 ", typesetPhrase, "을 진행합니다.");
       detail.textContent = "";
       renderDocumentPreview(null);
       renderPrimaryOutput();

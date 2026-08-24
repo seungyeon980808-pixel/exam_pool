@@ -1,7 +1,7 @@
 # ExamPool 대화형 문항 제작 개편 — 다음 Codex 세션 인수인계
 
 작성일: 2026-08-06  
-대상 저장소: `C:\Users\user\Desktop\project\32_exam_pool`  
+대상 저장소: `C:\ExamPool`
 관찰된 현재 브랜치: `feature/exammaker`  
 새 작업 브랜치 제안: `feat/exampool-conversational-authoring`
 
@@ -214,4 +214,3 @@ OpenAI API와 API 키, 종량제는 사용하지 않습니다. 사용자 자신�
 3. `feat/exampool-exam-set-builder`
 4. `feat/exampool-hwp-export`
 5. `feat/exampool-desktop-packaging`
-

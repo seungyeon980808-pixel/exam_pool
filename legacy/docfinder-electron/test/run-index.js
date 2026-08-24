@@ -7,7 +7,7 @@ const { buildIndex } = require('../src/main/indexer');
 const { bm25Search } = require('../src/main/search');
 
 async function main() {
-  const folder = process.argv[2] || 'C:/Users/user/Desktop/학교업무/0. 메뉴얼';
+  const folder = process.argv[2] || 'C:/ExamPoolTestData/manuals';
   const query = process.argv[3] || '수행평가 부정행위';
 
   console.log('색인 폴더:', folder);

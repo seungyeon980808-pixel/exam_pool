@@ -12,7 +12,7 @@ from app.pdf_hwp_question_structure import reconcile_final_template
 from app.pdf_hwp_roundtrip_units import PreparationResult, prepare_units
 
 
-SOURCE_ROOT = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일")
+SOURCE_ROOT = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일"
 B2_2022 = SOURCE_ROOT / "b2_2022_06.pdf"
 B2_2024 = SOURCE_ROOT / "b2_2024_09.pdf"
 E2_2025 = SOURCE_ROOT / "e2_2025_09.pdf"

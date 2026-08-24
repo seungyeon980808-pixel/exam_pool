@@ -1,9 +1,7 @@
 {
   "repository": "HwpPalette",
-  "source": "C:\\Users\\user\\Desktop\\project\\31_hwp_palette",
   "commit": "5a1c97511b4672a111e91fa13c6d0938eb3db45a",
   "branch": "feat/post-0.3.0",
-  "dirty": true,
   "packs": {
     "csat_science": "0.1.0",
     "school_exam": "0.1.0"

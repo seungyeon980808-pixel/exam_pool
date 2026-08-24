@@ -7,7 +7,7 @@
   <link rel="icon" type="image/svg+xml" href="/assets/icon.svg" />
   <link rel="stylesheet" href="/static/css/neis.css?v=0.5.3-responsive-a11y" />
   <link rel="stylesheet" href="/static/css/authoring-apple.css?v=0.7.2-control-fix" />
-  <link rel="stylesheet" href="/static/css/pdf-hwp.css?v=0.2.1-output-list" />
+  <link rel="stylesheet" href="/static/css/pdf-hwp.css?v=0.2.2-release-legal" />
 </head>
 <body class="ph-standalone-body" data-clear-conversion-history-on-refresh="true">
   <header class="ph-product-bar">
@@ -36,7 +36,7 @@
           <div class="ph-step-label"><span aria-hidden="true">01</span> PDF 등록</div>
           <label class="ph-file-field ph-dropzone" for="pdfHwpFile" id="pdfHwpDropzone">
             <span class="ph-file-title">PDF·이미지를 놓으세요</span>
-            <span class="ph-file-help" id="pdfHwpFileHelp">파일을 선택하거나 클립보드 이미지를 Ctrl+V로 붙여넣으세요.</span>
+            <span class="ph-file-help" id="pdfHwpFileHelp">파일을 선택하거나 <span class="ph-keep">클립보드 이미지</span>를 Ctrl+V로 붙여넣으세요.</span>
             <input id="pdfHwpFile" name="file" type="file" accept="application/pdf,.pdf,image/png,image/jpeg,image/webp" aria-label="PDF, PNG, JPEG 또는 WebP 파일 선택" aria-describedby="pdfHwpFileHelp" multiple required />
             <span class="ph-file-action" aria-hidden="true">또는 파일 찾기</span>
             <span class="ph-file-name" id="pdfHwpFileName">선택된 파일 없음</span>
@@ -52,7 +52,7 @@
           </div>
           <div class="ph-status" id="pdfHwpStatus" role="status" aria-live="polite" aria-atomic="true" data-tone="idle">
             <span class="ph-status-mark" aria-hidden="true"></span>
-            <div><strong>파일을 선택해 주세요</strong><p>선택 후 변환 시작 버튼을 누르면 문항 분석과 HWP 조판을 진행합니다.</p></div>
+            <div><strong>파일을 선택해 주세요</strong><p>선택 후 변환 시작 버튼을 누르면 문항 분석과 <span class="ph-keep">HWP 조판</span>을 진행합니다.</p></div>
           </div>
           <div class="ph-progress-track" aria-hidden="true"><span id="pdfHwpProgressBar"></span></div>
           <div class="ph-progress-meta"><span id="pdfHwpPhase">대기 중</span><span id="pdfHwpElapsed">해당 파일 0초 / 총 진행 0초</span></div>
@@ -115,8 +115,13 @@
     </section>
   </main>
 
+  <footer class="ph-legal-footer">
+    <span>Copyright © 2026 박승연 (SOMC)</span>
+    <a href="https://github.com/seungyeon980808-pixel/exam_pool/tree/hwp-converter-v0.1.0" target="_blank" rel="noopener noreferrer">소스 코드·라이선스</a>
+  </footer>
+
   <script src="/static/js/pdf-hwp-shell.js?v=0.1.0"></script>
   <script src="/static/js/pdf-hwp-palette.js?v=0.1.0"></script>
-  <script src="/static/js/pdf-hwp.js?v=0.2.2-clipboard-paste"></script>
+  <script src="/static/js/pdf-hwp.js?v=0.2.3-release-legal"></script>
 </body>
 </html>

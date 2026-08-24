@@ -7,7 +7,7 @@ from app.pdf_hwp_equation_font import EquationFontContext
 from app.pdf_hwp_pipeline import LayoutStyle, build_editable_draft, detect_items
 
 
-SOURCE = Path(r"C:\Users\user\Desktop\teach\시험문제\전체파일\p1_2026_11.pdf")
+SOURCE = Path.home() / "Desktop" / "teach" / "시험문제" / "전체파일" / "p1_2026_11.pdf"
 
 
 def _word(x: float, y: float, text: str) -> _Word:
