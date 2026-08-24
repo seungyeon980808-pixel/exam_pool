@@ -1,0 +1,63 @@
+name: Windows installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Installer version
+        required: true
+        default: 0.1.0
+  push:
+    tags:
+      - hwp-converter-v*
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Resolve version
+        shell: pwsh
+        run: |
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+            $version = '${{ inputs.version }}'
+          } else {
+            $version = '${{ github.ref_name }}' -replace '^hwp-converter-v', ''
+          }
+          "INSTALLER_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Install Python dependencies
+        run: uv sync --extra installer
+
+      - name: Install Inno Setup
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build installer
+        shell: pwsh
+        run: .\packaging\windows\build_installer.ps1 -Version $env:INSTALLER_VERSION -PythonPath .\.venv\Scripts\python.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ExamPool-HWP-Converter-Setup-${{ env.INSTALLER_VERSION }}
+          path: dist/installer/*.exe
+          if-no-files-found: error
+
+      - name: Publish tagged release
+        if: startsWith(github.ref, 'refs/tags/hwp-converter-v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $installer = (Get-ChildItem -LiteralPath dist/installer -Filter '*.exe' -File).FullName
+          gh release create "${{ github.ref_name }}" $installer --generate-notes

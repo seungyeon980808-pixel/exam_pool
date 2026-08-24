@@ -1,0 +1,34 @@
+# ExamPool HWP 변환기 Windows 설치본
+
+이 패키지는 standalone PDF-to-HWP 웹앱, Python 런타임, 로컬 OCR 엔진을 하나의
+Windows 설치 파일로 묶는다. 한글 프로그램은 재배포하지 않으며 사용자 PC에 별도로
+설치되어 있어야 한다.
+
+## 로컬 빌드
+
+1. Python 3.12 x64, `uv`, Inno Setup 6을 준비한다.
+2. 프로젝트 루트에서 의존성을 설치한다.
+
+   ```powershell
+   uv sync --extra installer
+   ```
+
+3. 설치 파일을 만든다.
+
+   ```powershell
+   .\packaging\windows\build_installer.ps1 -Version 0.1.0
+   ```
+
+빌드 스크립트는 기존 `data/pdf_hwp_ocr_runtime`을 재사용하고, 없으면 격리된 빌드
+폴더에 OCR 런타임을 자동으로 준비한다. 완성 파일은
+`dist/installer/ExamPool-HWP-Converter-Setup-0.1.0.exe`에 생성된다.
+설치 프로그램은 관리자 권한 없이 `%LOCALAPPDATA%\Programs` 아래에 앱을 설치한다.
+
+## 배포 전 확인
+
+- Windows 10/11 x64에서 설치·실행·제거
+- 지원할 한글 버전별 HWP 생성
+- PDF 업로드, 이미지 업로드, Ctrl+V 이미지 붙여넣기
+- 최초 이미지 변환 시 OCR 모델 다운로드 안내
+- 한글이 설치되지 않은 PC의 오류 안내
+- 설치 파일 코드 서명과 Windows SmartScreen 결과

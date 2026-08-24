@@ -39,6 +39,8 @@ promo/sfx/
 promo/assets/audio/
 
 # ===== 임시 산출물 =====
+build/
+dist/
 output/
 tmp/
 exports/

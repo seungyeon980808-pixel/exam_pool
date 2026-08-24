@@ -47,7 +47,9 @@ class PaddleKoreanOcr:
         try:
             from paddleocr import PaddleOCR
         except ImportError as exc:
-            raise RasterOcrError("이미지 문항 OCR 구성 요소가 설치되어 있지 않습니다.") from exc
+            raise RasterOcrError(
+                f"이미지 문항 OCR 구성 요소를 불러오지 못했습니다: {exc}"
+            ) from exc
         result = next(iter(_paddle_pipeline(PaddleOCR).predict(str(image_path))))
         payload = result.json["res"]
         return tuple(

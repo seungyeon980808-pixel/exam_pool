@@ -17,6 +17,7 @@ from typing import Protocol
 
 from ..paths import BASE_DIR, data_dir
 from . import palette_registry
+from .hwppalette_process import hwp_runner_command as _hwp_runner_command
 
 
 class HwpPaletteError(RuntimeError):
@@ -348,9 +349,10 @@ class HwpPaletteProvider:
             raise HwpPaletteError("hwpPalette CLI를 찾지 못했습니다.")
         layout_style = "suneung" if layout_style == "suneung" else "school"
         if layout_style == "suneung":
-            runner = Path(__file__).with_name("hwppalette_runner.py")
-            args = [sys.executable, str(runner), "--markdown-file", str(markdown_path),
-                    "--layout-style", layout_style]
+            args = [
+                *_hwp_runner_command(), "--markdown-file", str(markdown_path),
+                "--layout-style", layout_style,
+            ]
         else:
             args = [sys.executable, "-m", "hwp_palette.cli", "--markdown-file", str(markdown_path)]
             if exam_page:
@@ -559,11 +561,10 @@ class HwpPaletteProvider:
             pdf_path = folder / "preview.pdf"
             markdown_path.write_text(markdown, encoding="utf-8")
 
-            runner = Path(__file__).with_name("hwppalette_runner.py")
             hwp_pid_path = folder / "hwp.pid"
             hwp_pid_path.unlink(missing_ok=True)
             args = [
-                sys.executable, str(runner), "--markdown-file", str(markdown_path),
+                *_hwp_runner_command(), "--markdown-file", str(markdown_path),
                 "--layout-style", layout_style, "--output-hwp", str(hwp_path),
                 "--output-pdf", str(pdf_path), "--hwp-pid-file", str(hwp_pid_path),
                 "--hidden",

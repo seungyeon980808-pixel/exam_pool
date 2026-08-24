@@ -1,12 +1,16 @@
 import io
 import json
+import os
+import sys
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from app.pdf_hwp_webapp import app
-from app.integrations import palette_registry
+from app.integrations import hwppalette, palette_registry
+import run_pdf_hwp_webapp
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -58,8 +62,57 @@ def test_standalone_has_a_double_click_windows_launcher() -> None:
     entrypoint = (ROOT / "run_pdf_hwp_webapp.py").read_text(encoding="utf-8")
 
     assert launcher.is_file()
-    assert "app.pdf_hwp_webapp:app" in entrypoint
+    assert "from app.pdf_hwp_webapp import app" in entrypoint
     assert "127.0.0.1" in entrypoint
+
+
+def test_frozen_standalone_reuses_the_executable_for_hwp_work() -> None:
+    with (
+        patch.object(sys, "frozen", True, create=True),
+        patch.object(sys, "executable", r"C:\Program Files\ExamPool\ExamPool HWP Converter.exe"),
+    ):
+        command = hwppalette._hwp_runner_command()
+
+    assert command == [
+        r"C:\Program Files\ExamPool\ExamPool HWP Converter.exe",
+        "--hwp-worker",
+    ]
+
+
+def test_source_standalone_uses_the_python_hwp_worker() -> None:
+    with patch.object(sys, "frozen", False, create=True):
+        command = hwppalette._hwp_runner_command()
+
+    assert command[0] == sys.executable
+    assert Path(command[1]).name == "hwppalette_runner.py"
+
+
+def test_standalone_dispatches_hwp_worker_arguments() -> None:
+    with patch("app.integrations.hwppalette_runner.main", return_value=7) as worker:
+        exit_code = run_pdf_hwp_webapp.main([
+            "--hwp-worker", "--markdown-file", "question.md", "--hidden",
+        ])
+
+    assert exit_code == 7
+    worker.assert_called_once_with(["--markdown-file", "question.md", "--hidden"])
+
+
+def test_frozen_standalone_loads_the_bundled_ocr_runtime(tmp_path) -> None:
+    executable = tmp_path / "ExamPoolHwpConverter.exe"
+    runtime = tmp_path / "ocr_runtime"
+    runtime.mkdir()
+    paddle_libraries = runtime / "paddle" / "libs"
+    paddle_libraries.mkdir(parents=True)
+    with (
+        patch.object(sys, "frozen", True, create=True),
+        patch.object(sys, "executable", str(executable)),
+        patch.object(sys, "path", ["bundled-python"]),
+        patch.dict(os.environ, {"PATH": "windows-path"}),
+    ):
+        run_pdf_hwp_webapp._configure_ocr_runtime()
+
+        assert sys.path[0] == str(runtime)
+        assert os.environ["PATH"].startswith(f"{paddle_libraries}{os.pathsep}")
 
 
 def test_standalone_can_download_and_replace_the_active_full_palette(tmp_path, monkeypatch) -> None:
