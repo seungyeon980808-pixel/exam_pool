@@ -144,9 +144,12 @@ def _fifth_choice_ratio_mask(markdown: str) -> tuple[bool, ...]:
 
 def _ensure_file_path_checker_registry() -> bool:
     """Verify startup registration, with a best-effort repair for direct runs."""
-    # The runner's working directory is the bundled HwpPalette runtime, while
-    # Python always places this script's own directory on sys.path.
-    from hwp_security import ensure_registration, registration_valid
+    if __package__:
+        from .hwp_security import ensure_registration, registration_valid
+    else:
+        # Source-mode workers execute this file directly, so its directory is
+        # the import root instead of ``app.integrations``.
+        from hwp_security import ensure_registration, registration_valid
 
     if registration_valid():
         return True

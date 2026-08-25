@@ -5,6 +5,19 @@ import olefile
 import pytest
 
 
+def test_runner_loads_security_registration_from_its_package(monkeypatch):
+    # Given: the frozen worker imports modules from the ExamPool package.
+    from app.integrations import hwp_security, hwppalette_runner
+
+    monkeypatch.setattr(hwp_security, "registration_valid", lambda: True)
+
+    # When: the worker checks HWP automation registration.
+    registered = hwppalette_runner._ensure_file_path_checker_registry()
+
+    # Then: it resolves the packaged security module without a top-level alias.
+    assert registered is True
+
+
 def test_runner_prefers_exam_pool_runtime_when_sibling_runtime_is_on_pythonpath(monkeypatch):
     # Given: development mode exposed a sibling HwpPalette before ExamPool's runtime.
     sibling = Path("C:/workspace/31_hwp_palette")

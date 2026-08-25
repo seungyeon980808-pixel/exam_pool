@@ -20,6 +20,10 @@ KEY_PATHS = (
 
 
 def checker_dll() -> Path | None:
+    if getattr(sys, "frozen", False):
+        bundled = Path(sys.executable).resolve().parent / "pyhwpx" / "FilePathCheckerModule.dll"
+        if bundled.is_file():
+            return bundled
     spec = importlib.util.find_spec("pyhwpx")
     if spec is None or spec.origin is None:
         return None

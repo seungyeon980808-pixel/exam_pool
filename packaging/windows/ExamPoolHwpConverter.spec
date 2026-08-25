@@ -6,6 +6,8 @@ from pathlib import Path
 import os
 import sys
 
+from PyInstaller.utils.hooks import collect_all, collect_dynamic_libs, copy_metadata
+
 ROOT = Path(SPECPATH).parents[1]
 VENDOR_ROOT = ROOT / "vendor" / "hwp_typesetter"
 OCR_RUNTIME = Path(
@@ -14,43 +16,41 @@ OCR_RUNTIME = Path(
 LEGAL_DIR = Path(os.environ.get("EXAMPOOL_LEGAL_DIR", ROOT / "build" / "legal")).resolve()
 BUILD_NAME = os.environ.get("EXAMPOOL_BUILD_NAME", "ExamPool-HWP-Converter")
 BUNDLE_OCR = os.environ.get("EXAMPOOL_BUNDLE_OCR", "1") != "0"
-
-
-def collect_runtime_datas(root):
-    excluded_directories = {"tests", "test", "__pycache__", "include"}
-    excluded_suffixes = {".pyc", ".pyo", ".lib"}
-    collected = []
-    for path in root.rglob("*"):
-        relative = path.relative_to(root)
-        if any(part in excluded_directories for part in relative.parts):
-            continue
-        if not path.is_file() or path.suffix.lower() in excluded_suffixes:
-            continue
-        collected.append((str(path), str(Path("ocr_runtime") / relative.parent)))
-    return collected
+WINDOWED = os.environ.get("EXAMPOOL_WINDOWED", "1") != "0"
+OCR_PACKAGES = ("paddleocr", "paddlex")
+OCR_METADATA = (
+    "imagesize",
+    "opencv-contrib-python",
+    "pyclipper",
+    "pypdfium2",
+    "python-bidi",
+    "shapely",
+)
 
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(VENDOR_ROOT))
+sys.path.insert(0, str(OCR_RUNTIME))
 if not OCR_RUNTIME.is_dir():
     raise SystemExit(f"OCR runtime directory is missing: {OCR_RUNTIME}")
 
 datas = [
     (str(ROOT / "static"), "static"),
     (str(ROOT / "assets" / "icon.svg"), "assets"),
+    (str(ROOT / "assets" / "hwp_templates"), "assets/hwp_templates"),
     (str(ROOT / "app" / "seed"), "app/seed"),
     (str(ROOT / "app" / "pdf_hwp_type_catalog.json"), "app"),
     (str(VENDOR_ROOT), "vendor/hwp_typesetter"),
     (str(ROOT / "LICENSE"), "."),
     (str(ROOT / "THIRD_PARTY_NOTICES.md"), "."),
     (str(ROOT / "HANCOM_AUTOMATION_NOTICE.md"), "."),
+    (str(ROOT / "packaging" / "windows" / "paddle-libs.marker"), "paddle/libs"),
+    (str(OCR_RUNTIME / "paddle" / "libs" / "mklml.dll"), "paddle/libs"),
 ]
 if LEGAL_DIR.is_dir():
     datas.append((str(LEGAL_DIR), "licenses/third-party"))
-if BUNDLE_OCR:
-    datas += collect_runtime_datas(OCR_RUNTIME)
-binaries = []
+binaries = collect_dynamic_libs("pyhwpx", destdir="pyhwpx")
 hiddenimports = [
-    "hwp_security",
+    "app.integrations.hwp_security",
     "pythoncom",
     "pywintypes",
     "setuptools.command.build_ext",
@@ -59,10 +59,22 @@ hiddenimports = [
     "symtable",
     "wave",
 ]
+if BUNDLE_OCR:
+    for distribution_name in OCR_METADATA:
+        datas += copy_metadata(distribution_name)
+    for package_name in OCR_PACKAGES:
+        package_datas, package_binaries, package_imports = collect_all(
+            package_name,
+            include_py_files=False,
+            exclude_datas=["**/tests/**", "**/test/**", "**/include/**"],
+        )
+        datas += package_datas
+        binaries += package_binaries
+        hiddenimports += package_imports
 
 analysis = Analysis(
     [str(ROOT / "run_pdf_hwp_webapp.py")],
-    pathex=[str(ROOT), str(VENDOR_ROOT)],
+    pathex=[str(ROOT), str(VENDOR_ROOT), str(OCR_RUNTIME)],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
@@ -77,6 +89,8 @@ analysis = Analysis(
         "tensorflow",
         "torch",
         "transformers",
+        "tkinter",
+        "tzdata",
     ],
     noarchive=False,
     optimize=0,
@@ -93,7 +107,7 @@ executable = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=True,
+    console=not WINDOWED,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

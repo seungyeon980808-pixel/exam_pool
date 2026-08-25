@@ -171,6 +171,16 @@
 .ph-file-help { font-size: var(--ph-type-sm); }
 .ph-file-field input { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; }
 .ph-file-action { justify-self: start; border: 1px solid var(--ui-border-strong); border-radius: var(--radius-sm); background: var(--ui-surface); padding: var(--density-gap) var(--ph-space-md); color: var(--ui-text); white-space: nowrap; }
+.ph-page .nz-tb:disabled,
+.ph-page .nz-tb:disabled:hover,
+.ph-page .nz-tb:disabled:active {
+  border-color: var(--ui-border);
+  background: var(--ui-overlay);
+  color: var(--ui-muted);
+  cursor: not-allowed;
+  opacity: .58;
+  transform: none;
+}
 .ph-file-name { min-inline-size: 0; color: var(--ui-accent); font-weight: 600; overflow-wrap: anywhere; }
 
 .ph-field { display: grid; gap: var(--ph-space-xs); margin-block-end: var(--ph-space-md); color: var(--ui-muted); font-size: var(--ph-type-sm); font-weight: 600; }
