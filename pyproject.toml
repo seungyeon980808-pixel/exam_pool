@@ -29,6 +29,7 @@ pdf-hwp = [
 ]
 installer = [
     "pyinstaller>=6.20,<7",
+    "pywebview==6.2.1",
 ]
 dev = [
     "pytest>=8.0",

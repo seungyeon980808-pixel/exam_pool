@@ -134,6 +134,8 @@ def test_pdf_hwp_styles_define_responsive_and_accessible_states() -> None:
     assert ":focus-visible" in styles
     assert "word-break: keep-all" in styles
     assert ".ph-file-field input { position: absolute;" in styles
+    assert ".ph-page .nz-tb:disabled" in styles
+    assert "cursor: not-allowed" in styles
     assert "--ph-space-md" in styles
     assert ".ph-keep { white-space: nowrap; }" in styles
     assert "justify-self: end; inline-size: max-content" in styles

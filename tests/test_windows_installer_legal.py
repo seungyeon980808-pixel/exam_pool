@@ -31,8 +31,9 @@ def test_installer_bundles_legal_files_and_shows_the_project_license() -> None:
 
     assert 'ROOT / "LICENSE"' in spec
     assert 'ROOT / "THIRD_PARTY_NOTICES.md"' in spec
-    assert 'excluded_directories = {"tests", "test", "__pycache__", "include"}' in spec
-    assert 'excluded_suffixes = {".pyc", ".pyo", ".lib"}' in spec
+    assert "include_py_files=False" in spec
+    assert '"**/tests/**"' in spec
+    assert '"**/include/**"' in spec
     assert "LicenseFile=" in installer
     assert "collect_licenses.ps1" in builder
     assert "LOCALAPPDATA" in builder
@@ -59,3 +60,27 @@ def test_installer_workflow_syncs_dependencies_without_packaging_the_flat_reposi
     workflow = (ROOT / ".github/workflows/windows-installer.yml").read_text(encoding="utf-8")
 
     assert "uv sync --extra installer --no-install-project" in workflow
+
+
+def test_installer_builds_a_windowed_webview_application() -> None:
+    with (ROOT / "pyproject.toml").open("rb") as project_file:
+        project = tomllib.load(project_file)
+    spec = (ROOT / "packaging/windows/ExamPoolHwpConverter.spec").read_text(encoding="utf-8")
+
+    assert "pywebview==6.2.1" in project["project"]["optional-dependencies"]["installer"]
+    assert 'WINDOWED = os.environ.get("EXAMPOOL_WINDOWED", "1") != "0"' in spec
+    assert "console=not WINDOWED" in spec
+
+
+def test_installer_freezes_ocr_modules_instead_of_copying_the_target_folder() -> None:
+    spec = (ROOT / "packaging/windows/ExamPoolHwpConverter.spec").read_text(encoding="utf-8")
+
+    assert "collect_runtime_datas" not in spec
+    assert "collect_all" in spec
+    assert 'OCR_PACKAGES = ("paddleocr", "paddlex")' in spec
+    assert '"opencv-contrib-python"' in spec
+    assert '"pypdfium2"' in spec
+    assert '"paddle-libs.marker"' in spec
+    assert '"mklml.dll"' in spec
+    assert '"tkinter"' in spec
+    assert '"tzdata"' in spec

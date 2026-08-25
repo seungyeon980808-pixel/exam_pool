@@ -1,17 +1,12 @@
-"""Open the standalone PDF to HWP web app in the default browser."""
+"""Open the standalone PDF to HWP desktop application."""
 from __future__ import annotations
 
-import threading
 import os
 import sys
-import webbrowser
 from collections.abc import Sequence
 from pathlib import Path
 
-import uvicorn
-
-
-URL = "http://127.0.0.1:8633"
+from app.desktop_shell import run_desktop_app
 
 
 def _configure_ocr_runtime() -> None:
@@ -42,9 +37,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return worker_main(args[1:])
     from app.pdf_hwp_webapp import app
 
-    threading.Timer(1.0, webbrowser.open, args=(URL,)).start()
-    uvicorn.run(app, host="127.0.0.1", port=8633)
-    return 0
+    return run_desktop_app(app)
 
 
 if __name__ == "__main__":

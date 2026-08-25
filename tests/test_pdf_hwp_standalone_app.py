@@ -4,11 +4,13 @@ import os
 import sys
 import zipfile
 from pathlib import Path
+from urllib.request import urlopen
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from app.pdf_hwp_webapp import app
+from app.desktop_shell import LoopbackServer
 from app.integrations import hwppalette, palette_registry
 import run_pdf_hwp_webapp
 
@@ -60,10 +62,36 @@ def test_standalone_app_exposes_pdf_hwp_api_and_not_the_exam_pool_banks() -> Non
 def test_standalone_has_a_double_click_windows_launcher() -> None:
     launcher = ROOT / "PDF-HWP 웹앱 실행.bat"
     entrypoint = (ROOT / "run_pdf_hwp_webapp.py").read_text(encoding="utf-8")
+    desktop_shell = (ROOT / "app/desktop_shell.py").read_text(encoding="utf-8")
 
     assert launcher.is_file()
     assert "from app.pdf_hwp_webapp import app" in entrypoint
-    assert "127.0.0.1" in entrypoint
+    assert "run_desktop_app(app)" in entrypoint
+    assert 'HOST = "127.0.0.1"' in desktop_shell
+
+
+def test_windows_bundle_includes_editable_hwp_templates() -> None:
+    # Given: editable CSAT typesetting depends on the repository's HWP template set.
+    spec = (ROOT / "packaging/windows/ExamPoolHwpConverter.spec").read_text(encoding="utf-8")
+
+    # When: the PyInstaller data manifest is inspected.
+    packaged_template_directory = (
+        'str(ROOT / "assets" / "hwp_templates"), "assets/hwp_templates"'
+    )
+
+    # Then: the complete template directory is copied into the frozen application.
+    assert packaged_template_directory in spec
+
+
+def test_windows_bundle_includes_hwp_path_checker() -> None:
+    # Given: a standalone install cannot depend on the development virtual environment.
+    spec = (ROOT / "packaging/windows/ExamPoolHwpConverter.spec").read_text(encoding="utf-8")
+
+    # When: the PyInstaller binary manifest is inspected.
+    packaged_checker = 'collect_dynamic_libs("pyhwpx", destdir="pyhwpx")'
+
+    # Then: Hancom's automation path checker is shipped beside the frozen pyhwpx package.
+    assert packaged_checker in spec
 
 
 def test_frozen_standalone_reuses_the_executable_for_hwp_work() -> None:
@@ -95,6 +123,32 @@ def test_standalone_dispatches_hwp_worker_arguments() -> None:
 
     assert exit_code == 7
     worker.assert_called_once_with(["--markdown-file", "question.md", "--hidden"])
+
+
+def test_standalone_opens_the_native_desktop_shell() -> None:
+    # Given: the desktop shell boundary is isolated from its Windows renderer.
+    with patch.object(run_pdf_hwp_webapp, "run_desktop_app", return_value=0) as desktop:
+        # When: a user launches the normal application entry point.
+        exit_code = run_pdf_hwp_webapp.main([])
+
+    # Then: only the native shell owns the visible application lifecycle.
+    assert exit_code == 0
+    desktop.assert_called_once()
+
+
+def test_desktop_shell_owns_the_loopback_server_lifecycle() -> None:
+    # Given: the real standalone FastAPI service is assigned an ephemeral port.
+    server = LoopbackServer(app)
+
+    # When: the desktop window lifecycle owns the service context.
+    with server:
+        response = urlopen(f"{server.url}/health", timeout=2)
+
+        # Then: the service is reachable only while the desktop context is active.
+        assert response.status == 200
+        assert server.is_running
+
+    assert not server.is_running
 
 
 def test_frozen_standalone_loads_the_bundled_ocr_runtime(tmp_path) -> None:
