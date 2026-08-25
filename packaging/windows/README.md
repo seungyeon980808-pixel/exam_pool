@@ -17,12 +17,12 @@
 3. 설치 파일을 만든다.
 
    ```powershell
-   .\packaging\windows\build_installer.ps1 -Version 0.1.0
+   .\packaging\windows\build_installer.ps1 -Version 0.1.1
    ```
 
 빌드 스크립트는 기존 `data/pdf_hwp_ocr_runtime`을 재사용하고, 없으면 격리된 빌드
 폴더에 OCR 런타임을 자동으로 준비한다. 완성 파일은
-`dist/installer/ExamPool-HWP-Converter-Setup-0.1.0.exe`에 생성된다.
+`dist/installer/ExamPool-HWP-Converter-Setup-0.1.1.exe`에 생성된다.
 설치 프로그램은 관리자 권한 없이 `%LOCALAPPDATA%\Programs` 아래에 앱을 설치한다.
 OCR 패키지는 필요한 모듈·메타데이터·수치 연산 DLL만 동결하며 개발용 패키지 폴더를
 그대로 복사하지 않는다. 이 방식은 설치 파일 수와 설치 시간을 크게 줄인다.

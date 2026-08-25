@@ -43,10 +43,23 @@ def test_standalone_ui_links_to_the_versioned_public_source() -> None:
     page = (ROOT / "static/pdf-hwp.html").read_text(encoding="utf-8")
     script = (ROOT / "static/js/pdf-hwp.js").read_text(encoding="utf-8")
 
-    assert "github.com/seungyeon980808-pixel/exam_pool/tree/hwp-converter-v0.1.0" in page
+    assert "github.com/seungyeon980808-pixel/exam_pool/tree/hwp-converter-v0.1.1" in page
     assert 'rel="noopener noreferrer"' in page
     assert 'typesetPhrase.className = "ph-keep"' in script
     assert 'statusDescription.replaceChildren(' in script
+
+
+def test_release_metadata_uses_current_hwp_converter_version() -> None:
+    with (ROOT / "pyproject.toml").open("rb") as project_file:
+        project = tomllib.load(project_file)
+    installer = (ROOT / "packaging/windows/ExamPoolHwpConverter.iss").read_text(encoding="utf-8")
+    builder = (ROOT / "packaging/windows/build_installer.ps1").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github/workflows/windows-installer.yml").read_text(encoding="utf-8")
+
+    assert project["project"]["version"] == "0.1.1"
+    assert '#define MyAppVersion "0.1.1"' in installer
+    assert "[string]$Version = '0.1.1'" in builder
+    assert "default: 0.1.1" in workflow
 
 
 def test_vendored_typesetter_metadata_does_not_publish_local_machine_state() -> None:
