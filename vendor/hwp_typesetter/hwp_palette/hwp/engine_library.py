@@ -2459,6 +2459,67 @@ def _balanced_group(source, start):
 def _formula_to_hwp(source):
     import re
     value = str(source or "").strip()
+
+    # The reconstruction input is LaTeX-like while Hancom's equation editor
+    # uses its own linear grammar.  Simple commands happen to overlap, but
+    # environments and delimiter/style commands otherwise appear as literal
+    # control text in the finished document.  Normalize those constructs before
+    # the existing fraction/radical conversion.
+    def environment(match):
+        name = match.group(1)
+        body = match.group(2)
+        body = body.replace(r"\\", " # ")
+        keyword = "cases" if name == "cases" else "matrix"
+        return keyword + " {" + _formula_to_hwp(body) + "}"
+
+    value = re.sub(
+        r"\\begin\{(cases|aligned|array)\}(?:\{[^{}]*\})?(.*?)\\end\{\1\}",
+        environment,
+        value,
+        flags=re.S,
+    )
+
+    def grouped_command(command, replacement):
+        nonlocal value
+        for _ in range(24):
+            match = re.search(r"\\?" + re.escape(command) + r"\s*\{", value)
+            if not match:
+                break
+            group = _balanced_group(value, match.end() - 1)
+            if not group:
+                break
+            rendered = _formula_to_hwp(group[0])
+            value = value[:match.start()] + " " + replacement + " {" + rendered + "} " + value[group[1]:]
+
+    grouped_command("overrightarrow", "vec")
+    grouped_command("overline", "bar")
+    grouped_command("boxed", "box")
+    grouped_command("text", "rm")
+    grouped_command("operatorname", "rm")
+    grouped_command("mathrm", "rm")
+    grouped_command("mathtt", "rm")
+    grouped_command("mathcal", "")
+
+    value = re.sub(r"\\(?:left|right|bigl|bigr|Bigl|Bigr)\b", "", value)
+    value = re.sub(r"\\mathcal\s*([A-Za-z])", r" {\1} ", value)
+    symbols = {
+        "leq": "≤", "le": "≤", "geq": "≥", "ge": "≥",
+        "neq": "≠", "ne": "≠", "to": "→", "times": "×",
+        "cdot": "·", "angle": "∠", "mid": "|", "perp": "⟂",
+        "subset": "⊂", "cup": "∪", "cap": "∩", "emptyset": "∅",
+        "infty": "∞", "pi": "π", "theta": "θ", "alpha": "α",
+        "beta": "β", "gamma": "γ", "sigma": "σ", "ell": "ℓ",
+        "diamond": "◇", "div": "÷", "circ": "∘", "ldots": "…",
+    }
+    value = re.sub(
+        r"\\(" + "|".join(map(re.escape, symbols)) + r")(?![A-Za-z])",
+        lambda match: " " + symbols[match.group(1)] + " ",
+        value,
+    )
+    value = re.sub(r"\\quad\b", "  ", value)
+    value = re.sub(r"\\(?=\s)", "", value)
+    value = value.replace(r"\{", "lbrace ").replace(r"\}", " rbrace")
+    value = value.replace(r"\,", " ").replace(r"\;", " ").replace(r"\!", "")
     for _ in range(12):
         match = re.search(r"\\?frac\s*\{", value)
         if not match:
