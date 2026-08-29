@@ -54,6 +54,28 @@ run.bat
 이미지 OCR 런타임은 처음 실행할 때만 `data/pdf_hwp_ocr_runtime/`에 설치된다.
 이 디렉터리와 OCR 모델·사용자 PDF·변환 결과는 Git에 포함되지 않는다.
 
+### 원문배치 편집형 변환의 엄격 검수
+
+수학 PDF를 부교재로 편집할 때는 페이지·본문 캡처를 사용하지 않고 문항별 텍스트,
+한글 수식, 보기/표, 문항 좌표와 그림 manifest를 함께 관리한다. `app/pdf_hwp_strict_qa.py`
+는 HWPX `BinData` 전체를 감사하고, 300 dpi로 원본과 결과 PDF를 전 페이지 렌더링해
+overlay/diff를 만든다. 문항·그림 누락/중복, 숫자·수식 토큰 변경, 2% 초과 좌표 이동,
+3% 초과 시각 차이, 페이지/본문 캡처 이미지, 재개방 또는 네이티브 편집성 증거가 없으면
+자동 FAIL한다. 페이지 수와 파일 열림만으로는 PASS할 수 없다.
+
+실행 예시는 다음과 같다(원본·결과·manifest는 로컬에만 둔다).
+
+```powershell
+python tools/pdf_hwp_strict_qa.py --source source.pdf --generated roundtrip.pdf `
+  --hwpx result.hwpx --expected source-manifest.json --actual result-manifest.json `
+  --figures figure-manifest.json --out qa
+```
+
+전체 작업 절차, HWPX 이미지 감사, 실패 시 중단 조건, 종로 오류 회귀 기준은
+[PDF_HWP_STRICT_WORK_INSTRUCTIONS.md](docs/PDF_HWP_STRICT_WORK_INSTRUCTIONS.md)에 기록했다.
+실제 시험 PDF/HWP/HWPX와 생성 결과물은 저장소에 커밋하지 않으며, 회귀 테스트는
+저작권 없는 합성 fixture만 사용한다.
+
 개발 환경에서 OCR까지 한 번에 설치하려면 다음 명령을 사용한다.
 
 ```bash
