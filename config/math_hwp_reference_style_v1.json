@@ -1,0 +1,120 @@
+{
+  "schema_version": "math-hwp-reference-style-v1",
+  "profile_id": "수능완성_수학_문제해설_미주_기본서식_v1",
+  "status": "VERIFIED",
+  "measured": true,
+  "reference_measurement_status": "verified",
+  "reference_source": "sha256:ee4583309a4f660641d33d1102e265205c1ff7f8441708390a9ebd50e7e93b45+sha256:2d216e49fc498903830dd7fb11f504158378a2b1eb31537fc4395d50349e4482",
+  "reference_roles": {
+    "problem_page_and_body": "2027 수능완성 한글작업-작업전.hwp",
+    "native_endnote_body": "2027 수능완성(수학1) 한글작업-완성본.hwp",
+    "source_files_are_not_redistributed": true
+  },
+  "units": {"geometry": "mm", "typography": "pt", "native_page_geometry": "HWPUNIT"},
+  "tolerances": {"geometry_mm": 0.5, "typography_pt": 0.0},
+  "density": {"min": 0.02, "median_min": 0.08, "median_max": 0.85, "max": 1.0},
+  "overlap_threshold": 0.0,
+  "large_gap_mm": 18.0,
+  "styles": {
+    "page": {
+      "paper": "B4_257x364mm",
+      "width_mm": 257.0,
+      "height_mm": 364.0,
+      "width_hwpunits": 72852,
+      "height_hwpunits": 103180,
+      "orientation": "portrait",
+      "margin_left_mm": 20.0,
+      "margin_right_mm": 20.0,
+      "margin_top_mm": 20.0,
+      "margin_bottom_mm": 15.0,
+      "margin_left_hwpunits": 5669,
+      "margin_right_hwpunits": 5669,
+      "margin_top_hwpunits": 5668,
+      "margin_bottom_hwpunits": 4252,
+      "header_distance_mm": 15.0,
+      "footer_distance_mm": 15.0,
+      "header_hwpunits": 4252,
+      "footer_hwpunits": 4252,
+      "gutter_mm": 0.0,
+      "page_border_offset_mm": 5.0
+    },
+    "column": {
+      "count": 2,
+      "layout": "left_first",
+      "equal_width": true,
+      "gutter_mm": 8.0,
+      "gutter_hwpunits": 2268,
+      "rule": false,
+      "rule_width_mm": 0.0,
+      "usable_column_width_mm": 104.5,
+      "verified_variants": {
+        "reference_default_two_column": {"count": 2, "gutter_mm": 8.0, "gutter_hwpunits": 2268},
+        "reference_long_formula_single_column": {"count": 1, "gutter_mm": 0.0, "gutter_hwpunits": 0}
+      },
+      "variant_selection_rule": "Use the measured two-column default. If an unchanged native equation is wider than the 104.5 mm safe column width and cannot reflow without changing its script, use the measured one-column reference variant for that section; never shrink text, change the equation script, or permit clipping."
+    },
+    "char": {
+      "body": {"font_family": "함초롬돋움", "font_family_all_scripts": true, "size_pt": 11.0, "width_percent": 100, "letter_spacing_percent": 0, "baseline_offset_percent": 0, "bold": false, "italic": false, "underline": false, "text_color": "#000000"},
+      "heading": {"font_family": "함초롬돋움", "size_pt": 13.0, "width_percent": 100, "letter_spacing_percent": 0, "bold": true, "text_color": "#000000"},
+      "problem_number": {"font_family": "함초롬돋움", "size_pt": 11.0, "bold": true},
+      "choice": {"font_family": "함초롬돋움", "size_pt": 11.0, "bold": false},
+      "solution_heading": {"font_family": "함초롬돋움", "size_pt": 11.0, "bold": true},
+      "solution_body": {"font_family": "함초롬돋움", "size_pt": 11.0, "bold": false},
+      "endnote_body": {"font_family": "함초롬돋움", "size_pt": 11.0, "bold": false},
+      "equation": {"font_family": "HYhwpEQ", "size_pt": 11.0, "base_unit": 1100, "treat_as_char": "1", "flow_with_text": "1", "allow_overlap": "0", "script_must_remain_unchanged": true}
+    },
+    "para": {
+      "body": {"alignment": "justify", "line_spacing_percent": 160.0, "space_before_pt": 0.0, "space_after_pt": 2.0, "first_line_indent_mm": 0.0, "widow_orphan": true},
+      "problem_heading": {"alignment": "left", "line_spacing_percent": 160.0, "space_before_pt": 12.0, "space_after_pt": 3.0, "keep_with_next": true, "keep_lines": true},
+      "solution_heading": {"alignment": "left", "line_spacing_percent": 160.0, "space_before_pt": 0.0, "space_after_pt": 2.0, "keep_with_next": true, "keep_lines": true},
+      "equation": {"alignment": "center", "line_spacing_percent": 160.0, "space_before_pt": 3.0, "space_after_pt": 7.0, "keep_lines": true},
+      "spacing_implementation": "native_paragraph_margins_only",
+      "blank_line_spacing_forbidden": true
+    },
+    "table": {
+      "border_type": "solid", "border_width_mm": 0.12, "border_width_pt": 0.34, "border_color": "#000000",
+      "cell_padding_left_right_mm": 1.8, "cell_padding_top_bottom_mm": 0.5, "table_outer_margin_mm": 1.0,
+      "column_table_width_mm": 102.5, "vertical_alignment": "center", "header_bold": true, "keep_with_owner_item": true
+    },
+    "figure": {"anchor": "as_character", "wrap": "top_and_bottom", "flow_with_text": true, "allow_overlap": false, "keep_with_owner_item": true, "outer_margin_mm": 1.0, "caption": "none_unless_source_has_caption"},
+    "endnote": {
+      "native_control_required": true, "number_format": "arabic", "suffix": ")", "restart": "continuous",
+      "separator": "solid_0.12mm_black", "separator_above_mm": 3.0, "separator_below_mm": 2.0,
+      "placement": "end_of_document", "keep_with_anchor": true, "body_font_family": "함초롬돋움",
+      "body_size_pt": 11.0, "body_line_spacing_percent": 160.0
+    }
+  },
+  "semantic_roles": {
+    "PageStyle": "styles.page",
+    "ColumnStyle": "styles.column",
+    "HeaderFooterStyle": "styles.page.header_distance_mm+styles.page.footer_distance_mm",
+    "TitleStyle": "styles.char.heading",
+    "ProblemNumberStyle": "styles.char.problem_number+styles.para.problem_heading",
+    "ProblemBodyStyle": "styles.char.body+styles.para.body",
+    "ChoiceStyle": "styles.char.choice+styles.para.body",
+    "ConditionBoxStyle": "styles.table",
+    "EquationInlineStyle": "styles.char.equation",
+    "EquationDisplayStyle": "styles.char.equation+styles.para.equation",
+    "FigureStyle": "styles.figure",
+    "TableStyle": "styles.table",
+    "SolutionHeadingStyle": "styles.char.solution_heading+styles.para.solution_heading",
+    "SolutionBodyStyle": "styles.char.solution_body+styles.para.body",
+    "ScoringGuideStyle": "styles.char.solution_body+styles.table",
+    "AnswerStyle": "styles.char.solution_heading+styles.para.solution_heading",
+    "EndnoteBodyStyle": "styles.char.endnote_body+styles.para.body+styles.endnote",
+    "ProblemSpacingRule": "styles.para.problem_heading",
+    "SolutionSpacingRule": "styles.para.body+styles.para.equation",
+    "PageBreakRule": "keep problem heading with next and keep owned objects with item",
+    "KeepTogetherRule": "styles.figure.keep_with_owner_item+styles.table.keep_with_owner_item"
+  },
+  "qa_requirements": {
+    "content_hashes_unchanged": true,
+    "equation_scripts_unchanged": true,
+    "native_endnotes_unchanged": true,
+    "equation_offset_guards_exactly_preserved": true,
+    "new_blank_paragraphs": 0,
+    "new_zero_width_spacing": 0,
+    "overlap_or_clipping": 0,
+    "reopen_hwp_and_hwpx": true
+  }
+}
