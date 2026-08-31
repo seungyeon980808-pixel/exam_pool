@@ -177,3 +177,49 @@ def test_regression_image_inventory_requires_every_resource_mapping(tmp_path: Pa
     audit = audit_hwpx_images(hwpx, [], page_size_px=(600, 450))
     assert not audit.passed
     assert audit.unclassified
+
+
+def test_regression_header_and_body_capture_roles_fail_below_page_coverage_threshold(tmp_path: Path) -> None:
+    for role in ("header_capture", "body_capture"):
+        hwpx = tmp_path / f"{role}.hwpx"
+        digest, _ = _hwpx(hwpx, width=200, height=40)
+        audit = audit_hwpx_images(
+            hwpx,
+            [{"sha256": digest, "role": role, "item_id": "q1", "page": 1,
+              "bbox": [0, 0, 200, 40], "contains_editable_content": True}],
+            page_size_px=(600, 450),
+        )
+        assert not audit.passed
+        assert audit.page_or_body_captures[0].classification == role
+
+
+def test_regression_ocr_text_and_image_duplicate_fails_image_audit(tmp_path: Path) -> None:
+    hwpx = tmp_path / "duplicate.hwpx"
+    digest, _ = _hwpx(hwpx)
+    audit = audit_hwpx_images(
+        hwpx,
+        [{"sha256": digest, "role": "figure", "item_id": "q1", "page": 1,
+          "bbox": [10, 10, 30, 30], "duplicates_editable_text": True}],
+        page_size_px=(600, 450),
+    )
+    assert not audit.passed
+    assert audit.ocr_duplicates
+
+
+def test_regression_same_figure_id_owned_by_wrong_item_fails_structure() -> None:
+    expected, actual = _manifests()
+    wrong = FigureRecord(actual.figures[0].figure_id, "q2", actual.figures[0].page, actual.figures[0].bbox)
+    changed = DocumentManifest(
+        actual.page_count,
+        actual.items,
+        (wrong,),
+        actual.page_size_pt,
+        actual.page_columns,
+        True,
+        True,
+        True,
+        True,
+    )
+    passed, detail = compare_item_structure(expected, changed)
+    assert not passed
+    assert "owner differs" in detail

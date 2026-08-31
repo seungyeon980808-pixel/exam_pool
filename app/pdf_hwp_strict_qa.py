@@ -153,7 +153,24 @@ class ImageAudit:
 
     @property
     def page_or_body_captures(self) -> tuple[ImageRecord, ...]:
-        return tuple(x for x in self.records if x.classification == "page_capture")
+        return tuple(
+            x
+            for x in self.records
+            if x.classification
+            in {
+                "page_capture",
+                "header_capture",
+                "footer_capture",
+                "body_capture",
+                "item_capture",
+                "solution_body_capture",
+                "formula_and_text_capture",
+            }
+        )
+
+    @property
+    def ocr_duplicates(self) -> tuple[ImageRecord, ...]:
+        return tuple(x for x in self.records if x.classification == "ocr_duplicate")
 
     @property
     def unclassified(self) -> tuple[ImageRecord, ...]:
@@ -161,7 +178,7 @@ class ImageAudit:
 
     @property
     def passed(self) -> bool:
-        return not self.page_or_body_captures and not self.unclassified
+        return not self.page_or_body_captures and not self.ocr_duplicates and not self.unclassified
 
 
 @dataclass(frozen=True, slots=True)
@@ -261,6 +278,11 @@ def compare_item_structure(expected: DocumentManifest, actual: DocumentManifest)
     if source_figures != generated_figures:
         return False, f"figure ids differ: {_counter_delta(source_figures.elements(), generated_figures.elements())}"
     failures: list[str] = []
+    expected_figure_owners = {figure.figure_id: (figure.item_id, figure.page) for figure in expected.figures}
+    actual_figure_owners = {figure.figure_id: (figure.item_id, figure.page) for figure in actual.figures}
+    for figure_id in sorted(expected_figure_owners):
+        if expected_figure_owners[figure_id] != actual_figure_owners.get(figure_id):
+            failures.append(f"{figure_id}: item/page owner differs")
     for item_id in sorted(source_ids):
         left = next(x for x in expected.items if x.item_id == item_id)
         right = next(x for x in actual.items if x.item_id == item_id)
@@ -390,14 +412,22 @@ def audit_hwpx_images(hwpx_path: Path, figure_manifest: Sequence[Mapping[str, An
                 item_id = str(entry["item_id"]) if entry and entry.get("item_id") is not None else None
                 page = int(entry["page"]) if entry and entry.get("page") is not None else None
                 bbox = tuple(float(x) for x in entry["bbox"]) if entry and entry.get("bbox") else None
-                if coverage is not None and coverage >= CAPTURE_COVERAGE_THRESHOLD:
+                role = str(entry.get("role", "")) if entry else ""
+                if entry and bool(entry.get("duplicates_editable_text")):
+                    classification = "ocr_duplicate"
+                elif entry and (bool(entry.get("contains_editable_content")) or role in {
+                    "header_capture", "footer_capture", "body_capture", "item_capture",
+                    "solution_body_capture", "formula_and_text_capture",
+                }):
+                    classification = role if role else "body_capture"
+                elif coverage is not None and coverage >= CAPTURE_COVERAGE_THRESHOLD:
                     classification = "page_capture"
                 elif refs == 0:
                     classification = "unused"
-                elif entry and entry.get("role") == "decorative" and refs > 0:
+                elif entry and role == "decorative" and refs > 0:
                     classification = "decorative"
-                elif entry and entry.get("role") == "figure" and item_id and page and bbox:
-                    classification = str(entry["role"])
+                elif entry and role == "figure" and item_id and page and bbox:
+                    classification = role
                 else:
                     classification = "unclassified"
                 with Image.open(__import__("io").BytesIO(data)) as image:
@@ -452,8 +482,9 @@ def run_strict_qa(source_pdf: Path, generated_pdf: Path, hwpx_path: Path,
         GateResult("page_size", size_pass, f"tolerance={PAGE_SIZE_TOLERANCE_PT}pt"),
         GateResult("item_view_table_inventory", structure_pass, structure_detail),
         GateResult("figure_count", figure_count_pass and structure_pass, f"source={len(expected.figures)}, generated={len(actual_manifest.figures)}"),
-        GateResult("image_audit", audit.passed, f"page_capture={len(audit.page_or_body_captures)}, unmapped={len(audit.unclassified)}"),
+        GateResult("image_audit", audit.passed, f"captures={len(audit.page_or_body_captures)}, duplicates={len(audit.ocr_duplicates)}, unmapped={len(audit.unclassified)}"),
         GateResult("no_page_or_body_capture_images", not audit.page_or_body_captures, "whole-page/body raster is forbidden"),
+        GateResult("no_ocr_image_duplication", not audit.ocr_duplicates, "OCR text and source image must not duplicate"),
         GateResult("numeric_formula_choice_tokens", token_pass, token_detail),
         GateResult("visual_300dpi_overlay", visual_pass, f"threshold={visual_threshold:.1%}"),
         GateResult("item_figure_coordinates", coordinate_pass, coordinate_detail),
