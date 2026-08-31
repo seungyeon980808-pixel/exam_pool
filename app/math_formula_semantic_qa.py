@@ -19,11 +19,19 @@ from typing import Any, Mapping, Sequence
 
 
 _SUPPORTED_COMMANDS = {
-    "alpha", "beta", "gamma", "delta", "epsilon", "theta", "lambda", "mu",
-    "pi", "rho", "sigma", "phi", "omega", "Delta", "Gamma", "Theta",
+    "alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta", "lambda", "mu",
+    "nu", "xi", "pi", "rho", "sigma", "tau", "phi", "psi", "omega", "Delta", "Gamma", "Theta",
     "Lambda", "Phi", "Sigma", "Omega", "times", "cdot", "div", "pm",
-    "leq", "geq", "neq", "approx", "to", "infty", "perp", "parallel",
+    # Accept the common short aliases emitted by OCR/TeX exporters as well
+    # as their canonical spellings.  The writer normalises these to the same
+    # HancomEQN glyphs; rejecting them here would create a false FAIL before
+    # native EquationCreate has a chance to run.
+    "leq", "geq", "neq", "le", "ge", "ne", "approx", "to", "infty",
+    "perp", "parallel", "cap", "cup", "subset", "subseteq", "supset", "supseteq",
+    "in", "notin", "quad", "qquad", "circ", "Rightarrow", "Leftrightarrow",
+    "mathbb", "mathcal", "mid", "emptyset",
     "ell", "frac", "dfrac", "tfrac", "sqrt", "vec", "bar", "overline",
+    "cdots", "ldots", "dots",
     "underline", "sin", "cos", "tan", "log", "ln", "exp", "lim", "sum",
     "prod", "int", "oint", "left", "right", "big", "Big", "bigl", "bigr",
     "Bigl", "Bigr", "lbrack", "rbrack", "mathrm", "text", "rm", "begin", "end",
@@ -78,7 +86,13 @@ def _norm(value: str) -> str:
     result = str(value or "").strip()
     replacements = {
         r"\times": "×", r"\cdot": "·", r"\leq": "≤", r"\geq": "≥",
-        r"\neq": "≠", r"\to": "→", r"\rightarrow": "→", r"\infty": "∞",
+        r"\le": "≤", r"\ge": "≥", r"\neq": "≠", r"\ne": "≠",
+        r"\cap": "∩", r"\cup": "∪", r"\subseteq": "⊆", r"\subset": "⊂",
+        r"\supseteq": "⊇", r"\supset": "⊃", r"\in": "∈", r"\notin": "∉",
+        r"\quad": " ", r"\qquad": " ", r"\circ": "∘", r"\Rightarrow": "⇒", r"\Leftrightarrow": "⇔",
+        r"\mid": "|", r"\emptyset": "∅",
+        r"\cdots": "⋯", r"\ldots": "…", r"\dots": "…",
+        r"\to": "→", r"\rightarrow": "→", r"\infty": "∞",
         r"\lbrack": "[", r"\rbrack": "]", r"\left": "", r"\right": "",
         r"\bigl": "", r"\bigr": "", r"\Bigl": "", r"\Bigr": "",
     }

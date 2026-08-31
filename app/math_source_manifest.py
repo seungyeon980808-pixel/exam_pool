@@ -29,6 +29,25 @@ SCHEMA_VERSION = "math-source-manifest-v1"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _STATUS = {"VERIFIED", "UNREVIEWED", "BLOCKED"}
 _BOUNDS_MODES = {"explicit", "none_as_printed"}
+_KOREAN_RE = re.compile(r"[가-힣ㄱ-ㅎㅏ-ㅣ]")
+
+
+def _has_disallowed_korean(source: str) -> bool:
+    """Reject prose in formula sources but allow explicit TeX text atoms.
+
+    Korean connective words can be part of a mathematically printed formula
+    when the PDF uses ``\\text{...}`` (for example, a case condition joined by
+    “또는”).  They remain native equation content after conversion.  Korean
+    outside an explicit text/style group is still treated as OCR prose and
+    fails closed.
+    """
+
+    value = str(source or "")
+    # Remove balanced one-level text/style groups before checking for Korean.
+    # Nested mathematical groups are not removed, so malformed OCR remains a
+    # failure rather than being hidden by this exception.
+    value = re.sub(r"\\(?:text|mathrm|operatorname|mathtt)\{[^{}]*\}", "", value)
+    return bool(_KOREAN_RE.search(value))
 
 
 def _digest(value: Any) -> str:
@@ -163,7 +182,7 @@ def validate_source_manifest(manifest: Mapping[str, Any]) -> dict[str, Any]:
             records_ok = False
             findings.append(_error("FORMULA_SOURCE_EMPTY", "reviewed formula source is empty", page=page_num, item_id=item_id, ordinal=ordinal))
         features = analyze_formula(source)
-        if features["errors"] or features["has_korean"]:
+        if features["errors"] or _has_disallowed_korean(source):
             mathir_ok = False
             findings.append(_error("FORMULA_MATHIR_INVALID", "formula source contains unsupported syntax or prose", page=page_num, item_id=item_id, ordinal=ordinal, errors=features["errors"]))
         mode = str(formula.get("operator_bounds_mode", ""))
