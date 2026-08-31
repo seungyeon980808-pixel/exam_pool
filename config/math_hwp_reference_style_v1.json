@@ -108,6 +108,14 @@
     "KeepTogetherRule": "styles.figure.keep_with_owner_item+styles.table.keep_with_owner_item"
   },
   "qa_requirements": {
+    "reviewed_source_manifest_schema": "math-source-manifest-v1",
+    "source_render_review_dpi": [600, 900],
+    "source_manifest_required_before_build": true,
+    "source_formula_crop_hash_required": true,
+    "source_mathir_required": true,
+    "source_formula_status_required": "VERIFIED",
+    "operator_bounds_modes": ["explicit", "none_as_printed"],
+    "formula_count_chain_required": "reviewed_manifest=HWP=HWPX=COM",
     "content_hashes_unchanged": true,
     "equation_scripts_unchanged": true,
     "native_endnotes_unchanged": true,

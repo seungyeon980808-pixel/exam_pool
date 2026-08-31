@@ -28,14 +28,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--expected", type=Path, required=True)
     parser.add_argument("--actual", type=Path)
     parser.add_argument("--figures", type=Path)
+    parser.add_argument("--source-manifest", type=Path, help="reviewed PDF source manifest; required for the new source gate when supplied")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--dpi", type=int, default=300)
     args = parser.parse_args(argv)
     expected = load_manifest(args.expected)
     actual = load_manifest(args.actual) if args.actual else None
     figures = json.loads(args.figures.read_text(encoding="utf-8")) if args.figures else []
+    source_review = json.loads(args.source_manifest.read_text(encoding="utf-8")) if args.source_manifest else None
     report = run_strict_qa(args.source, args.generated, args.hwpx, expected,
-                           output_dir=args.out, actual=actual, figure_manifest=figures, dpi=args.dpi)
+                           output_dir=args.out, actual=actual, figure_manifest=figures, dpi=args.dpi,
+                           source_review=source_review)
     report_path = args.out / "strict-qa-report.json"
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(report.as_dict(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

@@ -341,7 +341,13 @@ def _finding(code: str, message: str, *, index: int = 0, source: str = "", actua
     return {"code": code, "message": message, "index": index, "source": source, "actual": actual}
 
 
-def validate_formula_pair(source: str, actual: str, *, index: int = 1) -> list[dict[str, Any]]:
+def validate_formula_pair(
+    source: str,
+    actual: str,
+    *,
+    index: int = 1,
+    operator_bounds_mode: str = "explicit",
+) -> list[dict[str, Any]]:
     """Compare source and generated equation structure; never silently repair."""
 
     source = str(source or "").strip()
@@ -379,7 +385,15 @@ def validate_formula_pair(source: str, actual: str, *, index: int = 1) -> list[d
             # must use ``a_{i}``.  Ownership and value remain exact.
             expected = [(item.get("marker"), item.get("owner"), item.get("value")) for item in expected]
             observed = [(item.get("marker"), item.get("owner"), item.get("value")) for item in observed]
-        if key == "operators" and any(item["operator"] in {"sum", "prod"} and (item["lower"] is None or item["upper"] is None) for item in expected):
+        if (
+            key == "operators"
+            and operator_bounds_mode != "none_as_printed"
+            and any(
+                item["operator"] in {"sum", "prod"}
+                and (item["lower"] is None or item["upper"] is None)
+                for item in expected
+            )
+        ):
             findings.append(_finding("OPERATOR_BOUNDS_MISSING", "Σ/Π source occurrence has no explicit lower and upper bound", index=index, source=source, actual=actual))
         if expected != observed:
             findings.append(_finding(code, message, index=index, source=source, actual=actual))
@@ -404,9 +418,22 @@ def validate_native_equation_document(expected: Sequence[str], actual: Sequence[
     if len(expected_list) != len(actual_list):
         findings.append(_finding("FORMULA_COUNT_MISMATCH", "source and native equation counts differ"))
     for index, (source, observed) in enumerate(zip(expected_list, actual_list), 1):
-        findings.extend(validate_formula_pair(source, observed, index=index))
-        if metadata and index <= len(metadata) and metadata[index - 1]:
-            meta = metadata[index - 1] or {}
+        item_metadata = metadata[index - 1] if metadata and index <= len(metadata) else None
+        bounds_mode = str((item_metadata or {}).get("operator_bounds_mode", "explicit"))
+        if bounds_mode not in {"explicit", "none_as_printed"}:
+            findings.append(
+                _finding(
+                    "OPERATOR_BOUNDS_MODE_INVALID",
+                    "operator_bounds_mode must be explicit or none_as_printed",
+                    index=index,
+                    source=source,
+                    actual=observed,
+                )
+            )
+            bounds_mode = "explicit"
+        findings.extend(validate_formula_pair(source, observed, index=index, operator_bounds_mode=bounds_mode))
+        if item_metadata:
+            meta = item_metadata or {}
             if meta.get("fallback") or meta.get("used_fallback"):
                 findings.append(_finding("FORMULA_FALLBACK", "equation metadata reports fallback", index=index, source=source, actual=observed))
     status = "PASS" if not findings and expected_list else "FAIL"

@@ -16,6 +16,11 @@ import re
 from typing import Any, Callable, Iterable, Mapping, Sequence
 from zipfile import BadZipFile, ZipFile
 
+try:
+    from .math_source_manifest import validate_source_manifest
+except ImportError:  # direct module execution
+    from math_source_manifest import validate_source_manifest  # type: ignore
+
 import fitz
 from PIL import Image, ImageChops
 
@@ -444,7 +449,8 @@ def run_strict_qa(source_pdf: Path, generated_pdf: Path, hwpx_path: Path,
                   actual: DocumentManifest | None = None,
                   figure_manifest: Sequence[Mapping[str, Any]] = (),
                   dpi: int = 300, visual_threshold: float = DEFAULT_VISUAL_THRESHOLD,
-                  reopen_check: Callable[[], Mapping[str, bool]] | None = None) -> StrictQAReport:
+                  reopen_check: Callable[[], Mapping[str, bool]] | None = None,
+                  source_review: Mapping[str, Any] | None = None) -> StrictQAReport:
     """Run every gate and return FAIL if even one required observation is absent."""
     output_dir.mkdir(parents=True, exist_ok=True)
     actual_manifest = actual
@@ -491,4 +497,13 @@ def run_strict_qa(source_pdf: Path, generated_pdf: Path, hwpx_path: Path,
         GateResult("hwp_hwpx_reopen", reopen_pass, f"hwp={bool(reopen.get('hwp'))}, hwpx={bool(reopen.get('hwpx'))}"),
         GateResult("native_editable_text_equations", editable_pass, f"editable_text={actual_manifest.editable_text}, native_equations={actual_manifest.native_equations}"),
     )
+    if source_review is not None:
+        source_review_report = validate_source_manifest(source_review)
+        gates = gates + (
+            GateResult(
+                "reviewed_source_manifest",
+                source_review_report.get("status") == "PASS",
+                f"status={source_review_report.get('status')}, findings={len(source_review_report.get('findings', []))}",
+            ),
+        )
     return StrictQAReport(source_pdf, generated_pdf, hwpx_path, gates, comparisons, audit)

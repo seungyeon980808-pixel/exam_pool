@@ -98,6 +98,37 @@ def test_page_count_mismatch_fails_even_when_files_are_readable(tmp_path: Path) 
     assert not next(x for x in report.gates if x.name == "page_count").passed
 
 
+def test_reviewed_source_manifest_is_an_independent_required_gate(tmp_path: Path) -> None:
+    source, generated = tmp_path / "source.pdf", tmp_path / "generated.pdf"
+    _pdf(source)
+    _pdf(generated)
+    hwpx = tmp_path / "result.hwpx"
+    digest, _ = _hwpx(hwpx)
+    expected, actual = _manifests()
+    source_review = {
+        "schema_version": "math-source-manifest-v1",
+        "status": "DRAFT",
+        "source_pdf_sha256": "a" * 64,
+        "page_count": 1,
+        "uncertainties": ["unreviewed"],
+        "content_sha256": "b" * 64,
+        "formula_count": 0,
+        "pages": [{"pdf_page": 1, "status": "UNREVIEWED", "render_dpi": 600, "items": []}],
+    }
+    report = run_strict_qa(
+        source,
+        generated,
+        hwpx,
+        expected,
+        output_dir=tmp_path / "qa",
+        actual=actual,
+        figure_manifest=[{"sha256": digest, "role": "figure", "item_id": "jongro-p1-q1", "page": 1, "bbox": [30, 90, 100, 130]}],
+        source_review=source_review,
+    )
+    gate = next(x for x in report.gates if x.name == "reviewed_source_manifest")
+    assert not gate.passed
+
+
 def test_numeric_formula_choice_delta_fails() -> None:
     expected = (ItemRecord("q1", 1, text="a=2", formulas=("x=2",), choices=("① 2",)),)
     actual = (ItemRecord("q1", 1, text="a=3", formulas=("x=2",), choices=("① 2",)),)

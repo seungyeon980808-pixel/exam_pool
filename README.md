@@ -175,6 +175,32 @@ ExamPool 자체 소스는 GNU Affero General Public License v3.0 only에 따라
 python -m pytest
 ```
 
+### 수학 PDF→HWP/HWPX 최신 검수 순서
+
+수학 문제·해설 변환은 PDF를 단일 원문으로 사용하며, OCR 결과를 직접 writer에
+전달하지 않는다. 먼저 `math-source-manifest-v1` 검수 원장을 600 dpi(필요 시
+900 dpi)로 확정한 뒤 source gate를 실행한다.
+
+```powershell
+python tools/math_source_manifest_qa.py reviewed-source-manifest.json --json source-qa.json
+python tools/pdf_hwp_strict_qa.py `
+  --source source.pdf --generated roundtrip.pdf --hwpx result.hwpx `
+  --expected expected.json --actual actual.json --figures figures.json `
+  --source-manifest reviewed-source-manifest.json --out qa --dpi 300
+```
+
+수식은 `sum/prod`, `lim`, `int`, 첨자·지수, 분수·근호, cases·행렬·벡터의
+구조와 범위를 비교하고, HWPX에서 `HYhwpEQ`·`baseUnit=1100`·native script를
+검사한다. 수식 수·순서·hash, 문항·그림 소유권, 표·보기 개수가 하나라도
+다르면 FAIL이며 평문·이미지 fallback은 허용하지 않는다. 스캔 페이지의 수식
+0개는 수식 없음으로 간주하지 않는다.
+
+관련 계약은 [PDF_HWP_MATH_FORMULA_SOURCE_REVIEW.md](docs/PDF_HWP_MATH_FORMULA_SOURCE_REVIEW.md),
+[PDF_HWP_STRICT_WORK_INSTRUCTIONS.md](docs/PDF_HWP_STRICT_WORK_INSTRUCTIONS.md),
+[MATH_HWP_REFERENCE_STYLE_WORK_INSTRUCTIONS.md](docs/MATH_HWP_REFERENCE_STYLE_WORK_INSTRUCTIONS.md)에
+기록되어 있다. 개별 파일을 PASS한 뒤에만 통합본을 만들며, 실제 시험 PDF·HWP·HWPX와
+전사 데이터는 저장소에 포함하지 않는다.
+
 ---
 
 ## 라이선스 · 저작자

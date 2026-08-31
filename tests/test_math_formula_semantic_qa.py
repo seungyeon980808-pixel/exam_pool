@@ -96,3 +96,27 @@ def test_empty_native_script_is_a_hard_failure() -> None:
     assert report["status"] == "FAIL"
     assert report["gates"]["native_scripts_nonempty"] is False
     assert any(row["code"] == "FORMULA_SCRIPT_EMPTY" for row in report["findings"])
+
+
+def test_unbounded_operator_requires_explicit_source_policy() -> None:
+    source = r"\sum N"
+    actual = "sum N"
+    strict = validate_native_equation_document([source], [actual])
+    assert strict["status"] == "FAIL"
+    assert any(row["code"] == "OPERATOR_BOUNDS_MISSING" for row in strict["findings"])
+    allowed = validate_native_equation_document(
+        [source],
+        [actual],
+        metadata=[{"operator_bounds_mode": "none_as_printed"}],
+    )
+    assert allowed["status"] == "PASS"
+
+
+def test_invalid_operator_policy_is_a_hard_failure() -> None:
+    report = validate_native_equation_document(
+        [r"\sum_{i=1}^{n}i"],
+        [r"sum_{i=1}^{n}i"],
+        metadata=[{"operator_bounds_mode": "inferred"}],
+    )
+    assert report["status"] == "FAIL"
+    assert any(row["code"] == "OPERATOR_BOUNDS_MODE_INVALID" for row in report["findings"])

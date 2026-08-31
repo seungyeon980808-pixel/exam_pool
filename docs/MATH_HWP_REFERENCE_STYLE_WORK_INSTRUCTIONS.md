@@ -28,6 +28,12 @@
 서식 적용은 수식 script, 문항 ID, 미주 연결 또는 그림 파일을 고치기 위한
 단계가 아니다. 내용 해시가 하나라도 변하면 즉시 FAIL이다.
 
+수식 변환의 입력은 [PDF_HWP_MATH_FORMULA_SOURCE_REVIEW.md](PDF_HWP_MATH_FORMULA_SOURCE_REVIEW.md)의
+`math-source-manifest-v1` 검수 원장으로 제한한다. 600 dpi(불명확한 영역은 900 dpi)
+확대, PDF crop SHA-256, 문항·좌표·순번, MathIR, `operator_bounds_mode`와
+`review_status: VERIFIED`가 없는 수식은 writer에 전달하지 않는다. OCR 문장만으로
+작성된 manifest, 수식 수가 0인 미검수 스캔 페이지, 상·하한을 추측한 식은 자동 FAIL이다.
+
 ## 서식 프로필 계약
 
 프로필은 `schema_version: "math-hwp-reference-style-v1"`을 사용한다. 다음
@@ -142,6 +148,7 @@ FAIL이다. 스타일 적용기는 새 guard나 빈 문단을 만들 수 없다.
 
 ```powershell
 python -c "from app.hwp_reference_style import StyleProfile, preflight_reference_style; p=StyleProfile.from_file('config/math_hwp_reference_style_v1.json'); print(preflight_reference_style(p))"
+python tools/math_source_manifest_qa.py reviewed-source-manifest.json --json source-qa.json
 python -m app.hwp_style_qa <source.hwpx> <generated.hwpx> --profile <profile.json> --style-snapshot <snapshot.json> --style-application <application.json> --layout-snapshot <layout.json>
 ```
 

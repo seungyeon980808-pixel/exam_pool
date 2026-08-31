@@ -122,3 +122,34 @@ python tools/pdf_hwp_strict_qa.py `
 피드백을 받은 뒤 별도 승인으로 시작한다. 미주 앵커가 페이지 흐름을 바꾸거나 원문
 문항과 해설이 1:1로 연결되지 않으면 즉시 중단한다. 불확정 수식, 누락 그림, 중복 문항,
 이미지 대체, 겹침·잘림이 하나라도 남은 상태에서는 `완성본`이나 `PASS`로 표시하지 않는다.
+
+## 9. 수식 원문 검수 게이트 (math-source-manifest-v1)
+
+기존 `expected` 문항 manifest의 수식 개수만으로는 OCR이 잘못된 수식을 같은 개수로
+출력하는 문제를 막을 수 없다. 따라서 제작 전 반드시 `docs/PDF_HWP_MATH_FORMULA_SOURCE_REVIEW.md`
+계약에 따른 검수 원장을 만들고 다음 명령을 실행한다.
+
+```powershell
+python tools/math_source_manifest_qa.py reviewed-source-manifest.json --json source-qa.json
+```
+
+`source-qa.json`이 PASS가 아니면 HWP/HWPX writer를 호출하지 않는다. 모든 PDF 페이지는
+600 dpi로 검수하고 작은 첨자·근호·연산자 한계가 불분명한 영역은 900 dpi로 재확인한다.
+스캔 페이지에서 수식 0개가 나온 경우는 수식 없음이 아니라 OCR 미검수 상태로 처리한다.
+
+수식 원장에는 PDF crop SHA-256, PDF-point bbox, 문항 ID, 순번, 검수 상태, MathIR,
+`operator_bounds_mode`를 남긴다. `sum/prod`에 실제 상·하한이 없는 경우만
+`none_as_printed`를 허용하고, 근거 없는 생략은 FAIL이다. `lim` 접근변수·방향, 적분
+상·하한·미분기호, 첨자·지수 소유 범위, 분수·근호·cases·행렬·벡터 구조는 모두 별도
+비교한다. 지원되지 않는 OCR 명령·raw backslash·placeholder·빈 수식은 자동 FAIL이다.
+
+기존 `run_strict_qa()`도 `--source-manifest`를 전달받으면 이 원장 게이트를 추가한다.
+따라서 페이지 수·파일 열림·문항 수가 맞아도 원문 수식 검수 원장이 없으면 PASS할 수 없다.
+
+최종 수식 수 `N_final`에 대해 다음 등식이 성립해야 한다.
+
+```text
+reviewed PDF manifest = HWP native eqed = HWPX hp:equation = HWP/COM 재열기 수 = N_final
+```
+
+수식 script 순서·MathIR hash·font/baseUnit·문항 좌표가 하나라도 다르면 FAIL이다.
