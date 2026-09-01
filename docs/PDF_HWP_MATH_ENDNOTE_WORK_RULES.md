@@ -41,3 +41,21 @@
 - 원본과 같은 2단·보기·그림 배치 및 페이지 흐름
 - 수식·숫자·부호의 원문 대조 기록과 미확정 항목 목록
 - 미주가 없는 문제-only·해설-only 원본과 별도 병합본 보존
+
+## 7. 최신 4종 재감사 추가 게이트
+
+7월 더프·4월 종로·4월 대성 더프·5월 더프 재감사는
+`docs/DUFF_NATIVE_ENDNOTE_STRICT_REAUDIT_4FILE.md`의 fail-closed 절차를 따른다.
+수식 글꼴만 바꾼 HWPX, 미주 개수만 맞춘 결과, 레거시 미주 계약 manifest는
+최종 PASS로 인정하지 않는다.
+
+- 문제·해설 PDF별 `math-source-manifest-v1`을 먼저 검증한다.
+- PDF 수식 수 → MathIR → HWPX `hp:equation` → HWP COM `eqed` → 재출력 PDF 수식 수를 연결한다.
+- `HYhwpEQ`, 11pt, `baseUnit=1100`, 비어 있지 않은 script가 전수 일치해야 한다.
+- 해설 본문·정답·수식·표를 이미지로 대체한 미주는 자동 FAIL한다.
+- HWP/HWPX 재열기와 EquationModify, 문항 복사·이동 미주 추적을 확인한다.
+- 네 시험 중 하나라도 실패하면 집계 결과는 `4/4 PASS`로 표시하지 않는다.
+
+저장소의 `app/duff_native_endnote_strict_qa.py`와
+`tools/duff_native_endnote_strict_qa.py`는 외부 JSON spec을 받아 네 시험을
+집계하며, PDF·HWP/HWPX·전사 내용은 저장소에 포함하지 않는다.

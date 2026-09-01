@@ -35,12 +35,27 @@ _SUPPORTED_COMMANDS = {
     "underline", "sin", "cos", "tan", "log", "ln", "exp", "lim", "sum",
     "prod", "int", "oint", "left", "right", "big", "Big", "bigl", "bigr",
     "Bigl", "Bigr", "lbrack", "rbrack", "mathrm", "text", "rm", "begin", "end",
+    "Pi", "therefore", "sim",
 }
 _COMMAND_RE = re.compile(r"(?<!\\)\\([A-Za-z]+)")
 _FALLBACK_RE = re.compile(r"(?:fallback|plain.?text|image.?equation|ocr.?placeholder|@@EQ|\[\[formula:)", re.I)
 _KOREAN_RE = re.compile(r"[가-힣]")
 _OPERATOR_RE = re.compile(r"(?P<op>\\?(?:sum|prod|int|oint|lim)|[Σ∏∫])")
 _SCRIPT_RE = re.compile(r"(?P<marker>[_^])")
+
+
+def _has_unwrapped_korean(value: str) -> bool:
+    """Return true only for Korean text outside explicit text/style groups.
+
+    Hancom equation scripts may contain Korean labels when they are wrapped in
+    ``rm{...}``/``text{...}``; bare Korean prose is still rejected.  This keeps
+    the native equation gate strict without rejecting printed labels that are
+    intentionally part of a formula.
+    """
+
+    value = str(value or "")
+    value = re.sub(r"\\(?:text|rm|mathrm|operatorname|mathtt)\{[^{}]*\}", "", value)
+    return bool(_KOREAN_RE.search(value))
 
 
 def _group(text: str, start: int) -> tuple[str, int] | None:
@@ -347,7 +362,7 @@ def analyze_formula(value: str) -> dict[str, Any]:
         "matrices": _row_signatures(source, "matrix"),
         "vectors": _vector_signatures(source),
         "errors": errors,
-        "has_korean": bool(_KOREAN_RE.search(source)),
+        "has_korean": _has_unwrapped_korean(source),
     }
 
 
@@ -371,7 +386,7 @@ def validate_formula_pair(
         return [_finding("FORMULA_SCRIPT_EMPTY", "generated native equation script is empty", index=index, source=source, actual=actual)]
     if _FALLBACK_RE.search(actual):
         findings.append(_finding("FORMULA_FALLBACK", "generated equation contains a fallback marker", index=index, source=source, actual=actual))
-    if _KOREAN_RE.search(actual):
+    if _has_unwrapped_korean(actual):
         findings.append(_finding("FORMULA_PROSE_IN_SCRIPT", "Korean prose must be a text block, not an equation script", index=index, source=source, actual=actual))
     actual_features = analyze_formula(actual)
     source_features = analyze_formula(source)

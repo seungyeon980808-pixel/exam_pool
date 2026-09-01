@@ -203,6 +203,21 @@ python tools/pdf_hwp_strict_qa.py `
 
 ---
 
+# 최신 수학 더프 4종 엄격 미주 재감사
+
+7월 더프·4월 종로·4월 대성 더프·5월 더프를 재감사할 때는
+`docs/DUFF_NATIVE_ENDNOTE_STRICT_REAUDIT_4FILE.md`의 원본 매니페스트·수식
+MathIR·HWP/HWPX 왕복 규칙을 적용합니다. 네 시험 전용 fail-closed 집계기는
+저작권 파일을 저장소에 넣지 않고 외부 JSON spec만 읽습니다.
+
+```powershell
+python tools/duff_native_endnote_strict_qa.py C:\path\to\duff-four-exams.json --json report.json
+```
+
+반환 코드 0은 네 시험의 모든 소스 매니페스트, 네이티브 수식, 미주, COM 왕복,
+이미지·시각 QA가 PASS인 경우에만 의미합니다. 소스 매니페스트가 없거나 HWP COM
+증거가 없으면 기존 HWPX가 열리더라도 자동 FAIL입니다.
+
 ## 라이선스 · 저작자
 
 박승연 (© 2026)

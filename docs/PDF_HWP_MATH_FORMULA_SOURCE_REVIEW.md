@@ -123,6 +123,22 @@ FAIL이다. 반대로 글꼴 안티앨리어싱 차이는 객체 좌표·토큰�
 스캔·장문 파일은 앞 단계에서 수식을 생략하지 않는다. 문항 내용과 수식 원장에
 미확정 항목이 남은 파일은 최종본, 사용 가능본, PASS로 표시하지 않는다.
 
+## 더프 4종 재감사 프로필
+
+7월 더프·4월 종로·4월 대성 더프·5월 더프의 네이티브 미주 결과를 재감사할 때는
+`docs/DUFF_NATIVE_ENDNOTE_STRICT_REAUDIT_4FILE.md`와
+`app/duff_native_endnote_strict_qa.py`를 함께 적용한다. 기존
+`source-derived-endnote-manifest.json` 또는 수식 글꼴만 정규화한 HWPX는
+`math-source-manifest-v1`을 대체하지 못한다.
+
+각 시험의 문제·해설 PDF에 별도 reviewed manifest를 만들고, PDF SHA-256·600/900dpi
+페이지 및 수식 crop 해시·좌표·MathIR·문항 ID를 검증한 뒤에만 네이티브 미주 QA를
+실행한다. 최신 HWPX의 `HYhwpEQ`/`baseUnit=1100`만으로는 PASS할 수 없으며,
+HWP COM 재열기·`eqed` 개수·EquationModify·PDF 왕복 증거가 모두 필요하다.
+
+4종 집계 게이트는 정확히 네 개의 시험 키만 허용하고, 한 시험이라도 원본 매니페스트,
+HWP, HWPX, COM, 시각 QA 중 하나가 없으면 전체 집계를 FAIL로 반환한다.
+
 ## 합성 회귀 테스트
 
 `tests/test_math_source_manifest.py`와 `tests/test_math_formula_semantic_qa.py`는

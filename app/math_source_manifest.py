@@ -46,7 +46,7 @@ def _has_disallowed_korean(source: str) -> bool:
     # Remove balanced one-level text/style groups before checking for Korean.
     # Nested mathematical groups are not removed, so malformed OCR remains a
     # failure rather than being hidden by this exception.
-    value = re.sub(r"\\(?:text|mathrm|operatorname|mathtt)\{[^{}]*\}", "", value)
+    value = re.sub(r"\\(?:text|rm|mathrm|operatorname|mathtt)\{[^{}]*\}", "", value)
     return bool(_KOREAN_RE.search(value))
 
 
