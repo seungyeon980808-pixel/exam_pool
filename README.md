@@ -218,6 +218,13 @@ python tools/duff_native_endnote_strict_qa.py C:\path\to\duff-four-exams.json --
 이미지·시각 QA가 PASS인 경우에만 의미합니다. 소스 매니페스트가 없거나 HWP COM
 증거가 없으면 기존 HWPX가 열리더라도 자동 FAIL입니다.
 
+실행 순서와 실사용 판정 프로필은
+`docs/DUFF_NATIVE_ENDNOTE_EXECUTION_PLAN_20260901.md`에 기록되어 있습니다.
+내용·수식·문항 대응·편집성은 0오류로 유지하고, 미세한 시각 차이를 허용하는
+경우에도 `실사용 최종본(제한사항 기록)`으로만 표시합니다. 원본
+`math-source-manifest-v1`, HWP/HWPX COM 왕복, PDF 재출력, 이미지 감사를 모두
+통과한 경우에만 `엄격 최종 PASS`를 부여합니다.
+
 ## 라이선스 · 저작자
 
 박승연 (© 2026)
