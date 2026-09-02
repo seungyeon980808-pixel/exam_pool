@@ -1,0 +1,159 @@
+{
+  "schema_version": "synthetic-2027-mock-qa-v1",
+  "role": "problem-only",
+  "item_ids": [
+    "MOCK-SYN-NAT-Q001",
+    "MOCK-SYN-NAT-Q002"
+  ],
+  "items": [
+    {
+      "item_id": "MOCK-SYN-NAT-Q001",
+      "equation_scripts": [
+        "x^2+1",
+        "a over {2}"
+      ],
+      "tables": [
+        {
+          "cells": [
+            "synthetic-condition",
+            "synthetic-value"
+          ]
+        }
+      ],
+      "images": [
+        {
+          "id": "MOCK-SYN-NAT-Q001-FIG01",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ]
+    },
+    {
+      "item_id": "MOCK-SYN-NAT-Q002",
+      "equation_scripts": [
+        "sum_{k=1}^{n} k",
+        "sqrt{x}"
+      ],
+      "tables": [
+        {
+          "cells": [
+            "synthetic-left",
+            "synthetic-right"
+          ]
+        }
+      ],
+      "images": [
+        {
+          "id": "MOCK-SYN-NAT-Q002-FIG01",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ]
+    }
+  ],
+  "document_equation_scripts": [
+    "x^2+1",
+    "a over {2}",
+    "sum_{k=1}^{n} k",
+    "sqrt{x}"
+  ],
+  "equation_style": [
+    {
+      "member": "Contents/section0.xml",
+      "font": "HYhwpEQ",
+      "base_unit": "1100",
+      "line_mode": "CHAR",
+      "treat_as_char": "1",
+      "flow_with_text": "1",
+      "allow_overlap": "0",
+      "script": "x^2+1"
+    },
+    {
+      "member": "Contents/section0.xml",
+      "font": "HYhwpEQ",
+      "base_unit": "1100",
+      "line_mode": "CHAR",
+      "treat_as_char": "1",
+      "flow_with_text": "1",
+      "allow_overlap": "0",
+      "script": "a over {2}"
+    },
+    {
+      "member": "Contents/section0.xml",
+      "font": "HYhwpEQ",
+      "base_unit": "1100",
+      "line_mode": "CHAR",
+      "treat_as_char": "1",
+      "flow_with_text": "1",
+      "allow_overlap": "0",
+      "script": "sum_{k=1}^{n} k"
+    },
+    {
+      "member": "Contents/section0.xml",
+      "font": "HYhwpEQ",
+      "base_unit": "1100",
+      "line_mode": "CHAR",
+      "treat_as_char": "1",
+      "flow_with_text": "1",
+      "allow_overlap": "0",
+      "script": "sqrt{x}"
+    }
+  ],
+  "page_styles": [
+    {
+      "member": "Contents/section0.xml",
+      "width_hwpunits": "72852",
+      "height_hwpunits": "103180",
+      "orientation": "WIDELY",
+      "margin_left_hwpunits": "5669",
+      "margin_right_hwpunits": "5669",
+      "margin_top_hwpunits": "5668",
+      "margin_bottom_hwpunits": "4252",
+      "header_hwpunits": "4252",
+      "footer_hwpunits": "4252"
+    }
+  ],
+  "column_styles": [
+    {
+      "member": "Contents/section0.xml",
+      "count": "2",
+      "gutter_hwpunits": "2268",
+      "equal_width": "1"
+    }
+  ],
+  "endnote_count": 0,
+  "autonum_count": 0,
+  "blank_paragraphs": [],
+  "zero_width_guards": [],
+  "zero_width_strays": [],
+  "pages": [
+    {
+      "page": 1,
+      "width_mm": 257.0,
+      "height_mm": 364.0,
+      "density": 0.20,
+      "objects": [
+        {
+          "object_id": "MOCK-SYN-NAT-Q001-body",
+          "kind": "item",
+          "owner_item_id": "MOCK-SYN-NAT-Q001",
+          "rect_mm": [
+            20.0,
+            20.0,
+            120.0,
+            80.0
+          ]
+        },
+        {
+          "object_id": "MOCK-SYN-NAT-Q002-body",
+          "kind": "item",
+          "owner_item_id": "MOCK-SYN-NAT-Q002",
+          "rect_mm": [
+            137.0,
+            20.0,
+            237.0,
+            80.0
+          ]
+        }
+      ]
+    }
+  ]
+}
