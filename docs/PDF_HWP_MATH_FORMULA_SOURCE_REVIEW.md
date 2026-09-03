@@ -123,6 +123,25 @@ FAIL이다. 반대로 글꼴 안티앨리어싱 차이는 객체 좌표·토큰�
 스캔·장문 파일은 앞 단계에서 수식을 생략하지 않는다. 문항 내용과 수식 원장에
 미확정 항목이 남은 파일은 최종본, 사용 가능본, PASS로 표시하지 않는다.
 
+## OCR 후보 provenance와 보조 변환기 정책
+
+OCR은 서로 다른 후보를 제공할 수 있지만 PDF 원문과 `math-source-manifest-v1`만
+최종 권위다. 로컬 PaddleOCR/PyMuPDF를 주 후보로 기록하고,
+`hwp-converter-v0.1.1`(release commit `be1893f`)은 보조 OCR 및 네이티브 writer로
+고정한다. converter 후보는 strict wrapper에서 `fallback_policy=fail_closed`,
+페이지 전체 fallback·수식 평문/이미지 fallback 금지, EquationCreate 예외 승격,
+`HancomEQN`/`baseUnit=1100`을 만족해야 한다. Firecrawl anydoc는 문장·섹션 구조를
+비교하는 선택 후보이며 수식·좌표·MathIR의 권위가 아니다. hosted OCR은 전체 문서를
+외부로 전송하므로 저작권 자료는 명시적 전송 승인이 없으면 금지한다.
+
+각 후보의 엔진 버전·설정 해시·출력 해시·PDF SHA-256과 불일치 레코드를 남기고,
+후보가 다르면 600/900 dpi 원문을 사람이 대조하여 `resolved: true`로 확정한다.
+`app.ocr_hybrid_policy.validate_ocr_provenance()`와
+`tools/ocr_hybrid_preflight.py`가 이 계약을 검사하며, 자동 병합·다수결·미검수
+OCR을 네이티브 조판 입력으로 허용하지 않는다. 전체 규칙은
+[`OCR_HYBRID_CONVERTER_ANYDOC_WORK_INSTRUCTIONS.md`](OCR_HYBRID_CONVERTER_ANYDOC_WORK_INSTRUCTIONS.md)를
+참조한다.
+
 ## 더프 4종 재감사 프로필
 
 7월 더프·4월 종로·4월 대성 더프·5월 더프의 네이티브 미주 결과를 재감사할 때는

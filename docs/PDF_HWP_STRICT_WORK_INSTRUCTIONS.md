@@ -71,6 +71,17 @@ python tools/pdf_hwp_strict_qa.py `
 보고한다. 입력 PDF나 HWP를 추정하여 자동 보정하거나, 기존 결과에 맞춰 threshold를
 완화하지 않는다.
 
+### OCR 도구 역할 고정
+
+OCR 후보를 여러 도구에서 얻더라도 자동 다수결·자동 병합을 하지 않는다. 기본 주
+후보는 로컬 PaddleOCR/PyMuPDF이고, `hwp-converter-v0.1.1`(release commit
+`be1893f`)은 보조 OCR 후보와 HwpPalette 조판 경로로만 사용한다. 변환기의 페이지
+전체 fallback, 수식 평문·이미지 fallback은 strict wrapper에서 금지하고 EquationCreate
+실패를 예외로 승격한다. Firecrawl `anydoc`는 선택적 문장·섹션 비교 후보일 뿐이며,
+저작권 PDF의 hosted OCR은 별도 전송 승인이 없으면 사용하지 않는다. 세부 계약과
+provenance 게이트는 [`OCR_HYBRID_CONVERTER_ANYDOC_WORK_INSTRUCTIONS.md`](OCR_HYBRID_CONVERTER_ANYDOC_WORK_INSTRUCTIONS.md),
+`config/ocr_hybrid_policy_v1.json`, `app/ocr_hybrid_policy.py`를 따른다.
+
 ## 5. 필수 QA 게이트
 
 아래 11개 게이트가 모두 참이어야만 PASS이다. 하나라도 거짓이거나 증거가 없으면 FAIL이다.

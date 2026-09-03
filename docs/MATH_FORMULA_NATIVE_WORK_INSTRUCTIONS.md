@@ -138,3 +138,20 @@ python -m py_compile app/math_formula_semantic_qa.py
 
 실제 PDF·HWP/HWPX·캡처·전사 본문을 fixture에 넣지 않는다. 원격 저장소에는 이
 문서, 검사 코드, 합성 fixture 및 회귀 테스트만 커밋한다.
+
+## OCR 후보와 writer 연계 규칙
+
+`hwp-converter-v0.1.1`(release commit `be1893f`)은 후보 추출과 네이티브 HwpPalette
+writer의 보조 경로로만 사용한다. 검수된 `math-source-manifest-v1` 없이는
+EquationCreate를 실행하지 않으며, strict wrapper는 페이지 전체·수식 평문·수식
+이미지 fallback을 허용하지 않고 실패를 예외로 올린다. 최종 수식은 반드시
+`HancomEQN`, `baseUnit=1100`과 HWPX/COM readback을 통과해야 한다.
+
+Firecrawl anydoc는 필요할 때 일반 문장·섹션 비교용으로만 사용한다. hosted OCR은
+저작권 자료의 명시적 전송 승인과 전체 문서 전송 조건을 모두 만족할 때만 허용하며,
+anydoc 출력은 수식 script·MathIR·좌표의 권위나 조판 입력이 아니다. 후보 불일치는
+원본 PDF 600/900 dpi 재확인으로 해결하고 provenance를 기록한다. 자동 다수결이나
+미검수 OCR을 수식 writer에 전달하면 `OCR_DISAGREEMENT_UNRESOLVED` 또는
+`FORMULA_FALLBACK`으로 FAIL한다. 구현·검사 명세는
+[`OCR_HYBRID_CONVERTER_ANYDOC_WORK_INSTRUCTIONS.md`](OCR_HYBRID_CONVERTER_ANYDOC_WORK_INSTRUCTIONS.md),
+`app/ocr_hybrid_policy.py`, `tools/ocr_hybrid_preflight.py`를 따른다.

@@ -76,6 +76,14 @@ python tools/pdf_hwp_strict_qa.py --source source.pdf --generated roundtrip.pdf 
 실제 시험 PDF/HWP/HWPX와 생성 결과물은 저장소에 커밋하지 않으며, 회귀 테스트는
 저작권 없는 합성 fixture만 사용한다.
 
+OCR 후보를 여러 경로로 비교할 때는 [OCR_HYBRID_CONVERTER_ANYDOC_WORK_INSTRUCTIONS.md](docs/OCR_HYBRID_CONVERTER_ANYDOC_WORK_INSTRUCTIONS.md)의
+하이브리드 정책을 적용한다. 로컬 PaddleOCR/PyMuPDF가 주 후보이고,
+`hwp-converter-v0.1.1`(`be1893f`)은 strict wrapper가 있는 보조 후보·네이티브
+writer로만 사용한다. Firecrawl anydoc는 선택적 구조 비교용이며 hosted 전송은
+저작권 자료의 명시적 승인 없이는 사용할 수 없다. provenance는
+`tools/ocr_hybrid_preflight.py`로 검사하고, PDF 원문과 reviewed manifest 외의 OCR
+후보를 수학 내용의 권위로 사용하지 않는다.
+
 개발 환경에서 OCR까지 한 번에 설치하려면 다음 명령을 사용한다.
 
 ```bash
