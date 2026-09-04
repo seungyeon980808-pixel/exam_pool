@@ -1,0 +1,56 @@
+{
+  "schema_version": "math-content-scope-policy-v1",
+  "manifest_schema": "math-content-scope-manifest-v1",
+  "status": "VERIFIED",
+  "page_index_base": 1,
+  "selection_policy": "problem_solution_regions_only",
+  "output_layout_modes": ["item_reflow", "source_region_layout"],
+  "authority_order": [
+    "explicit_user_scope",
+    "reviewed_pdf_page_and_region_inventory",
+    "ocr_candidates"
+  ],
+  "included_region_roles": ["problem", "solution"],
+  "excluded_page_roles": [
+    "cover",
+    "frontmatter",
+    "toc",
+    "study_plan",
+    "instructions",
+    "concept",
+    "divider",
+    "answer_key",
+    "blank",
+    "advertisement"
+  ],
+  "mixed_page_rule": "crop_and_ocr_only_reviewed_problem_or_solution_regions",
+  "reading_order_rule": "region_then_column_then_within_column",
+  "item_mapping": {
+    "mode": "stable_item_id_exact",
+    "required_evidence": [
+      "section",
+      "printed_label",
+      "problem_first_sentence",
+      "solution_content"
+    ],
+    "page_round_robin": "forbidden",
+    "number_only_mapping": "forbidden",
+    "one_problem_page_equals_one_item": "forbidden"
+  },
+  "endnote_invariants": [
+    "problem_item_count_equals_solution_item_count",
+    "problem_item_count_equals_endnote_reference_count",
+    "problem_item_count_equals_endnote_body_count",
+    "one_native_endnote_per_problem_item"
+  ],
+  "fail_codes": [
+    "OCR_BEFORE_USER_START_PAGE",
+    "OCR_EXCLUDED_REGION_LEAK",
+    "OCR_INCLUDED_REGION_MISSING",
+    "MIXED_PAGE_REGION_PARTITION_MISSING",
+    "READING_ORDER_DUPLICATE",
+    "ITEM_SOLUTION_MAPPING_MISSING",
+    "ITEM_REGION_OWNERSHIP_MISMATCH",
+    "ENDNOTE_PAGE_ROUND_ROBIN_FORBIDDEN"
+  ]
+}

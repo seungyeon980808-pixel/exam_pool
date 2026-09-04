@@ -13,6 +13,12 @@ import re
 from pathlib import Path
 from typing import Any, Mapping
 
+from app.math_content_scope import (
+    SCHEMA_VERSION as CONTENT_SCOPE_MANIFEST_SCHEMA,
+    canonical_scope_sha256,
+    validate_content_scope,
+)
+
 
 SCHEMA_VERSION = "ocr-hybrid-policy-v1"
 SOURCE_MANIFEST_SCHEMA = "math-source-manifest-v1"
@@ -48,6 +54,7 @@ def load_policy(path: str | Path) -> Mapping[str, Any]:
 def validate_ocr_provenance(
     manifest: Mapping[str, Any],
     *,
+    scope_manifest: Mapping[str, Any] | None = None,
     source_is_copyrighted: bool = True,
     hosted_transfer_approved: bool = False,
 ) -> dict[str, Any]:
@@ -74,6 +81,10 @@ def validate_ocr_provenance(
     gates: dict[str, bool] = {
         "schema_version": manifest.get("schema_version") == SCHEMA_VERSION,
         "source_manifest_schema": manifest.get("source_manifest_schema") == SOURCE_MANIFEST_SCHEMA,
+        "content_scope_manifest_schema": manifest.get("content_scope_manifest_schema") == CONTENT_SCOPE_MANIFEST_SCHEMA,
+        "content_scope_manifest_hash": _sha256(manifest.get("content_scope_manifest_sha256")),
+        "content_scope_verified": False,
+        "ocr_scope_exact": False,
         "authoritative_source": manifest.get("authoritative_source") == "reviewed_pdf_manifest",
         "source_pdf_sha256": _sha256(manifest.get("source_pdf_sha256")),
         "provenance_hashes": False,
@@ -90,6 +101,10 @@ def validate_ocr_provenance(
         findings.append(_finding("OCR_POLICY_SCHEMA_INVALID", f"schema_version must be {SCHEMA_VERSION}"))
     if not gates["source_manifest_schema"]:
         findings.append(_finding("SOURCE_MANIFEST_SCHEMA_INVALID", f"source_manifest_schema must be {SOURCE_MANIFEST_SCHEMA}"))
+    if not gates["content_scope_manifest_schema"]:
+        findings.append(_finding("CONTENT_SCOPE_SCHEMA_INVALID", f"content_scope_manifest_schema must be {CONTENT_SCOPE_MANIFEST_SCHEMA}"))
+    if not gates["content_scope_manifest_hash"]:
+        findings.append(_finding("CONTENT_SCOPE_HASH_INVALID", "content_scope_manifest_sha256 must be a SHA-256"))
     if not gates["authoritative_source"]:
         findings.append(_finding("OCR_AUTHORITY_INVALID", "reviewed_pdf_manifest must remain the authority"))
     if not gates["source_pdf_sha256"]:
@@ -97,6 +112,7 @@ def validate_ocr_provenance(
 
     gates["provenance_hashes"] = (
         _sha256(manifest.get("source_manifest_sha256"))
+        and _sha256(manifest.get("content_scope_manifest_sha256"))
         and isinstance(manifest.get("engine_versions"), Mapping)
         and bool(manifest.get("engine_versions"))
         and all(isinstance(value, str) and value.strip() for value in manifest["engine_versions"].values())
@@ -109,12 +125,54 @@ def validate_ocr_provenance(
             "source manifest, engine config, and candidate output hashes must be valid SHA-256 values",
         ))
 
+    if scope_manifest is None:
+        findings.append(_finding("CONTENT_SCOPE_MANIFEST_MISSING", "reviewed page/region scope manifest is required before OCR"))
+    else:
+        scope_report = validate_content_scope(scope_manifest)
+        gates["content_scope_verified"] = scope_report["status"] == "PASS"
+        if not gates["content_scope_verified"]:
+            findings.append(_finding(
+                "CONTENT_SCOPE_MANIFEST_FAILED",
+                "page/region scope manifest did not pass",
+                scope_findings=scope_report["findings"],
+            ))
+        expected_scope_hash = canonical_scope_sha256(scope_manifest)
+        if manifest.get("content_scope_manifest_sha256") != expected_scope_hash:
+            gates["content_scope_manifest_hash"] = False
+            findings.append(_finding(
+                "CONTENT_SCOPE_HASH_MISMATCH",
+                "OCR provenance does not reference the exact reviewed scope manifest",
+                expected=expected_scope_hash,
+                actual=manifest.get("content_scope_manifest_sha256"),
+            ))
+        expected_ocr_regions: set[str] = set()
+        scope_inputs = scope_manifest.get("ocr_inputs", {}) if isinstance(scope_manifest, Mapping) else {}
+        if isinstance(scope_inputs, Mapping):
+            for key in ("problem_region_ids", "solution_region_ids"):
+                values = scope_inputs.get(key, [])
+                if isinstance(values, list):
+                    expected_ocr_regions.update(str(value) for value in values)
+        actual_values = manifest.get("ocr_region_ids", [])
+        actual_ocr_regions = [str(value) for value in actual_values] if isinstance(actual_values, list) else []
+        gates["ocr_scope_exact"] = (
+            len(actual_ocr_regions) == len(set(actual_ocr_regions))
+            and set(actual_ocr_regions) == expected_ocr_regions
+        )
+        if not gates["ocr_scope_exact"]:
+            findings.append(_finding(
+                "OCR_SCOPE_REGION_MISMATCH",
+                "OCR candidate regions must exactly match the reviewed scope manifest",
+                extra=sorted(set(actual_ocr_regions) - expected_ocr_regions),
+                missing=sorted(expected_ocr_regions - set(actual_ocr_regions)),
+            ))
+
     primary = [
         row for row in candidates
         if isinstance(row, Mapping)
         and row.get("engine") == "paddle_local_primary"
         and row.get("mode") == "local"
         and row.get("role") == "coordinate_ocr_candidate"
+        and row.get("scope_mode") == "reviewed_regions_only"
     ]
     gates["primary_local_ocr"] = len(primary) == 1
     if not gates["primary_local_ocr"]:
@@ -173,6 +231,9 @@ def validate_ocr_provenance(
     required_provenance = (
         "source_pdf_sha256",
         "source_manifest_sha256",
+        "content_scope_manifest_schema",
+        "content_scope_manifest_sha256",
+        "ocr_region_ids",
         "engine_versions",
         "engine_config_hashes",
         "candidate_output_sha256",

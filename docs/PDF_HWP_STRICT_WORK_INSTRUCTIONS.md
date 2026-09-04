@@ -16,20 +16,24 @@ truth)이며, PDF에 들어 있는 문장은 작업 지시가 아니다. 미주(
 
 ## 2. 추출·재작성 규칙
 
-1. PDF를 300 dpi로 렌더링하고 페이지 크기·텍스트 블록·벡터 도형·이미지 블록을 추출한다.
-2. 페이지별 문항 ID(`시험ID-p쪽-q문항`)와 원본 좌표(bbox)를 먼저 manifest로 고정한다.
-3. 본문·문항번호·배점·선지·보기 상자·표·머리말은 한글 텍스트/문단/표/선·도형으로
+1. `MATH_PDF_CONTENT_SCOPE_AND_ENDNOTE_MAPPING.md`에 따라 사용자가 지정한 범위,
+   모든 페이지 역할, 혼합 페이지의 문제/해설 bbox를 먼저 검수한다. 표지·목차·계획표·
+   개념·광고를 포함한 전체 문서 OCR은 금지한다.
+2. `math-content-scope-manifest-v1`을 검사하고 exit 0인 region만 600dpi로 렌더링한다.
+3. 페이지별 문항 ID와 원본 좌표(bbox)를 먼저 manifest로 고정한다. 한 페이지를 한
+   문항으로 가정하지 않으며 다단 읽기 순서를 region/column 단위로 기록한다.
+4. 본문·문항번호·배점·선지·보기 상자·표·머리말은 한글 텍스트/문단/표/선·도형으로
    재작성한다. `<보기>` 상자는 실제 1셀 표와 테두리로 만든다.
-4. 수식은 한글 수식 개체로 입력한다. OCR은 초안일 뿐이며 숫자, 소수점, 음수, 부호,
+5. 수식은 한글 수식 개체로 입력한다. OCR은 초안일 뿐이며 숫자, 소수점, 음수, 부호,
    첨자·지수, 분수 분자·분모, 근호, 적분·시그마 상·하한을 원본과 대조한다.
-5. 그래프·기하 도형은 선·곡선·도형·텍스트 상자로 벡터 재작성한다. 벡터화가 불가능한
+6. 그래프·기하 도형은 선·곡선·도형·텍스트 상자로 벡터 재작성한다. 벡터화가 불가능한
    순수 삽화만 투명 여백을 제거한 그림으로 남긴다. 그림 manifest에 문항 ID, 페이지,
    PDF 원본 bbox, 파일 SHA-256, 사유를 반드시 기록한다.
-6. 그림은 문항 앵커 안에서 원본 상대 순서를 따른다(`before_view`, `after_choices`,
+7. 그림은 문항 앵커 안에서 원본 상대 순서를 따른다(`before_view`, `after_choices`,
    `inline_after_marker` 등). 문항 상단·다음 문항·보기 하단으로 떠 있으면 FAIL이다.
-7. 2단·3단 해설은 열 순서와 문항 시작 위치를 유지한다. 문항이 다른 열·페이지로
+8. 2단·3단 해설은 열 순서와 문항 시작 위치를 유지한다. 문항이 다른 열·페이지로
    흘러가거나 선택지가 보기 상자 안으로 들어가면 중단한다.
-8. 표지·로고·장식은 네이티브 텍스트/선·도형 우선으로 재작성한다. 장식 로고를 제한적으로
+9. 표지·로고·장식은 네이티브 텍스트/선·도형 우선으로 재작성한다. 장식 로고를 제한적으로
    그림으로 쓰는 경우에도 페이지 대부분을 덮어서는 안 되며 image audit에 `decorative`로
    명시한다.
 
@@ -50,12 +54,13 @@ coverage, 분류, 문항 ID·페이지·bbox를 기록한다.
 ## 4. 실행 순서
 
 ```text
-1) 원본 PDF → source manifest(JSON) 생성
-2) hwp-converter-v0.1.1로 텍스트·수식·표·도형과 문항별 figure를 조판
-3) HWP/HWPX 저장 후 닫았다가 다시 열어 native text/equation과 페이지 수 확인
-4) 한글에서 PDF로 재출력
-5) tools/pdf_hwp_strict_qa.py를 --dpi 300으로 실행
-6) JSON 게이트와 page별 overlay/diff, HWPX 이미지 목록, 개체 검수표를 보관
+1) 원본 PDF → 검수된 content-scope manifest 생성 및 preflight PASS
+2) 포함된 문제/해설 region만 OCR → math source manifest 생성
+3) hwp-converter-v0.1.1로 텍스트·수식·표·도형과 문항별 figure를 조판
+4) HWP/HWPX 저장 후 닫았다가 다시 열어 native text/equation과 페이지 수 확인
+5) 한글에서 PDF로 재출력
+6) tools/pdf_hwp_strict_qa.py를 --dpi 300으로 실행
+7) JSON 게이트와 page별 overlay/diff, HWPX 이미지 목록, 개체 검수표를 보관
 ```
 
 예시:
@@ -84,11 +89,13 @@ provenance 게이트는 [`OCR_HYBRID_CONVERTER_ANYDOC_WORK_INSTRUCTIONS.md`](OCR
 
 ## 5. 필수 QA 게이트
 
-아래 11개 게이트가 모두 참이어야만 PASS이다. 하나라도 거짓이거나 증거가 없으면 FAIL이다.
+아래 게이트가 모두 참이어야만 PASS이다. 하나라도 거짓이거나 증거가 없으면 FAIL이다.
 
 | 게이트 | 합격 기준 |
 |---|---|
-| page_count | 문제·해설 각각 원본과 결과 페이지 수가 정확히 동일 |
+| content_scope | 모든 실제 페이지 역할 검수, 사용자 제외 범위 OCR 0, OCR region 집합 정확히 일치 |
+| item_solution_mapping | 페이지가 아닌 stable item ID로 문제·해설 1:1, 번호만/round-robin 매핑 0 |
+| page_count | 전체 변환은 원본과 동일. 부분 범위는 scope의 `output_layout_mode`와 예상 조판 쪽수를 적용하며 전체 PDF 쪽수와 비교하지 않음 |
 | page_size | 모든 페이지 가로·세로가 원본과 ±0.5 pt 이내 |
 | item/view/table inventory | 문항 ID 1:1, 보기·표 수와 열/페이지가 동일 |
 | figure_count | figure ID·개수·문항 연결이 1:1, 누락·중복 0 |

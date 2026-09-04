@@ -1,5 +1,10 @@
 # ExamPool
 
+수학 PDF의 OCR·편집형 HWP/HWPX·네이티브 미주 작업은 OCR 전에
+[`docs/MATH_PDF_CONTENT_SCOPE_AND_ENDNOTE_MAPPING.md`](docs/MATH_PDF_CONTENT_SCOPE_AND_ENDNOTE_MAPPING.md)의
+페이지/영역 범위 게이트를 통과해야 합니다. 표지·계획표·개념 영역을 포함한 전체 문서
+OCR과 페이지 순번 기반 해설 미주 연결은 지원하지 않습니다.
+
 **근거 있는 시험 출제 도구.** 참인 명제를 근거와 함께 모아두고, 그것을 조합해 문항과 세트를 설계한 뒤 hwppalette 문법으로 내보낸다.
 
 Copyright © 2026 박승연 (SOMC) · [AGPL-3.0-only](LICENSE)

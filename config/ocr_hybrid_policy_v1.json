@@ -4,11 +4,14 @@
   "status": "VERIFIED",
   "authoritative_source": "reviewed_pdf_manifest",
   "source_manifest_schema": "math-source-manifest-v1",
+  "content_scope_manifest_schema": "math-content-scope-manifest-v1",
+  "content_scope_policy": "problem_solution_regions_only",
   "primary_ocr": {
     "engine": "paddle_local_primary",
     "mode": "local",
     "required": true,
-    "role": "coordinate_ocr_candidate"
+    "role": "coordinate_ocr_candidate",
+    "scope_mode": "reviewed_regions_only"
   },
   "exam_pool_converter": {
     "engine": "exam_pool_v0.1.1",
@@ -47,6 +50,9 @@
   "required_provenance": [
     "source_pdf_sha256",
     "source_manifest_sha256",
+    "content_scope_manifest_schema",
+    "content_scope_manifest_sha256",
+    "ocr_region_ids",
     "engine_versions",
     "engine_config_hashes",
     "candidate_output_sha256",
@@ -56,6 +62,11 @@
   ],
   "forbidden_shortcuts": [
     "ocr_to_hwp_without_reviewed_manifest",
+    "ocr_entire_document_without_reviewed_scope",
+    "ocr_excluded_frontmatter_or_concept_regions",
+    "one_endnote_per_pdf_page",
+    "page_round_robin_solution_mapping",
+    "printed_number_only_solution_mapping",
     "majority_vote_for_math_tokens",
     "page_capture_fallback",
     "formula_plain_text_fallback",

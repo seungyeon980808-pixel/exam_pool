@@ -56,17 +56,22 @@ converter의 OCR은 로컬 후보 생성에만 사용한다. 현재 릴리스의
 ## 처리 순서
 
 1. PDF SHA-256, 페이지 수, 텍스트/벡터/스캔 유형을 기록한다.
-2. PyMuPDF 600dpi 전 페이지 렌더와 PaddleOCR 주 후보를 만든다.
-3. hwp-converter OCR은 별도 후보로 실행할 수 있으며 모델·설정·출력 해시를 기록한다.
-4. anydoc는 텍스트 PDF 또는 허가된 비민감 자료에서만 구조 비교용으로 실행한다.
-5. OCR 후보를 자동 병합하지 않는다. 숫자·부호·수식·문항 순서가 다르면 PDF
+2. `MATH_PDF_CONTENT_SCOPE_AND_ENDNOTE_MAPPING.md`에 따라 모든 페이지 역할과
+   포함/제외 영역을 검수하고 `math-content-scope-manifest-v1`을 확정한다.
+3. 사용자가 지정한 시작 쪽·제외 쪽을 적용하고 문제/해설 region만 600dpi로 렌더한다.
+   혼합 페이지는 페이지 전체가 아니라 검수된 bbox만 OCR한다.
+4. PaddleOCR 주 후보를 reviewed region ID에 연결하여 만든다. 페이지 전체 OCR이나
+   표지·계획표·개념 설명의 사후 삭제는 금지한다.
+5. hwp-converter OCR은 별도 후보로 실행할 수 있으며 모델·설정·출력 해시를 기록한다.
+6. anydoc는 텍스트 PDF 또는 허가된 비민감 자료에서만 구조 비교용으로 실행한다.
+7. OCR 후보를 자동 병합하지 않는다. 숫자·부호·수식·문항 순서가 다르면 PDF
    600/900dpi 직접 확인 대상으로 등록한다.
-6. 수식별 MathIR, source crop SHA-256, PDF bbox, 문항 ID, ordinal,
+8. 수식별 MathIR, source crop SHA-256, PDF bbox, 문항 ID, ordinal,
    `review_status: VERIFIED`를 확정한다.
-7. 검수된 `math-source-manifest-v1`만 converter의 네이티브 writer에 전달한다.
-8. HWP/HWPX를 저장·닫기·재열기하고 HWPX XML 및 COM `eqed`를 감사한다.
-9. 결과 PDF를 다시 만들고 300dpi overlay/diff와 문항·그림 소유권을 전수검사한다.
-10. 모든 게이트가 통과한 경우에만 최종 폴더로 승격한다.
+9. 검수된 `math-source-manifest-v1`만 converter의 네이티브 writer에 전달한다.
+10. HWP/HWPX를 저장·닫기·재열기하고 HWPX XML 및 COM `eqed`를 감사한다.
+11. 결과 PDF를 다시 만들고 300dpi overlay/diff와 문항·그림 소유권을 전수검사한다.
+12. 모든 게이트가 통과한 경우에만 최종 폴더로 승격한다.
 
 ## OCR 불일치 정책
 
@@ -109,6 +114,8 @@ OCR provenance manifest는 `app.ocr_hybrid_policy.validate_ocr_provenance()`로
 
 - `source_pdf_sha256`
 - `source_manifest_sha256`
+- `content_scope_manifest_schema`, `content_scope_manifest_sha256`
+- `ocr_region_ids` (scope manifest의 problem/solution region ID와 정확히 일치)
 - `engine_versions`
 - `engine_config_hashes`
 - `candidate_output_sha256`
@@ -120,6 +127,7 @@ OCR provenance manifest는 `app.ocr_hybrid_policy.validate_ocr_provenance()`로
 
 ```powershell
 python tools/ocr_hybrid_preflight.py ocr-provenance.json `
+  --scope-manifest content-scope.json `
   --source-is-copyrighted `
   --json ocr-provenance-qa.json
 ```
