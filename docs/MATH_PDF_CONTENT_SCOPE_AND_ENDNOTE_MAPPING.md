@@ -48,6 +48,8 @@
 `item_reflow`는 검수된 문항 순서·개체 결합을 기준으로 새로 조판하고,
 `source_region_layout`은 포함된 source region의 배치를 기준으로 검사한다. 어떤 모드도
 제외된 페이지·영역을 페이지 수를 맞추기 위해 다시 넣어서는 안 된다.
+승인된 기본값인 `item_reflow`에서는 물리 OCR 행을 중간 증거로만 사용하고, HWP 문단을
+쓰기 전에 문항 단위 semantic 필드로 재구성한다.
 
 ## 혼합 페이지와 읽기 순서
 
@@ -95,7 +97,9 @@ reading order 중복과 column ID 누락은 FAIL이다.
 
 각 문제 번호 뒤에 해당 item ID의 미주 하나만 삽입한다. 해설 본문·수식·표·허용된
 그림은 해설 영역의 원문 순서대로 넣는다. `page_round_robin`, 번호만 일치하는 대체,
-해설 페이지 전체 삽입은 즉시 FAIL이다.
+해설 페이지 전체 삽입은 즉시 FAIL이다. 네이티브 미주는 `endnote_mode:
+staged_atomic`으로만 실행하며, 미주 전 편집형 HWP/HWPX checkpoint가 `PASS`인 뒤에만
+네이티브 미주 단계를 시작한다.
 
 ## 실행 게이트
 

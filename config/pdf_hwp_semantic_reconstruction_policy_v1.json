@@ -1,0 +1,71 @@
+{
+  "schema_version": "pdf-hwp-semantic-reconstruction-policy-v1",
+  "manifest_schema": "pdf-hwp-semantic-reconstruction-v1",
+  "status": "VERIFIED",
+  "source_mode": "semantic_item_reflow",
+  "endnote_mode": "staged_atomic",
+  "physical_ocr_rows_are_intermediate_only": true,
+  "scope": {
+    "include_roles": ["problem", "solution"],
+    "exclude_roles": ["cover", "frontmatter", "toc", "study_plan", "concept", "divider", "answer_key", "blank", "advertisement"],
+    "mixed_page_rule": "include_reviewed_item_regions_only",
+    "item_mapping": "stable_item_id_exact",
+    "mapping_evidence": ["section", "printed_label", "problem_first_sentence", "solution_content"],
+    "page_round_robin": false,
+    "number_only_mapping": false
+  },
+  "semantic_reconstruction": {
+    "physical_ocr_row_hwp_paragraph": false,
+    "sentence_units": "complete_semantic_sentences",
+    "native_choice_kind": "native_choice",
+    "choice_count_rule": "exact_reviewed_count; zero for open-response items",
+    "native_condition_box_kind": "native_table",
+    "native_table_kind": "native_table",
+    "pure_figure_only": true,
+    "forbidden_image_roles": ["page_capture", "question_capture", "body_capture", "solution_body_capture", "screenshot"]
+  },
+  "typography": {
+    "body_font_family": "함초롬돋움",
+    "body_font_size_pt": 11.0,
+    "body_line_spacing_percent": 160.0,
+    "body_space_before_pt": 0.0,
+    "body_space_after_pt": 2.0,
+    "body_alignment": "justify",
+    "blank_line_spacing_forbidden": true,
+    "justify_stretch_forbidden": true
+  },
+  "equations": {
+    "native_object": "eqed",
+    "font_family": "HYhwpEQ",
+    "font_size_pt": 11.0,
+    "base_unit": 1100,
+    "script_required": true,
+    "chain": ["source_reviewed", "hwpx", "hwp", "com", "rendered_pdf"]
+  },
+  "endnotes": {
+    "endnote_mode": "staged_atomic",
+    "pre_endnote_checkpoint_required": true,
+    "one_native_endnote_per_problem_item": true,
+    "insert_only_after_checkpoint_status": "PASS"
+  },
+  "qa": {
+    "reopen_hwp": true,
+    "reopen_hwpx": true,
+    "reopen_com": true,
+    "rendered_pdf": true,
+    "visual_review": true,
+    "source_pdf_and_hwp_files_stay_outside_git": true
+  },
+  "fail_codes": [
+    "PHYSICAL_OCR_ROW_SPLIT",
+    "BODY_JUSTIFY_STRETCH",
+    "SENTENCE_FRAGMENTATION",
+    "CHOICE_LAYOUT_MISMATCH",
+    "CONDITION_BOX_NOT_NATIVE",
+    "ITEM_COLUMN_MISMATCH",
+    "FIGURE_OWNERSHIP_MISMATCH",
+    "PARAGRAPH_SPACING_OUT_OF_PROFILE",
+    "OCR_UNREVIEWED",
+    "FORMULA_NATIVE_MISSING"
+  ]
+}

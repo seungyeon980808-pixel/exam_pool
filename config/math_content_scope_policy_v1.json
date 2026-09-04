@@ -2,6 +2,7 @@
   "schema_version": "math-content-scope-policy-v1",
   "manifest_schema": "math-content-scope-manifest-v1",
   "status": "VERIFIED",
+  "endnote_mode": "staged_atomic",
   "page_index_base": 1,
   "selection_policy": "problem_solution_regions_only",
   "output_layout_modes": ["item_reflow", "source_region_layout"],
@@ -38,6 +39,8 @@
     "one_problem_page_equals_one_item": "forbidden"
   },
   "endnote_invariants": [
+    "endnote_mode_is_staged_atomic",
+    "pre_endnote_editable_checkpoint_must_pass",
     "problem_item_count_equals_solution_item_count",
     "problem_item_count_equals_endnote_reference_count",
     "problem_item_count_equals_endnote_body_count",

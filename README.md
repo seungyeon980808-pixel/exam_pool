@@ -81,6 +81,11 @@ python tools/pdf_hwp_strict_qa.py --source source.pdf --generated roundtrip.pdf 
 실제 시험 PDF/HWP/HWPX와 생성 결과물은 저장소에 커밋하지 않으며, 회귀 테스트는
 저작권 없는 합성 fixture만 사용한다.
 
+문항 단위 semantic 재구성, 문항별 문제집↔해설책 매핑, 네이티브 개체·수식 연쇄,
+`staged_atomic` 미주 선행 게이트는 [PDF_HWP_SEMANTIC_RECONSTRUCTION_BASELINE.md](docs/PDF_HWP_SEMANTIC_RECONSTRUCTION_BASELINE.md)와
+`config/pdf_hwp_semantic_reconstruction_policy_v1.json`에서 검증한다. 물리 OCR 행을
+HWP 문단으로 직접 복사하거나 페이지·문항·본문 캡처를 이미지로 넣는 경로는 허용하지 않는다.
+
 OCR 후보를 여러 경로로 비교할 때는 [OCR_HYBRID_CONVERTER_ANYDOC_WORK_INSTRUCTIONS.md](docs/OCR_HYBRID_CONVERTER_ANYDOC_WORK_INSTRUCTIONS.md)의
 하이브리드 정책을 적용한다. 로컬 PaddleOCR/PyMuPDF가 주 후보이고,
 `hwp-converter-v0.1.1`(`be1893f`)은 strict wrapper가 있는 보조 후보·네이티브

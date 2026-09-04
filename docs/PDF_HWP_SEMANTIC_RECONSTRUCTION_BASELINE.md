@@ -1,0 +1,72 @@
+# PDF → HWP semantic reconstruction baseline
+
+This contract is the small bridge between the reviewed PDF/OCR manifests and
+the HWP writer.  It is intentionally source-independent: real PDF, OCR,
+HWP/HWPX, screenshots, and rendered pages remain local working evidence and
+are never fixtures or Git inputs.
+
+## Approved flow
+
+```text
+reviewed scope → reviewed OCR candidate → semantic item model
+              → editable problem/solution HWP/HWPX checkpoint
+              → native endnote (staged_atomic) → COM/reopen/render QA
+```
+
+Physical OCR rows are temporary evidence only.  The writer receives one
+semantic item at a time, with its stem, ask, materials, condition/보기 box,
+choices, tables, formulas, and owned figures.  A page without an included
+problem/solution region is excluded before OCR.  A mixed page is cropped to its
+reviewed item regions.  A page is never treated as one item.
+
+Problem and solution regions are joined by a stable `item_id`; section,
+printed label, problem first sentence, and solution content are all required
+mapping evidence.  Printed number alone, page order, modulo, and
+`page_round_robin` are not mappings.
+
+## Semantic and native object rules
+
+- HWP paragraphs must have `origin: semantic`; direct physical OCR-row
+  paragraphs fail with `PHYSICAL_OCR_ROW_SPLIT`.
+- Sentence units are complete reviewed sentences.  Fragments fail with
+  `SENTENCE_FRAGMENTATION`.
+- When the source item has choices, they are the exact reviewed count of ordered
+  native choice objects in the reviewed layout; an open-response item declares
+  `expected_choice_count: 0` and does not invent choices.
+  `<보기>`/condition boxes and tables are native HWP tables, never raster
+  captures.
+- Only a tight-cropped pure figure may remain an image.  Page, question,
+  solution-body, screenshot, and text-bearing captures are forbidden.  Each
+  figure has exactly one owning `item_id`.
+- Body text uses 함초롬돋움 11 pt and 160% line spacing.  Paragraph spacing is
+  native margins (0 pt before, 2 pt after); blank-line spacing is forbidden.
+  Justification must not stretch a short/final body line.
+- Equations are editable `eqed` objects using `HYhwpEQ`, 11 pt, and HWPX
+  `baseUnit=1100`, with a non-empty script.  The reviewed source count,
+  HWPX, HWP, COM, and rendered-PDF equation counts must form one chain.
+
+## Endnote release gate
+
+The default is `endnote_mode: staged_atomic`.  Native endnotes are not written
+while content is still being reconstructed.  The pre-endnote editable HWP/HWPX
+checkpoint must be `PASS` (and hash-addressed) before the native endnote stage
+is scheduled.  Native endnote QA remains a separate final gate, including
+HWP/HWPX reopen, COM inspection, copy/move tracking, and PDF render review.
+
+Run the copyright-safe preflight with a local manifest:
+
+```powershell
+python tools/pdf_hwp_semantic_preflight.py reviewed-semantic-manifest.json `
+  --json semantic-qa.json
+```
+
+The preflight is fail-closed.  The stable failure codes include
+`PHYSICAL_OCR_ROW_SPLIT`, `BODY_JUSTIFY_STRETCH`,
+`SENTENCE_FRAGMENTATION`, `CHOICE_LAYOUT_MISMATCH`,
+`CONDITION_BOX_NOT_NATIVE`, `ITEM_COLUMN_MISMATCH`,
+`FIGURE_OWNERSHIP_MISMATCH`, `PARAGRAPH_SPACING_OUT_OF_PROFILE`,
+`OCR_UNREVIEWED`, and `FORMULA_NATIVE_MISSING`.
+
+The checked-in policy is
+`config/pdf_hwp_semantic_reconstruction_policy_v1.json`, and the generic
+validator is `app/pdf_hwp_semantic_reconstruction.py`.
