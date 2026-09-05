@@ -78,6 +78,20 @@ checkpoint until the block is transcribed or the item is removed from scope.
   conditions, matrices, and vector symbols must remain structured native
   equation content rather than plain text.
 
+Reviewed chunks may also contain semantic diagrams (`representation:
+native_semantic` or a graph/key-point description) without a raster path. The
+writer must materialise those as editable tables/text plus native equations;
+it must never invent a screenshot or silently drop the diagram. Raster figures
+are accepted only with a tight crop, SHA-256, owner, and explicit pure
+graph/geometry/illustration reason. Semantic diagrams are excluded from the
+BinData image count but remain subject to visual coordinate, label, and
+numeric-value review.
+
+Before `EquationCreate`, an explicit allow-list may normalize source shorthands
+such as `\\times`, `\\Pi`, `\\leq`, escaped braces, and Unicode operators into
+HancomEQN tokens. Unsupported raw backslash commands, empty scripts, and
+plain-text/image formula fallbacks remain hard failures.
+
 ## Endnote release gate
 
 The default is `endnote_mode: staged_atomic`.  Native endnotes are not written
