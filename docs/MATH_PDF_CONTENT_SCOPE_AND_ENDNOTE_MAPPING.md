@@ -101,6 +101,11 @@ reading order 중복과 column ID 누락은 FAIL이다.
 staged_atomic`으로만 실행하며, 미주 전 편집형 HWP/HWPX checkpoint가 `PASS`인 뒤에만
 네이티브 미주 단계를 시작한다.
 
+사용자가 변환과 미주작업을 한 번에 요청해도 내부 단계는 합치지 않는다. 사용자에게는
+최종본 하나를 제공할 수 있지만, 실행기는 `scope → semantic reconstruction →
+pre-endnote HWP/HWPX QA → native endnote QA` 순서의 체크포인트를 유지한다. 전 단계가
+통과하지 않으면 후속 미주작업을 예약하지 않고 마지막 통과 산출물과 FAIL 코드를 보존한다.
+
 ## 실행 게이트
 
 OCR 전에 다음 명령이 exit 0이어야 한다.

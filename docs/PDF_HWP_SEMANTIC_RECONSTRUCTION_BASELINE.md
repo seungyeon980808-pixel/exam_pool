@@ -24,6 +24,27 @@ printed label, problem first sentence, and solution content are all required
 mapping evidence.  Printed number alone, page order, modulo, and
 `page_round_robin` are not mappings.
 
+## One-request execution with internal checkpoints
+
+The user may request “convert and add endnotes” in one request.  That is a
+single delivery request, not permission to bypass verification.  The runner
+must still execute the following atomic checkpoints in order:
+
+1. freeze the copyright-source hashes and the reviewed scope/region manifest;
+2. reconstruct complete semantic problem and solution items (including side
+   boxes, continuation blocks, choices, tables, figures, and formulas);
+3. save and reopen the editable problem/solution HWP and HWPX and pass the
+   semantic, formula, layout, and image audits;
+4. only then insert one native endnote per reviewed item and run the endnote
+   reopen/copy-move/render audit.
+
+If a checkpoint fails, the runner must keep the last passing checkpoint and
+stop the dependent stage.  It must not silently insert a page capture, plain
+text formula, or incomplete solution into an endnote to make the counts match.
+The final delivery is `PASS` only when every checkpoint and the final endnote
+gate pass; otherwise the report is a staged candidate with explicit failure
+codes and is not labelled complete.
+
 Every solution item also declares `solution_completeness` with the number of
 source blocks and reconstructed blocks plus an empty `omitted_block_ids` list.
 Explanation boxes (for example 출제코드, 해설특강, 핵심개념), answer lines,
