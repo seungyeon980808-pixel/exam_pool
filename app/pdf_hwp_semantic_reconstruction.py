@@ -39,6 +39,7 @@ FAIL_CODES = frozenset({
     "PARAGRAPH_SPACING_OUT_OF_PROFILE",
     "OCR_UNREVIEWED",
     "FORMULA_NATIVE_MISSING",
+    "FORMULA_UNSUPPORTED_SYNTAX",
     "NON_ITEM_PAGE_INCLUDED",
     "ITEM_SOLUTION_MAPPING_MISMATCH",
     "PRE_ENDNOTE_CHECKPOINT_REQUIRED",
@@ -363,12 +364,27 @@ def _validate_formulas(item: Mapping[str, Any], findings: list[dict[str, Any]]) 
         ))
     for index, formula in enumerate(formulas, 1):
         native = formula.get("native") is True or str(formula.get("kind", formula.get("object_type", ""))).lower() in {"native_equation", "equation", "eqed"}
+        script = str(formula.get("script", ""))
+        unsupported = (
+            "!=" in script
+            or bool(re.search(r"(?<!\\)\\[A-Za-z]+", script))
+            or script.count("{") != script.count("}")
+            or script.count("(") != script.count(")")
+        )
+        if unsupported:
+            findings.append(_finding(
+                "FORMULA_UNSUPPORTED_SYNTAX",
+                "native equation scripts must use supported Hancom syntax with balanced delimiters; do not encode != or raw LaTeX commands",
+                item_id=item_id,
+                formula=index,
+                script=script,
+            ))
         base_unit = _number(formula.get("base_unit", _EXPECTED_EQUATION["base_unit"]))
         style_bad = (
             formula.get("font_family", _EXPECTED_EQUATION["font_family"]) != _EXPECTED_EQUATION["font_family"]
             or not _same_number(formula.get("font_size_pt", _EXPECTED_EQUATION["font_size_pt"]), _EXPECTED_EQUATION["font_size_pt"])
             or base_unit is None or abs(float(base_unit) - _EXPECTED_EQUATION["base_unit"]) > 0.001
-            or not str(formula.get("script", "")).strip()
+            or not script.strip()
         )
         if not native or style_bad:
             findings.append(_finding(

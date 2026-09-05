@@ -44,6 +44,11 @@ mapping evidence.  Printed number alone, page order, modulo, and
 - Equations are editable `eqed` objects using `HYhwpEQ`, 11 pt, and HWPX
   `baseUnit=1100`, with a non-empty script.  The reviewed source count,
   HWPX, HWP, COM, and rendered-PDF equation counts must form one chain.
+  Scripts use Hancom equation grammar only: raw LaTeX commands, `!=`, and
+  unbalanced braces/parentheses fail before HWP generation.  Subscripts,
+  superscripts, sigma/product/limit bounds, fractions, roots, piecewise
+  conditions, matrices, and vector symbols must remain structured native
+  equation content rather than plain text.
 
 ## Endnote release gate
 
@@ -65,7 +70,8 @@ The preflight is fail-closed.  The stable failure codes include
 `SENTENCE_FRAGMENTATION`, `CHOICE_LAYOUT_MISMATCH`,
 `CONDITION_BOX_NOT_NATIVE`, `ITEM_COLUMN_MISMATCH`,
 `FIGURE_OWNERSHIP_MISMATCH`, `PARAGRAPH_SPACING_OUT_OF_PROFILE`,
-`OCR_UNREVIEWED`, and `FORMULA_NATIVE_MISSING`.
+`OCR_UNREVIEWED`, `FORMULA_NATIVE_MISSING`, and
+`FORMULA_UNSUPPORTED_SYNTAX`.
 
 The checked-in policy is
 `config/pdf_hwp_semantic_reconstruction_policy_v1.json`, and the generic

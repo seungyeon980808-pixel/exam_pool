@@ -172,6 +172,14 @@ def test_style_ocr_formula_and_release_gates_fail_closed() -> None:
     assert can_build_native_endnotes(value) is False
 
 
+def test_unsupported_formula_script_fails_closed() -> None:
+    value = _manifest()
+    value["items"][0]["formulas"][0]["script"] = r"4!=24"
+    assert "FORMULA_UNSUPPORTED_SYNTAX" in _codes(validate_semantic_reconstruction(value))
+    value["items"][0]["formulas"][0]["script"] = r"\frac{1}{2}"
+    assert "FORMULA_UNSUPPORTED_SYNTAX" in _codes(validate_semantic_reconstruction(value))
+
+
 def test_non_item_page_and_mapping_are_not_silent() -> None:
     value = _manifest()
     value["pages"][0]["included"] = True
@@ -187,6 +195,7 @@ def test_source_policy_exposes_required_codes_and_json_loader(tmp_path: Path) ->
         "CHOICE_LAYOUT_MISMATCH", "CONDITION_BOX_NOT_NATIVE", "ITEM_COLUMN_MISMATCH",
         "FIGURE_OWNERSHIP_MISMATCH", "PARAGRAPH_SPACING_OUT_OF_PROFILE", "OCR_UNREVIEWED",
         "FORMULA_NATIVE_MISSING",
+        "FORMULA_UNSUPPORTED_SYNTAX",
     } <= FAIL_CODES
     manifest = tmp_path / "semantic.json"
     manifest.write_text(json.dumps(_manifest(), ensure_ascii=False), encoding="utf-8")
