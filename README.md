@@ -1,5 +1,10 @@
 # ExamPool
 
+수학 PDF의 OCR·편집형 HWP/HWPX·네이티브 미주 작업은 OCR 전에
+[`docs/MATH_PDF_CONTENT_SCOPE_AND_ENDNOTE_MAPPING.md`](docs/MATH_PDF_CONTENT_SCOPE_AND_ENDNOTE_MAPPING.md)의
+페이지/영역 범위 게이트를 통과해야 합니다. 표지·계획표·개념 영역을 포함한 전체 문서
+OCR과 페이지 순번 기반 해설 미주 연결은 지원하지 않습니다.
+
 **근거 있는 시험 출제 도구.** 참인 명제를 근거와 함께 모아두고, 그것을 조합해 문항과 세트를 설계한 뒤 hwppalette 문법으로 내보낸다.
 
 Copyright © 2026 박승연 (SOMC) · [AGPL-3.0-only](LICENSE)
@@ -53,6 +58,41 @@ run.bat
 
 이미지 OCR 런타임은 처음 실행할 때만 `data/pdf_hwp_ocr_runtime/`에 설치된다.
 이 디렉터리와 OCR 모델·사용자 PDF·변환 결과는 Git에 포함되지 않는다.
+
+### 원문배치 편집형 변환의 엄격 검수
+
+수학 PDF를 부교재로 편집할 때는 페이지·본문 캡처를 사용하지 않고 문항별 텍스트,
+한글 수식, 보기/표, 문항 좌표와 그림 manifest를 함께 관리한다. `app/pdf_hwp_strict_qa.py`
+는 HWPX `BinData` 전체를 감사하고, 300 dpi로 원본과 결과 PDF를 전 페이지 렌더링해
+overlay/diff를 만든다. 문항·그림 누락/중복, 숫자·수식 토큰 변경, 2% 초과 좌표 이동,
+3% 초과 시각 차이, 페이지/본문 캡처 이미지, 재개방 또는 네이티브 편집성 증거가 없으면
+자동 FAIL한다. 페이지 수와 파일 열림만으로는 PASS할 수 없다.
+
+실행 예시는 다음과 같다(원본·결과·manifest는 로컬에만 둔다).
+
+```powershell
+python tools/pdf_hwp_strict_qa.py --source source.pdf --generated roundtrip.pdf `
+  --hwpx result.hwpx --expected source-manifest.json --actual result-manifest.json `
+  --figures figure-manifest.json --out qa
+```
+
+전체 작업 절차, HWPX 이미지 감사, 실패 시 중단 조건, 종로 오류 회귀 기준은
+[PDF_HWP_STRICT_WORK_INSTRUCTIONS.md](docs/PDF_HWP_STRICT_WORK_INSTRUCTIONS.md)에 기록했다.
+실제 시험 PDF/HWP/HWPX와 생성 결과물은 저장소에 커밋하지 않으며, 회귀 테스트는
+저작권 없는 합성 fixture만 사용한다.
+
+문항 단위 semantic 재구성, 문항별 문제집↔해설책 매핑, 네이티브 개체·수식 연쇄,
+`staged_atomic` 미주 선행 게이트는 [PDF_HWP_SEMANTIC_RECONSTRUCTION_BASELINE.md](docs/PDF_HWP_SEMANTIC_RECONSTRUCTION_BASELINE.md)와
+`config/pdf_hwp_semantic_reconstruction_policy_v1.json`에서 검증한다. 물리 OCR 행을
+HWP 문단으로 직접 복사하거나 페이지·문항·본문 캡처를 이미지로 넣는 경로는 허용하지 않는다.
+
+OCR 후보를 여러 경로로 비교할 때는 [OCR_HYBRID_CONVERTER_ANYDOC_WORK_INSTRUCTIONS.md](docs/OCR_HYBRID_CONVERTER_ANYDOC_WORK_INSTRUCTIONS.md)의
+하이브리드 정책을 적용한다. 로컬 PaddleOCR/PyMuPDF가 주 후보이고,
+`hwp-converter-v0.1.1`(`be1893f`)은 strict wrapper가 있는 보조 후보·네이티브
+writer로만 사용한다. Firecrawl anydoc는 선택적 구조 비교용이며 hosted 전송은
+저작권 자료의 명시적 승인 없이는 사용할 수 없다. provenance는
+`tools/ocr_hybrid_preflight.py`로 검사하고, PDF 원문과 reviewed manifest 외의 OCR
+후보를 수학 내용의 권위로 사용하지 않는다.
 
 개발 환경에서 OCR까지 한 번에 설치하려면 다음 명령을 사용한다.
 
@@ -153,7 +193,55 @@ ExamPool 자체 소스는 GNU Affero General Public License v3.0 only에 따라
 python -m pytest
 ```
 
+### 수학 PDF→HWP/HWPX 최신 검수 순서
+
+수학 문제·해설 변환은 PDF를 단일 원문으로 사용하며, OCR 결과를 직접 writer에
+전달하지 않는다. 먼저 `math-source-manifest-v1` 검수 원장을 600 dpi(필요 시
+900 dpi)로 확정한 뒤 source gate를 실행한다.
+
+```powershell
+python tools/math_source_manifest_qa.py reviewed-source-manifest.json --json source-qa.json
+python tools/pdf_hwp_strict_qa.py `
+  --source source.pdf --generated roundtrip.pdf --hwpx result.hwpx `
+  --expected expected.json --actual actual.json --figures figures.json `
+  --source-manifest reviewed-source-manifest.json --out qa --dpi 300
+```
+
+수식은 `sum/prod`, `lim`, `int`, 첨자·지수, 분수·근호, cases·행렬·벡터의
+구조와 범위를 비교하고, HWPX에서 `HYhwpEQ`·`baseUnit=1100`·native script를
+검사한다. 수식 수·순서·hash, 문항·그림 소유권, 표·보기 개수가 하나라도
+다르면 FAIL이며 평문·이미지 fallback은 허용하지 않는다. 스캔 페이지의 수식
+0개는 수식 없음으로 간주하지 않는다.
+
+관련 계약은 [PDF_HWP_MATH_FORMULA_SOURCE_REVIEW.md](docs/PDF_HWP_MATH_FORMULA_SOURCE_REVIEW.md),
+[PDF_HWP_STRICT_WORK_INSTRUCTIONS.md](docs/PDF_HWP_STRICT_WORK_INSTRUCTIONS.md),
+[MATH_HWP_REFERENCE_STYLE_WORK_INSTRUCTIONS.md](docs/MATH_HWP_REFERENCE_STYLE_WORK_INSTRUCTIONS.md)에
+기록되어 있다. 개별 파일을 PASS한 뒤에만 통합본을 만들며, 실제 시험 PDF·HWP·HWPX와
+전사 데이터는 저장소에 포함하지 않는다.
+
 ---
+
+# 최신 수학 더프 4종 엄격 미주 재감사
+
+7월 더프·4월 종로·4월 대성 더프·5월 더프를 재감사할 때는
+`docs/DUFF_NATIVE_ENDNOTE_STRICT_REAUDIT_4FILE.md`의 원본 매니페스트·수식
+MathIR·HWP/HWPX 왕복 규칙을 적용합니다. 네 시험 전용 fail-closed 집계기는
+저작권 파일을 저장소에 넣지 않고 외부 JSON spec만 읽습니다.
+
+```powershell
+python tools/duff_native_endnote_strict_qa.py C:\path\to\duff-four-exams.json --json report.json
+```
+
+반환 코드 0은 네 시험의 모든 소스 매니페스트, 네이티브 수식, 미주, COM 왕복,
+이미지·시각 QA가 PASS인 경우에만 의미합니다. 소스 매니페스트가 없거나 HWP COM
+증거가 없으면 기존 HWPX가 열리더라도 자동 FAIL입니다.
+
+실행 순서와 실사용 판정 프로필은
+`docs/DUFF_NATIVE_ENDNOTE_EXECUTION_PLAN_20260901.md`에 기록되어 있습니다.
+내용·수식·문항 대응·편집성은 0오류로 유지하고, 미세한 시각 차이를 허용하는
+경우에도 `실사용 최종본(제한사항 기록)`으로만 표시합니다. 원본
+`math-source-manifest-v1`, HWP/HWPX COM 왕복, PDF 재출력, 이미지 감사를 모두
+통과한 경우에만 `엄격 최종 PASS`를 부여합니다.
 
 ## 라이선스 · 저작자
 

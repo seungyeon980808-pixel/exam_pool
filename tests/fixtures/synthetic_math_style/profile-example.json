@@ -1,0 +1,22 @@
+{
+  "schema_version": "math-hwp-reference-style-v1",
+  "profile_id": "synthetic-math-style-v1",
+  "status": "VERIFIED",
+  "measured": true,
+  "reference_measurement_status": "verified",
+  "reference_source": "synthetic://math-style-fixture",
+  "units": {"geometry": "mm", "typography": "pt"},
+  "tolerances": {"geometry_mm": 0.5, "typography_pt": 0.0},
+  "density": {"min": 0.02, "median_min": 0.08, "median_max": 0.85, "max": 1.0},
+  "overlap_threshold": 0.0,
+  "large_gap_mm": 18.0,
+  "styles": {
+    "page": {"paper": "A4", "width_mm": 210.0, "height_mm": 297.0, "margin_left_mm": 20.0, "margin_right_mm": 20.0, "margin_top_mm": 18.0, "margin_bottom_mm": 18.0, "header_distance_mm": 8.0, "footer_distance_mm": 8.0},
+    "column": {"count": 1, "gutter_mm": 0.0, "rule": false, "rule_width_mm": 0.0},
+    "char": {"body": {"font_family": "SyntheticBody", "size_pt": 10.0, "bold": false, "italic": false}, "equation": {"font_family": "HancomEQN", "size_pt": 11.0, "base_unit": 1100, "treat_as_char": "1", "flow_with_text": "1", "allow_overlap": "0"}, "heading": {"font_family": "SyntheticHeading", "size_pt": 12.0, "bold": true}},
+    "para": {"body": {"alignment": "left", "line_spacing_percent": 160.0, "space_before_pt": 0.0, "space_after_pt": 0.0, "first_line_indent_mm": 0.0}, "equation": {"alignment": "center", "line_spacing_percent": 160.0, "space_before_pt": 0.0, "space_after_pt": 0.0}},
+    "table": {"border_width_pt": 0.5, "cell_padding_mm": 1.5, "vertical_alignment": "center", "header_bold": true},
+    "figure": {"anchor": "as_character", "wrap": "none", "allow_overlap": false, "keep_with_owner_item": true},
+    "endnote": {"number_format": "arabic", "restart": "continuous", "separator": "line", "keep_with_anchor": true, "body_font_family": "SyntheticBody", "body_size_pt": 10.0}
+  }
+}

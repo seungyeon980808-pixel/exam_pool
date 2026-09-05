@@ -1,0 +1,58 @@
+{
+  "document_id": "synthetic-math-problem",
+  "role": "problem",
+  "page_count": 5,
+  "page_size_pt": [[240, 180], [240, 180], [240, 180], [240, 180], [240, 180]],
+  "page_columns": [2, 2, 2, 2, 2],
+  "items": [
+    {
+      "item_id": "COMMON-07",
+      "page": 2,
+      "body_text": "7. 합성 함수 g의 값을 구하여라.",
+      "formulas": ["g(x)=x^2+2/7"],
+      "choices": ["① 1", "② 2", "③ 3", "④ 4", "⑤ 5"],
+      "view_count": 0,
+      "table_count": 0,
+      "figure_ids": ["COMMON-07-GRAPH-01"],
+      "column": 1,
+      "bbox": [20, 20, 110, 160],
+      "native_text": true,
+      "native_equations": true
+    },
+    {
+      "item_id": "COMMON-08",
+      "page": 2,
+      "body_text": "8. 합성 수열의 첫째항을 구하여라.",
+      "formulas": ["a_1=-3"],
+      "choices": ["① -3", "② -2", "③ -1", "④ 1", "⑤ 2"],
+      "view_count": 1,
+      "table_count": 1,
+      "figure_ids": [],
+      "column": 2,
+      "bbox": [130, 20, 220, 160],
+      "native_text": true,
+      "native_equations": true
+    }
+  ],
+  "figures": [
+    {
+      "figure_id": "COMMON-07-GRAPH-01",
+      "item_id": "COMMON-07",
+      "page": 2,
+      "bbox": [35, 85, 100, 145],
+      "placement": "after_choices",
+      "raster": false,
+      "exception_reason": ""
+    }
+  ],
+  "rasters": [],
+  "header_native": true,
+  "footer_native": true,
+  "page_number_native": true,
+  "hwp_reopen": true,
+  "hwpx_reopen": true,
+  "endnote_count": 0,
+  "footnote_count": 0,
+  "plain_endnote_marker_count": 0
+}
+
