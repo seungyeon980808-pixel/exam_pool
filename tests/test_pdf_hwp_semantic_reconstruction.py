@@ -59,6 +59,7 @@ def _item(item_id: str, number: int, *, column: int = 1) -> dict:
         "condition_box": {"required": True, "kind": "native_table", "native": True},
         "tables": [{"role": "condition", "kind": "native_table", "native": True}],
         "figures": [{"figure_id": f"FIG-{item_id}", "owner_item_id": item_id, "kind": "figure", "content_role": "pure_figure", "contains_text": False}],
+        "solution_completeness": {"source_block_count": 1, "reconstructed_block_count": 1, "omitted_block_ids": []},
         "expected_formula_count": 1,
         "formulas": [{"kind": "native_equation", "native": True, "font_family": "HYhwpEQ", "font_size_pt": 11.0, "base_unit": 1100, "script": "x+1"}],
     }
@@ -178,6 +179,16 @@ def test_unsupported_formula_script_fails_closed() -> None:
     assert "FORMULA_UNSUPPORTED_SYNTAX" in _codes(validate_semantic_reconstruction(value))
     value["items"][0]["formulas"][0]["script"] = r"\frac{1}{2}"
     assert "FORMULA_UNSUPPORTED_SYNTAX" in _codes(validate_semantic_reconstruction(value))
+
+
+def test_solution_side_block_omission_fails_closed() -> None:
+    value = _manifest()
+    value["items"][0]["solution_completeness"] = {
+        "source_block_count": 3,
+        "reconstructed_block_count": 2,
+        "omitted_block_ids": ["solution-side-box-2"],
+    }
+    assert "SOLUTION_CONTENT_INCOMPLETE" in _codes(validate_semantic_reconstruction(value))
 
 
 def test_non_item_page_and_mapping_are_not_silent() -> None:

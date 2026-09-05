@@ -24,6 +24,13 @@ printed label, problem first sentence, and solution content are all required
 mapping evidence.  Printed number alone, page order, modulo, and
 `page_round_robin` are not mappings.
 
+Every solution item also declares `solution_completeness` with the number of
+source blocks and reconstructed blocks plus an empty `omitted_block_ids` list.
+Explanation boxes (for example 출제코드, 해설특강, 핵심개념), answer lines,
+tables, figures, and continuation blocks are content blocks. A missing side box
+is not cosmetic: `SOLUTION_CONTENT_INCOMPLETE` blocks the pre-endnote
+checkpoint until the block is transcribed or the item is removed from scope.
+
 ## Semantic and native object rules
 
 - HWP paragraphs must have `origin: semantic`; direct physical OCR-row
@@ -71,7 +78,7 @@ The preflight is fail-closed.  The stable failure codes include
 `CONDITION_BOX_NOT_NATIVE`, `ITEM_COLUMN_MISMATCH`,
 `FIGURE_OWNERSHIP_MISMATCH`, `PARAGRAPH_SPACING_OUT_OF_PROFILE`,
 `OCR_UNREVIEWED`, `FORMULA_NATIVE_MISSING`, and
-`FORMULA_UNSUPPORTED_SYNTAX`.
+`FORMULA_UNSUPPORTED_SYNTAX`, and `SOLUTION_CONTENT_INCOMPLETE`.
 
 The checked-in policy is
 `config/pdf_hwp_semantic_reconstruction_policy_v1.json`, and the generic

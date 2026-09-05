@@ -42,6 +42,7 @@ FAIL_CODES = frozenset({
     "FORMULA_UNSUPPORTED_SYNTAX",
     "NON_ITEM_PAGE_INCLUDED",
     "ITEM_SOLUTION_MAPPING_MISMATCH",
+    "SOLUTION_CONTENT_INCOMPLETE",
     "PRE_ENDNOTE_CHECKPOINT_REQUIRED",
     "ENDNOTE_MODE_INVALID",
     "REOPEN_RENDER_QA_MISSING",
@@ -318,6 +319,33 @@ def _validate_columns(item: Mapping[str, Any], findings: list[dict[str, Any]]) -
         ))
 
 
+def _validate_solution_completeness(item: Mapping[str, Any], findings: list[dict[str, Any]]) -> None:
+    """Reject a solution that silently drops source explanation blocks."""
+    item_id = str(item.get("item_id", "")) or None
+    contract = item.get("solution_completeness")
+    if not isinstance(contract, Mapping):
+        findings.append(_finding(
+            "SOLUTION_CONTENT_INCOMPLETE",
+            "solution completeness must declare source and reconstructed block counts",
+            item_id=item_id,
+        ))
+        return
+    source_count = _number(contract.get("source_block_count"))
+    reconstructed_count = _number(contract.get("reconstructed_block_count"))
+    omitted = contract.get("omitted_block_ids", [])
+    if (source_count is None or reconstructed_count is None
+            or int(source_count) != int(reconstructed_count)
+            or not isinstance(omitted, list) or omitted):
+        findings.append(_finding(
+            "SOLUTION_CONTENT_INCOMPLETE",
+            "every reviewed solution block must be reconstructed; omissions block release",
+            item_id=item_id,
+            source_block_count=source_count,
+            reconstructed_block_count=reconstructed_count,
+            omitted_block_ids=omitted,
+        ))
+
+
 def _validate_figures(item: Mapping[str, Any], seen: dict[str, str], findings: list[dict[str, Any]]) -> None:
     item_id = str(item.get("item_id", "")) or None
     item_seen: set[str] = set()
@@ -565,10 +593,11 @@ def validate_semantic_reconstruction(manifest: Mapping[str, Any]) -> dict[str, A
         _validate_choices(raw, findings)
         _validate_condition_and_tables(raw, findings)
         _validate_columns(raw, findings)
+        _validate_solution_completeness(raw, findings)
         _validate_figures(raw, seen_figures, findings)
         expected_formula_total += _validate_formulas(raw, findings)
         item_codes = {row["code"] for row in findings[item_findings_start:]}
-        if item_codes & {"PHYSICAL_OCR_ROW_SPLIT", "CHOICE_LAYOUT_MISMATCH", "CONDITION_BOX_NOT_NATIVE", "FIGURE_OWNERSHIP_MISMATCH", "FORMULA_NATIVE_MISSING", "FORBIDDEN_CAPTURE_IMAGE"}:
+        if item_codes & {"PHYSICAL_OCR_ROW_SPLIT", "CHOICE_LAYOUT_MISMATCH", "CONDITION_BOX_NOT_NATIVE", "FIGURE_OWNERSHIP_MISMATCH", "FORMULA_NATIVE_MISSING", "FORBIDDEN_CAPTURE_IMAGE", "SOLUTION_CONTENT_INCOMPLETE"}:
             gates["native_editable_objects"] = False
         if item_codes & {"PARAGRAPH_SPACING_OUT_OF_PROFILE", "BODY_JUSTIFY_STRETCH", "SENTENCE_FRAGMENTATION", "ITEM_COLUMN_MISMATCH"}:
             gates["profile"] = False
